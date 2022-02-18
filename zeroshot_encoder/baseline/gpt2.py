@@ -1,13 +1,13 @@
 from typing import List, Callable
+from warnings import warn
 
 import pandas as pd
 from torch import nn
 import transformers
-# LMHead for training
 from transformers import BatchEncoding
 from transformers import AutoConfig
 from transformers import PreTrainedTokenizerBase, GPT2TokenizerFast
-from transformers import GPT2Model, GPT2LMHeadModel
+from transformers import GPT2Model, GPT2LMHeadModel  # LMHead for CLM training
 from transformers import Trainer, TrainingArguments, SchedulerType, TrainerCallback
 from transformers import DataCollatorForLanguageModeling
 from transformers.training_args import OptimizerNames
@@ -185,7 +185,7 @@ class ZsGPT2Model(GPT2Model):
     """
     def __init__(self, config):
         super().__init__(config)
-        # Override internal state
+        # Override internal state, instead of adding internal state, so that forward pass stays untouched
         # Double the positional embedding matrix, as if stacking the context & output embedding matrices together
         # See positional id assignment in `ZsGPT2Tokenizer`
         self.wpe = nn.Embedding(config.max_position_embeddings*2, self.embed_dim)
@@ -213,9 +213,11 @@ class ZsGPT2LMHeadModel(GPT2LMHeadModel):
 
         with torch.no_grad():  # Crude loading the pretrained weights, to each half of the doubled positional embedding
             n_tok = md.transformer.wpe.weight.shape[0]
-            assert n_tok == 1024 * 2
-            md.transformer.wpe.weight[:1024, :] = weight_pretrained
-            md.transformer.wpe.weight[1024:, :] = weight_pretrained
+            if n_tok == 1024 * 2:
+                md.transformer.wpe.weight[:1024, :] = weight_pretrained
+                md.transformer.wpe.weight[1024:, :] = weight_pretrained
+            else:
+                warn('Wrong model size, positional not loaded. This is expected in debugging')
         return md
 
 
@@ -234,6 +236,7 @@ def get_model_n_tokenizer(name='gpt2') -> Tuple[ZsGPT2LMHeadModel, ZsGPT2Tokeniz
     :param name: Model name, one of [`debug`, `gpt2`, `gpt2-medium`]
     """
     MODEL_NMS = dict(small='gpt2', large='gpt2-medium')
+    pretrained_model_name = 'gpt2'
 
     if 'debug' in name:  # Try a smaller model for training sanity check
         if 'large' in name:
@@ -242,7 +245,7 @@ def get_model_n_tokenizer(name='gpt2') -> Tuple[ZsGPT2LMHeadModel, ZsGPT2Tokeniz
             n_token = 4
         conf = AutoConfig.from_pretrained('gpt2')
         conf.update(dict(n_ctx=n_token, n_positions=n_token))
-        model_ = ZsGPT2LMHeadModel(config=conf)
+        model_ = ZsGPT2LMHeadModel.from_pretrained(pretrained_model_name, config=conf, ignore_mismatched_sizes=True)
         model_max_length = n_token
     else:
         k = 'large' if 'medium' in name else 'small'
@@ -250,7 +253,9 @@ def get_model_n_tokenizer(name='gpt2') -> Tuple[ZsGPT2LMHeadModel, ZsGPT2Tokeniz
         model_ = ZsGPT2LMHeadModel.from_pretrained(model_nm, ignore_mismatched_sizes=True)
         model_max_length = 512  # Reduce max seq len to 512 as in paper
 
-    tokenizer_ = ZsGPT2Tokenizer.from_pretrained('gpt2', use_fast=True, model_max_length=model_max_length)
+    tokenizer_ = ZsGPT2Tokenizer.from_pretrained(
+        pretrained_model_name, use_fast=True, model_max_length=model_max_length
+    )
     model_.resize_token_embeddings(len(tokenizer_))
 
     return model_, tokenizer_, DataCollatorForLanguageModeling(tokenizer=tokenizer_, mlm=False)
@@ -262,7 +267,7 @@ def get_train_setup(name='gpt2') -> TrainingArguments:
             learning_rate=1e-4,
             batch_size=4,
             weight_decay=1e-2,
-            num_train_epochs=4,
+            num_train_epochs=16,
             lr_scheduler_type=SchedulerType.CONSTANT,
         ),
         'debug-large': dict(
@@ -292,7 +297,7 @@ def get_train_setup(name='gpt2') -> TrainingArguments:
     ])
 
     return TrainingArguments(
-        output_dir=os.path.join(PATH_BASE, DIR_PROJ, DIR_MDL, 'gpt2'),
+        output_dir=os.path.join(PATH_BASE, DIR_PROJ, DIR_MDL, 'gpt2', now(sep='-')),
         do_train=True, do_eval=True,
         evaluation_strategy='steps',
         per_device_train_batch_size=bsz,
@@ -377,16 +382,18 @@ class TrainPlot:
         n_data, md_sz, lr, bsz, n_ep = (
             meta[k] for k in ('#data', 'model size', 'learning rate', 'batch shape', '#epochs')
         )
-        self.title_plot = rf'{title}, $\alpha = {lr}$, batch shape=${bsz}$, #epochs=${n_ep}$'
-        self.title_save = f'{title}, a={lr}, bsz={bsz}, n_ep={n_ep}, {now(sep="-")}'
+        self.title_plot = rf'{title}, $n={n_data}$, #position = ${md_sz}$ ' \
+                          + rf'$\alpha = {lr}$, batch shape=${bsz}$, #epochs=${n_ep}$'
+        self.title_save = f'{title}, n={n_data}, l={md_sz}, a={lr}, bsz={bsz}, n_ep={n_ep}, {now(sep="-")}'
 
     def make_plot(self):
-        fig, self.axes = plt.subplots(2, 1, figsize=(16, 9))
+        fig, self.axes = plt.subplots(3, 1, figsize=(16, 9))
         fig.suptitle(self.title_plot)
-        self.axes[0].set_xlabel('Step')
+        for ax in self.axes:
+            ax.set_xlabel('Step')
         self.axes[0].set_ylabel('Loss')
-        self.axes[1].set_xlabel('Step')
         self.axes[1].set_ylabel('Accuracy (%)')
+        self.axes[2].set_ylabel('Classification Accuracy (%)')
         if self.interactive:
             plt.ion()
 
@@ -397,10 +404,10 @@ class TrainPlot:
         :param stats: List of training step stats
         """
         df = pd.DataFrame(stats)
-        step, tr_acc, tr_loss, vl_acc, vl_loss = (
-            df[k] for k in ('step', 'train_acc', 'train_loss', 'eval_acc', 'eval_loss')
+        step, tr_acc, tr_loss, vl_acc, vl_loss, tr_acc_cls, vl_acc_cls = (
+            df[k] for k in ('step', 'train_acc', 'train_loss', 'eval_acc', 'eval_loss', 'train_acc_cls', 'eval_acc_cls')
         )
-        ax1, ax2 = self.axes
+        ax1, ax2, ax3 = self.axes
         # Re-plot, since x and y lim may change
         while ax1.lines:
             ax1.lines[-1].remove()
@@ -408,8 +415,10 @@ class TrainPlot:
             ax2.lines[-1].remove()
         ax1.plot(step, tr_loss, label='Training Loss', c=self.c_tr, **LN_KWARGS)
         ax1.plot(step, vl_loss, label='Validation Loss', c=self.c_vl, **LN_KWARGS)
-        ax2.plot(step, tr_acc, label='Training Accuracy', c=self.c_tr, **LN_KWARGS)
-        ax2.plot(step, vl_acc, label='Validation Accuracy', c=self.c_vl, **LN_KWARGS)
+        ax2.plot(step, tr_acc * 100, label='Training Accuracy', c=self.c_tr, **LN_KWARGS)
+        ax2.plot(step, vl_acc * 100, label='Validation Accuracy', c=self.c_vl, **LN_KWARGS)
+        ax3.plot(step, tr_acc_cls * 100, label='Training Classification Accuracy', c=self.c_tr, **LN_KWARGS)
+        ax3.plot(step, vl_acc_cls * 100, label='Training Classification Accuracy', c=self.c_tr, **LN_KWARGS)
         ax1.legend()
         ax2.legend()
         plt.draw()  # Needed for `ion`
@@ -447,16 +456,20 @@ class MyLoggingCallback(TrainerCallback):
         self.logger = logging.getLogger(name)
         self.logger.setLevel(logging.DEBUG)
         had_handler = False
-        for hd in self.logger.handlers:
-            if hasattr(hd, 'name_for_my_logging') and getattr(hd, 'name_for_my_logging') == name:
+        hd_attr_nm = 'name_for_my_logging'  # Use a name that's unlikely to have colissions
+        for hd in self.logger.handlers:  # Set console output logging
+            if hasattr(hd, hd_attr_nm) and getattr(hd, hd_attr_nm) == name:
                 had_handler = True
         if not had_handler:
             handler = logging.StreamHandler(stream=sys.stdout)  # For my own coloring
             handler.setLevel(logging.DEBUG)
             handler.setFormatter(MyFormatter())
             # For ipython compatibility, potentially update it instead of adding new handler
-            setattr(handler, 'name_for_my_logging', name)
+            setattr(handler, hd_attr_nm, name)
             self.logger.addHandler(handler)
+        self.logger_fl = logging.getLogger('trainer-file-write')  # Write out to file
+        self.logger_fl.setLevel(logging.DEBUG)
+        self.fl_handler = None
 
         self.out_dict: Dict = None
         self.is_compute_loss_on_train = True
@@ -470,13 +483,17 @@ class MyLoggingCallback(TrainerCallback):
         self.n_eval = len(dset_vl_)
         lr, self.bsz, n_ep = args.learning_rate, args.per_device_train_batch_size, args.num_train_epochs
         seq_max_len = len(dset_tr__[0]['input_ids'])
+        n_data, md_sz = len(dset_tr__), md.config.n_positions
         self.train_meta = OrderedDict([
-            ('#data', len(dset_tr__)), ('model size', md.config.n_positions),
+            ('#data', n_data), ('model size', md_sz),
             ('learning rate', lr), ('batch shape', (self.bsz, seq_max_len)), ('#epochs', n_ep)
         ])
         self.steps = math.ceil(len(dset_tr__) // self.bsz) * n_ep
         self.called_val_init = False
         self.log_hist: List[Dict] = []
+
+        self.log_fnm_tpl = f'{name}, n={n_data}, l={md_sz}, a={lr}, bsz={self.bsz}, n_ep={n_ep}, {{}}'
+        self.log_fnm = None  # Current logging file name template & file instance during training
 
         self.mode = mode
         self.train_begin, self.train_end = None, None
@@ -492,7 +509,13 @@ class MyLoggingCallback(TrainerCallback):
         self.mode = mode
 
     def on_train_begin(self, args: TrainingArguments, state, control, **kwargs):
+        self.log_fnm = self.log_fnm_tpl.format(now(sep="-"))
+        # Set file write logging
+        self.fl_handler = logging.FileHandler(os.path.join(self.parent_trainer.args.output_dir, f'{self.log_fnm}.log'))
+        self.logger_fl.addHandler(self.fl_handler)
+
         self.logger.info(f'Training started with {log_dict(self.train_meta)}')
+        self.logger_fl.info(f'Training started with {self.train_meta}')
         self.t_strt = datetime.datetime.now()
 
         self.mode = 'train'
@@ -506,7 +529,11 @@ class MyLoggingCallback(TrainerCallback):
             self.train_end = True
 
             self.t_end = datetime.datetime.now()
-            self.logger.info(f'Training completed in {logi(fmt_dt(self.t_end - self.t_strt))} ')
+            t = fmt_dt(self.t_end - self.t_strt)
+            self.logger.info(f'Training completed in {logi(t)} ')
+            self.logger_fl.info(f'Training completed in {t} ')
+            self.logger_fl.removeHandler(self.fl_handler)  # Remove prior `FileHandler`, prep for next potential run
+            self.fl_handler = None
 
             if self.interactive:
                 self.plot.finish()
@@ -515,7 +542,7 @@ class MyLoggingCallback(TrainerCallback):
         self.mode = 'eval'
 
     def on_log(self, args: TrainingArguments, state, control, logs: Dict = None, **kwargs):
-        def out_dict2str(d: Dict):
+        def out_dict2str(d: Dict, return_wo_color: bool = False):
             keys_ = [
                 'step', 'epoch', 'train_loss', 'eval_loss', 'train_acc', 'eval_acc',
                 'train_acc_cls', 'eval_acc_cls', 'train_acc_mis', 'eval_acc_mis'
@@ -528,10 +555,15 @@ class MyLoggingCallback(TrainerCallback):
 
             d = {k: (('loss' in k and round(v, 4)) or ('acc' in k and round(v*100, 4)) or v) for k, v in d.items()}
             s_outs = [(k, fmt_.format(**{k: d[k]})) for fmt_, k in zip(s_fmts, keys_) if k in d]
-            return ', '.join(f'{k}={logi(s)}' for (k, s) in s_outs)
+            out_ = ', '.join(f'{k}={logi(s)}' for (k, s) in s_outs)
+            if return_wo_color:
+                out_ = out_, ', '.join(f'{k}={s}' for (k, s) in s_outs)
+            return out_
 
         def log_update(d_out):
-            self.logger.info(out_dict2str(d_out))
+            out_console, out_write = out_dict2str(d_out, return_wo_color=True)
+            self.logger.info(out_console)
+            self.logger_fl.info(out_write)
             self.log_hist.append(d_out)
             if self.interactive:
                 self.plot.update(self.log_hist)
@@ -541,7 +573,6 @@ class MyLoggingCallback(TrainerCallback):
             Convert `classification_acc_meta` dict to stats for logging
             """
             n_acc, n_total, n_mis = (d_stats[k] for k in ('n_acc', 'n_total', 'n_missing'))
-            # ic(n_mis, n_sample, n_mis/n_sample, prefix)
             return {
                 f'{prefix}_acc_cls': n_acc/n_total if n_total != 0 else 0,
                 f'{prefix}_acc_mis': n_mis/n_sample  # As a fraction
@@ -549,7 +580,6 @@ class MyLoggingCallback(TrainerCallback):
 
         def set_eval_cls_acc():
             stats_cls_acc: List[Dict] = self.out_dict.pop(self.k_cls_eval)
-            # ic(stats_cls_acc)
             stats_cls_acc: Dict = {k: sum(d[k] for d in stats_cls_acc) for k in stats_cls_acc[0]}
             self.out_dict = {
                 **self.out_dict,
@@ -559,11 +589,9 @@ class MyLoggingCallback(TrainerCallback):
         if state.is_local_process_zero:
             if self.mode == 'train':
                 step = state.global_step
-                # ic(step, logs)
                 if 'src' in logs and logs['src'] == 'compute_loss':  # Custom added metric computation
                     if step == 0:  # Before model runs, initial call
                         if not self.called_val_init:  # Prevents circular logging call, see Trainer.evaluate()
-                            # ic('in validation initial call')
                             # Got to here, cos the 1st, training compute_loss logging
                             assert self.is_compute_loss_on_train
                             self.called_val_init = True
@@ -572,12 +600,12 @@ class MyLoggingCallback(TrainerCallback):
                                 **dict(step=step, epoch=0, train_acc=tr_acc, train_loss=tr_loss,),
                                 **cls_stats2dict(logs[self.k_cls], self.bsz, prefix='train')
                             }
-                            # ic(self.out_dict)
 
                             # Prep for Trainer internal evaluation call
                             self.is_compute_loss_on_train = False
                             out: Dict = self.parent_trainer.evaluate()  # Expanded to branch below then comes back
-                            # self.is_compute_loss_on_train = True  # Disable, for edge case training step
+                            # Disable, seems like an edge case 1st training step, not sure ow
+                            # self.is_compute_loss_on_train = True
                             n_ep_, vl_acc, vl_loss = (out.get(k, None) for k in ('epoch', 'eval_accuracy', 'eval_loss'))
                             assert all(elm is not None for elm in (n_ep, vl_acc, vl_loss))
                             assert n_ep == n_ep_ and n_ep == 0
@@ -585,8 +613,6 @@ class MyLoggingCallback(TrainerCallback):
                             self.out_dict.update(dict(eval_acc=vl_acc, eval_loss=vl_loss))
 
                             set_eval_cls_acc()
-                            # del out[self.k_cls_eval]
-                            # ic(self.out_dict)
                             log_update(self.out_dict)
                         elif not self.is_compute_loss_on_train:  # `compute_loss` ran on evaluation set
                             # => Keep track of the batch-wise classification accuracy
@@ -606,13 +632,11 @@ class MyLoggingCallback(TrainerCallback):
                                     **dict(step=step, train_acc=acc, train_loss=loss),
                                     **cls_stats2dict(logs[self.k_cls], self.bsz, prefix='train')
                                 }
-                                # ic(self.out_dict)
                         else:  # On eval set, keep track like above
                             if self.k_cls_eval not in self.out_dict:
                                 self.out_dict[self.k_cls_eval] = [logs[self.k_cls]]
                             else:
                                 self.out_dict[self.k_cls_eval].append(logs[self.k_cls])
-                            # ic(self.out_dict[self.k_cls_eval])
                 elif 'loss' in logs:  # Internal training log
                     # Edge case step = 1: Before training start, i.e. step=1, stats for training already logged,
                     # But log anyway, for after gradient update, evaluation loss changes
@@ -705,7 +729,7 @@ class CustomTrainer(Trainer):
             sample2idxs_n_lbs = {i_sample: get_labels(i_sample, idxs) for i_sample, idxs in sample2idxs.items()}
             sample2idxs_n_lbs = {k: v for k, v in sample2idxs_n_lbs.items() if v is not None}
             d_log['classification_acc_meta'] = dict(
-                # if prediction is also the label
+                # prediction ids match label ids
                 n_acc=sum(preds[i_sample, d['idxs']] == d['labels'] for i_sample, d in sample2idxs_n_lbs.items()),
                 n_total=len(sample2idxs_n_lbs),  # Number of samples with complete label
                 n_missing=inputs['input_ids'].shape[0]-len(sample2idxs_n_lbs)
@@ -741,12 +765,12 @@ if __name__ == '__main__':
     seed = config('random-seed')
     transformers.set_seed(seed)
 
-    # nm, n = 'debug', 16
+    nm, n = 'debug', 8
     # nm, n = 'debug-large', 128
-    nm, n = 'gpt2', None
+    # nm, n = 'gpt2', None
     model, tokenizer, data_collator, tr_args, dset_tr, dset_vl, trainer = get_all_setup(
         nm, n_sample=n, random_seed=seed
     )
     trainer.train()
-    trainer.save_model(os.path.join(trainer.args.output_dir, now(sep='-')))
+    trainer.save_model(os.path.join(trainer.args.output_dir))
     trainer.evaluate()

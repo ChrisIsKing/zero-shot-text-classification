@@ -144,7 +144,7 @@ def logi(s):
 
 def log_dict(d: Dict = None, **kwargs) -> str:
     """
-    Syntactic sugar for logging dict as string
+    Syntactic sugar for logging dict with coloring for console output
     """
     if d is None:
         d = kwargs
