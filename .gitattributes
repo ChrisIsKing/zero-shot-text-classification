@@ -1,2 +1,3 @@
 **/*.ipynb linguist-vendored
+dataset/topic/dbpedia.json filter=lfs diff=lfs merge=lfs -text
 *.json filter=lfs diff=lfs merge=lfs -text
