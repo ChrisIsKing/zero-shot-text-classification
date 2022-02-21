@@ -142,14 +142,16 @@ def logi(s):
     return logs(s, c='i')
 
 
-def log_dict(d: Dict = None, **kwargs) -> str:
+def log_dict(d: Dict = None, with_color=True, **kwargs) -> str:
     """
     Syntactic sugar for logging dict with coloring for console output
     """
     if d is None:
         d = kwargs
-    pairs = (f'{k}: {logi(v)}' for k, v in d.items())
-    return logs('{', c='m') + ', '.join(pairs) + logs('}', c='m')
+    pairs = (f'{k}: {logi(v) if with_color else v}' for k, v in d.items())
+    pref = logs('{', c='m') if with_color else '{'
+    post = logs('}', c='m') if with_color else '}'
+    return pref + ', '.join(pairs) + post
 
 
 def hex2rgb(hx: str) -> Union[Tuple[int], Tuple[float]]:
@@ -229,26 +231,34 @@ class MyFormatter(logging.Formatter):
         logging.CRITICAL: ('CRIT', CRIT)
     }
 
-    def __init__(self, fmt_time=green):
+    def __init__(self, with_color=True, color_time=green):
         super().__init__()
+        self.with_color = with_color
 
         sty_kw, reset = MyFormatter.blue, MyFormatter.RESET
-        fmt_time = f'{fmt_time}{MyFormatter.KW_TIME}{sty_kw}| {reset}'
+        color_time = f'{color_time}{MyFormatter.KW_TIME}{sty_kw}| {reset}'
 
-        def fmt_meta(meta_abv, meta_style):
-            return f'{MyFormatter.purple}[{MyFormatter.KW_NAME}]' \
-                   f'{MyFormatter.blue}::{MyFormatter.purple}{MyFormatter.KW_FUNCNM}' \
-                   f'{MyFormatter.blue}::{MyFormatter.purple}{MyFormatter.KW_FNM}' \
-                   f'{MyFormatter.blue}:{MyFormatter.purple}{MyFormatter.KW_LINENO}' \
-                   f'{MyFormatter.blue}, {meta_style}{meta_abv}{reset}'
+        def args2fmt(args_):
+            if self.with_color:
+                return color_time + self.fmt_meta(*args_) + f'{sty_kw} - {reset}{MyFormatter.KW_MSG}' + reset
+            else:
+                return f'{MyFormatter.KW_TIME}| {self.fmt_meta(*args_)} - {MyFormatter.KW_MSG}'
 
-        self.formats = {
-            level: fmt_time + fmt_meta(*args) + f'{sty_kw} - {reset}{MyFormatter.KW_MSG}' + reset
-            for level, args in MyFormatter.LVL_MAP.items()
-        }
+        self.formats = {level: args2fmt(args) for level, args in MyFormatter.LVL_MAP.items()}
         self.formatter = {
             lv: logging.Formatter(fmt, datefmt='%Y-%m-%d %H:%M:%S') for lv, fmt in self.formats.items()
         }
+
+    def fmt_meta(self, meta_abv, meta_style=None):
+        if self.with_color:
+            return f'{MyFormatter.purple}[{MyFormatter.KW_NAME}]' \
+               f'{MyFormatter.blue}::{MyFormatter.purple}{MyFormatter.KW_FUNCNM}' \
+               f'{MyFormatter.blue}::{MyFormatter.purple}{MyFormatter.KW_FNM}' \
+               f'{MyFormatter.blue}:{MyFormatter.purple}{MyFormatter.KW_LINENO}' \
+               f'{MyFormatter.blue}, {meta_style}{meta_abv}{MyFormatter.RESET}'
+        else:
+            return f'[{MyFormatter.KW_NAME}] {MyFormatter.KW_FUNCNM}::{MyFormatter.KW_FNM}' \
+                   f':{MyFormatter.KW_LINENO}, {meta_abv}'
 
     def format(self, entry):
         return self.formatter[entry.levelno].format(entry)
