@@ -341,8 +341,14 @@ def get_train_setup(name='gpt2', do_eval=True) -> TrainingArguments:
         'learning_rate', 'batch_size', 'weight_decay', 'num_train_epochs', 'lr_scheduler_type'
     ])
 
+    if get_hostname() == 'clarity2':
+        # Remote machine `clarity2`, save the models somewhere else to save `/home` disk space
+        out_base = os.path.join('/data')
+    else:
+        out_base = PATH_BASE
+
     return TrainingArguments(
-        output_dir=os.path.join(PATH_BASE, DIR_PROJ, DIR_MDL, 'gpt2', name, now(sep='-')),
+        output_dir=os.path.join(out_base, DIR_PROJ, DIR_MDL, 'gpt2', name, now(sep='-')),
         do_train=True,
         do_eval=do_eval,
         evaluation_strategy='steps' if do_eval else 'no',
@@ -362,6 +368,8 @@ def get_train_setup(name='gpt2', do_eval=True) -> TrainingArguments:
         log_level='warning',
         logging_strategy='steps',
         logging_steps=1,
+        save_steps=1000,
+        save_total_limit=32,
         fp16=torch.cuda.is_available(),  # TODO: dynamic loss scaling??
         fp16_full_eval=torch.cuda.is_available(),
         optim=OptimizerNames.ADAMW_TORCH,
