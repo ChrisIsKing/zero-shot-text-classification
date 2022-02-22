@@ -1,3 +1,4 @@
+import os
 import re
 import sys
 import json
@@ -19,7 +20,7 @@ import seaborn as sns
 import colorama
 import sty
 
-from zeroshot_encoder.util.data_path import *
+from zeroshot_encoder.util.data_path import PATH_BASE, DIR_DSET, DIR_PROJ, DIR_MDL, PKG_NM
 
 
 rcParams['figure.constrained_layout.use'] = True

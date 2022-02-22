@@ -15,6 +15,9 @@ from datasets import load_dataset, load_metric
 from zeroshot_encoder.util import *
 
 
+PT_LOSS_PAD = -100  # Pytorch indicator value for ignoring loss, used in huggingface for padding tokens
+
+
 def get_dset(
         dataset_name='ag_news',
         map_func: Callable = None, remove_columns: Union[str, List[str]] = None,
@@ -314,16 +317,16 @@ def get_train_setup(name='gpt2', do_eval=True) -> TrainingArguments:
         ),
         'debug-large': dict(
             learning_rate=5e-5,
-            batch_size=32,
+            batch_size=4,
             weight_decay=1e-2,
-            num_train_epochs=4,
+            num_train_epochs=40,
             lr_scheduler_type=SchedulerType.CONSTANT,
         ),
         'gpt2': dict(
             learning_rate=3e-5,
             batch_size=32,
             weight_decay=1e-2,
-            num_train_epochs=1,
+            num_train_epochs=10,
             lr_scheduler_type=SchedulerType.COSINE,
         ),
         'gpt2-medium': dict(
@@ -379,7 +382,10 @@ def compute_metrics(eval_pred):
     if not hasattr(compute_metrics, 'metric'):
         compute_metrics.metric = load_metric('accuracy')
     predictions, labels = eval_pred  # `argmax` performed already, see `CustomTrainer.prediction_step`
+    predictions, labels = predictions[:, :-1], labels[:, 1:]  # For CLM
     labels, predictions = labels.flatten(), predictions.flatten()  # Original 2D tensor gives error
+    msk_non_pad = (labels != PT_LOSS_PAD)
+    labels, predictions = labels[msk_non_pad], predictions[msk_non_pad]
     return compute_metrics.metric.compute(predictions=predictions, references=labels)
 
 
@@ -574,7 +580,7 @@ class MyLoggingCallback(TrainerCallback):
             ('#data', n_data), ('model size', md_sz),
             ('learning rate', lr), ('batch shape', (self.bsz, seq_max_len)), ('#epochs', n_ep)
         ])
-        self.steps = math.ceil(len(dset_tr__) // self.bsz) * n_ep
+        self.steps = max(math.ceil(len(dset_tr__) // self.bsz), 1) * n_ep  # #step/epoch at least 1
         self.called_val_init = False
         self.log_hist: List[Dict] = []
 
@@ -747,7 +753,9 @@ class MyLoggingCallback(TrainerCallback):
                         self.out_dict.update(dict(step=step, train_loss=tr_loss, lr=lr, epoch=n_ep))
                     elif 'eval_loss' in logs:
                         if step != 0:
-                            vl_loss, vl_acc, n_ep_ = (logs.get(k, None) for k in ('eval_loss', 'eval_accuracy', 'epoch'))
+                            vl_loss, vl_acc, n_ep_ = (
+                                logs.get(k, None) for k in ('eval_loss', 'eval_accuracy', 'epoch')
+                            )
                             assert all(elm is not None for elm in (vl_loss, vl_acc, n_ep_))
                             assert step == self.out_dict['step']
                             assert n_ep_ == self.out_dict['epoch']
@@ -841,29 +849,41 @@ class CustomTrainer(Trainer):
         inputs: Dict[str, torch.Tensor]
         if self.custom_logging and 'labels' in inputs:
             preds = outputs.logits.detach().argmax(axis=-1)
-            matches: torch.Tensor = (preds == inputs['labels'])
-            d_log = dict(src='compute_loss', acc=round((matches.sum() / matches.numel()).item(), 4))
+            labels_ = inputs['labels'].detach()
+            # CLM, predicting the next token given current, so shift
+            # Last prediction is not part of input label, 1st input is fed into model & not predicted
+            preds, labels_ = preds[:, :-1], labels_[:, 1:]
+            mask_non_pad = labels_ != PT_LOSS_PAD  # Consider only the actual tokens for accuracy
+            preds_non_pad, labels_non_pad = preds[mask_non_pad], labels_[mask_non_pad]
+            matches: torch.Tensor = (preds_non_pad == labels_non_pad)
+            d_log = dict(src='compute_loss', acc=round((matches.sum() / preds_non_pad.numel()).item(), 4))
 
             if self.compute_cls_acc:
+                token_type_ids, dataset_id = inputs['token_type_ids'].detach(), inputs['dataset_id'].detach()
+
                 id_att = self.tokenizer.enc_spec(self.tokenizer.answ_type_token)
                 id_answ = self.tokenizer.enc_spec(self.tokenizer.answ_token)
                 id_eos = self.tokenizer.enc_spec(self.tokenizer.eos_token)
                 sample2idxs: Dict[int, List[int]] = {
                     i_sample: (row == id_att).nonzero().flatten().tolist()
-                    for i_sample, row in enumerate(inputs['token_type_ids'])
+                    for i_sample, row in enumerate(token_type_ids[:, 1:])  # Also shift by 1
                 }
 
                 # For each unique row/sample with answer tokens present, check if it forms a classification label string
                 def get_labels(i, idxs_):
                     if idxs_:
-                        lbs = inputs['input_ids'][i, idxs_].tolist()
+                        lbs = labels_[i, idxs_].tolist()  # Inputs are labels
                         assert lbs[0] == id_answ  # Remove answer special prefix token & potentially the ending token
                         idxs_, lbs = idxs_[1:], lbs[1:]
                         if lbs:  # Labels are still available
                             if lbs[-1] == id_eos:
                                 idxs_, lbs = idxs_[:-1], lbs[:-1]
-                            dnm = self.tokenizer.ID2DNM[inputs['dataset_id'][i].item()]
-                            lb2feat_str: List[str] = self.tokenizer.cache[dnm]['label2feature_str']
+
+                            dset_id = dataset_id[i].item()
+                            dnm_ = config('benchmark.dataset_id2name')[dset_id]
+                            assert dnm_ == 'ag_news'
+                            # TODO: temporary, debugging with ag_news, with labels not in alphabetical order
+                            lb2feat_str: List[str] = ['World News', 'Sports', 'Business', 'Science & Technology']
                             if self.tokenizer.decode(lbs) in lb2feat_str:
                                 return dict(idxs=idxs_, labels=lbs)
 
@@ -871,9 +891,12 @@ class CustomTrainer(Trainer):
                 sample2idxs_n_lbs = {k: v for k, v in sample2idxs_n_lbs.items() if v is not None}
                 d_log['classification_acc_meta'] = dict(
                     # prediction ids match label ids
-                    n_acc=sum(preds[i_sample, d['idxs']] == d['labels'] for i_sample, d in sample2idxs_n_lbs.items()),
+                    n_acc=sum(
+                        preds[i_sample, d['idxs']].tolist() == d['labels']
+                        for i_sample, d in sample2idxs_n_lbs.items()
+                    ),
                     n_total=len(sample2idxs_n_lbs),  # Number of samples with complete label
-                    n_missing=inputs['input_ids'].shape[0]-len(sample2idxs_n_lbs)
+                    n_missing=dataset_id.numel()-len(sample2idxs_n_lbs)
                 )
         # ========================== End of added ==========================
 
@@ -988,17 +1011,17 @@ if __name__ == '__main__':
     seed = config('random-seed')
     transformers.set_seed(seed)
 
-    # dnm = 'ag_news'
-    dnm = 'benchmark_joined'
+    dnm = 'ag_news'
+    # dnm = 'benchmark_joined'
 
-    nm = 'debug'
+    # nm = 'debug'
     # nm = 'debug-gpt-ori'
     # nm = 'debug-large'
-    # nm = 'gpt2'
+    nm = 'gpt2'
 
-    n = 8
+    # n = 1
     # n = 1024
-    # n = None
+    n = None
     model, tokenizer, data_collator, tr_args, dset_tr, dset_vl, trainer = get_all_setup(
         nm, dnm, do_eval=False, custom_logging=True, n_sample=n, random_seed=seed
     )
