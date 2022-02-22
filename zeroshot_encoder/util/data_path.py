@@ -11,6 +11,7 @@ DIR_PROJ = paths[-2]
 PKG_NM = paths[-1]  # Package/Module name
 
 DIR_MDL = 'models'  # Save models
+DIR_DSET = 'dataset'
 
 
 if __name__ == '__main__':

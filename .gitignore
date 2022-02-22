@@ -8,6 +8,8 @@ datasets/
 models/
 test_lang*
 examples/
+gpt2_training_sanitycheck.py
+language_modeling_from_scratch.ipynb
 
 
 # Byte-compiled / optimized / DLL files
