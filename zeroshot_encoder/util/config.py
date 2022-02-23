@@ -74,15 +74,15 @@ config = {
     },
     'benchmark': dict(
         datasets=dict(
-            clinc=dict(path='intent/clinc'),
-            sgd=dict(path='intent/sgd'),
-            slurp=dict(path='intent/slurp'),
-            sentiment=dict(path='sentiment/emotion'),
-            go_emotion=dict(path='sentiment/go_emotion'),
-            sentiment_tweets_2020=dict(path='sentiment/sentiment_tweets_2020'),
-            ag_news=dict(path='topic/ag_news'),
-            dbpedia=dict(path='topic/dbpedia'),
-            yahoo=dict(path='topic/yahoo')
+            clinc=dict(path='clinc_150', type='intent'),
+            sgd=dict(path='sgd', type='intent'),
+            slurp=dict(path='slurp', type='intent'),
+            sentiment=dict(path='emotion', type='sentiment'),
+            go_emotion=dict(path='go_emotion', type='sentiment'),
+            sentiment_tweets_2020=dict(path='sentiment_tweets_2020', type='sentiment'),
+            ag_news=dict(path='ag_news', type='topic'),
+            dbpedia=dict(path='dbpedia', type='topic'),
+            yahoo=dict(path='yahoo', type='topic')
         ),
         dataset_ext='json'  # all in json
     ),
@@ -99,7 +99,7 @@ def path2dataset_labels(path: str) -> Dict[str, List[str]]:
         dsets: Dict = json.load(fl)
 
     def samples2lbs(dset: List) -> List[str]:
-        return sorted(lb for (txt, lb) in dset)  # Heuristic on how the `json` are stored
+        return sorted(set(lb for (txt, lb) in dset))  # Heuristic on how the `json` are stored
     return {split: samples2lbs(dset) for split, dset in dsets.items()}  # Labels for each split
 
 
