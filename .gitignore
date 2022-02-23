@@ -4,12 +4,14 @@ dataset/*.json
 .idea/
 .vscode/
 .DS_Store
+dataset/
 datasets/
 models/
 test_lang*
 examples/
 gpt2_training_sanitycheck.py
 language_modeling_from_scratch.ipynb
+gpt2-wikitext2/
 
 
 # Byte-compiled / optimized / DLL files

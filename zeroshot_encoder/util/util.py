@@ -91,6 +91,10 @@ def config(attr):
     return get(config.config, attr)
 
 
+def get_hostname() -> str:
+    return os.uname().nodename
+
+
 def now(as_str=True, sep=':'):
     d = datetime.datetime.now()
     return d.strftime(f'%Y-%m-%d %H{sep}%M{sep}%S') if as_str else d  # Considering file output path
