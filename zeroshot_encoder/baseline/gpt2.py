@@ -1094,7 +1094,6 @@ if __name__ == '__main__':
     md, tkzer, data_collator, tr_args, dset_tr, dset_vl, trainer = get_all_setup(
         nm, dnm, do_eval=False, custom_logging=True, n_sample=n, random_seed=seed
     )
-    # ic(model_param_size(model))
     trainer.train()
     trainer.save_model(os.path.join(trainer.args.output_dir))
     trainer.evaluate()
