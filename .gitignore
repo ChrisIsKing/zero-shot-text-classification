@@ -1,6 +1,6 @@
 venv
 clinc_test
-dataset/get_data.py
+dataset/*.json
 .idea/
 .vscode/
 .DS_Store
