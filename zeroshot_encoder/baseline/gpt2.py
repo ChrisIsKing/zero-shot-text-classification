@@ -326,7 +326,7 @@ def get_train_setup(name='gpt2', do_eval=True) -> TrainingArguments:
             learning_rate=3e-5,
             batch_size=32,
             weight_decay=1e-2,
-            num_train_epochs=10,
+            num_train_epochs=5,
             lr_scheduler_type=SchedulerType.COSINE,
         ),
         'gpt2-medium': dict(
@@ -453,9 +453,10 @@ class TrainPlot:
     """
     def __init__(
             self,
-            title='Transformer Training', train_args: TrainingArguments = None, meta: Dict = None,
+            title='Transformer Training', train_args: TrainingArguments = None, out_dir: str = None, meta: Dict = None,
             interactive=True, save_plot=True
     ):
+        assert train_args is not None and out_dir is not None
         self.title = title
         self.axes = None
         self.lines = []
@@ -471,6 +472,8 @@ class TrainPlot:
         n_data, md_sz, lr, bsz, n_ep = (
             meta[k] for k in ('#data', 'model size', 'learning rate', 'batch shape', '#epochs')
         )
+
+        self.out_dir = out_dir
         self.title_plot = rf'{title}, $n={n_data}$, #position = ${md_sz}$ ' \
                           + rf'$\alpha = {lr}$, batch shape=${bsz}$, #epochs=${n_ep}$'
         self.title_save = f'{title}, n={n_data}, l={md_sz}, a={lr}, bsz={bsz}, n_ep={n_ep}, {now(sep="-")}'
@@ -534,7 +537,7 @@ class TrainPlot:
         plt.show()
 
     def save(self):
-        plt.savefig(os.path.join(self.train_args.output_dir, f'{self.title_save}.png'), dpi=300)
+        plt.savefig(os.path.join(self.out_dir, f'{self.title_save}.png'), dpi=300)
 
 
 class MyLoggingCallback(TrainerCallback):
@@ -594,13 +597,18 @@ class MyLoggingCallback(TrainerCallback):
 
         self.log_fnm_tpl = f'{name}, n={n_data}, l={md_sz}, a={lr}, bsz={self.bsz}, n_ep={n_ep}, {{}}'
         self.log_fnm = None  # Current logging file name template & file instance during training
+        paths_ = self.parent_trainer.args.output_dir.split(os.sep)
+        path_proj = paths_[paths_.index(DIR_PROJ):]
+        self.out_dir = os.path.join(PATH_BASE, *path_proj)  # Keep the logging & plotting inside project directory
 
         self.mode = mode
         self.train_begin, self.train_end = None, None
         self.t_strt, self.t_end = None, None
 
         self.interactive = interactive
-        self.plot = TrainPlot(title=name, train_args=parent_trainer.args, meta=self.train_meta, save_plot=save_plot)
+        self.plot = TrainPlot(
+            title=name, train_args=parent_trainer.args, out_dir=self.out_dir, meta=self.train_meta, save_plot=save_plot
+        )
 
     def set_mode(self, mode: str):
         """
@@ -614,7 +622,8 @@ class MyLoggingCallback(TrainerCallback):
 
         self.log_fnm = self.log_fnm_tpl.format(now(sep="-"))
         # Set file write logging
-        self.fl_handler = logging.FileHandler(os.path.join(self.parent_trainer.args.output_dir, f'{self.log_fnm}.log'))
+        os.makedirs(self.out_dir, exist_ok=True)
+        self.fl_handler = logging.FileHandler(os.path.join(self.out_dir, f'{self.log_fnm}.log'))
         self.fl_handler.setLevel(logging.DEBUG)
         self.fl_handler.setFormatter(MyFormatter(with_color=False))
         self.logger_fl.addHandler(self.fl_handler)

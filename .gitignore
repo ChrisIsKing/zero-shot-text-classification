@@ -4,6 +4,7 @@ dataset/get_data.py
 .idea/
 .vscode/
 .DS_Store
+dataset/
 datasets/
 models/
 test_lang*
