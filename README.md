@@ -10,7 +10,7 @@ Python version `3.9.7`.
 $ pip3 install -r requirements.txt
 ```
 ### Universal Text Classification Dataset
-UTCD is a compilation of 9 classification datasets spanning 3 categories of Sentiment, Intent/Dialogue and Topic classification. UTCD focuses on the task of zero-shot text classification where the candidate labels are desctiptive of the text being classified. UTCD can be downloaded [here](https://drive.google.com/file/d/1neRj5GnePbCE9vRaQYgDYLMoAdGVlWca/view?usp=sharing)
+UTCD is a compilation of 9 classification datasets spanning 3 categories of Sentiment, Intent/Dialogue and Topic classification. UTCD focuses on the task of zero-shot text classification where the candidate labels are desctiptive of the text being classified. UTCD consists of ~ 2.3M/200K train/test examples and can be downloaded [here](https://drive.google.com/file/d/1qISYYoQNGXtmGWrCsKoK-fBKt8MHXqR7/view?usp=sharing)
 
 UTCD Datasets:
 
