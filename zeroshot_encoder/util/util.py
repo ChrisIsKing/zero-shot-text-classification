@@ -330,16 +330,18 @@ def get_output_base():
 
 def process_benchmark_dataset(join=False):
     ext = config('benchmark.dataset_ext')
-    path_dset = os.path.join(get_output_base(), DIR_PROJ, DIR_DSET)
+    path_dsets = os.path.join(PATH_BASE, DIR_PROJ, DIR_DSET)
+    path_out = os.path.join(get_output_base(), DIR_PROJ, DIR_DSET)
 
     def path2dsets(dnm: str, d_dset: Dict) -> Union[datasets.DatasetDict, Dict[str, pd.DataFrame]]:
         path = d_dset['path']
-        path = os.path.join(path_dset, f'{path}.{ext}')
+        path = os.path.join(path_dsets, f'{path}.{ext}')
         with open(path) as f:
             dsets_: Dict = json.load(f)
         d_lbs = config(f'benchmark.datasets.{dnm}.labels')
 
         def json2dset(split: str, dset: List) -> Union[datasets.Dataset, pd.DataFrame]:
+            assert all(sample[0] != '' for sample in dset)
             dset = [dict(text=txt, label=lb) for (txt, lb) in dset]  # Heuristic on how the `json` are stored
             df_ = pd.DataFrame(dset)
             if join:  # Leave processing labels til later
@@ -380,10 +382,10 @@ def process_benchmark_dataset(join=False):
         tr = dfs2dset(pre_concat(dnm, dsets['train']) for dnm, dsets in d_dsets.items())
         vl = dfs2dset(pre_concat(dnm, dsets['test']) for dnm, dsets in d_dsets.items())
         dsets = datasets.DatasetDict(train=tr, test=vl)
-        dsets.save_to_disk(os.path.join(path_dset, 'processed', 'benchmark_joined'))
+        dsets.save_to_disk(os.path.join(path_out, 'processed', 'benchmark_joined'))
     else:
         for dnm, dsets in d_dsets.items():
-            dsets.save_to_disk(os.path.join(path_dset, 'processed', dnm))
+            dsets.save_to_disk(os.path.join(path_out, 'processed', dnm))
 
 
 def map_ag_news():
@@ -414,7 +416,7 @@ if __name__ == '__main__':
 
     def sanity_check():
         dset = datasets.load_from_disk(
-            os.path.join(PATH_BASE, DIR_PROJ, DIR_DSET, 'processed', 'benchmark_joined')
+            os.path.join(get_output_base(), DIR_PROJ, DIR_DSET, 'processed', 'benchmark_joined')
         )['test']
         lbs = dset.features['label']
         ic(lbs)
