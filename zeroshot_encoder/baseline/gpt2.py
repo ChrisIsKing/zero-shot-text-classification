@@ -1,4 +1,9 @@
-from typing import Callable
+"""
+Implementation of NVIDIA-GPT2 approach.
+
+[Zero-shot Text Classification With Generative Language Models](https://arxiv.org/abs/1912.10165)
+"""
+
 from warnings import warn
 
 from torch import nn
@@ -10,44 +15,12 @@ from transformers import GPT2Model, GPT2LMHeadModel  # LMHead for CLM training
 from transformers import Trainer, TrainingArguments, SchedulerType, TrainerCallback
 from transformers import DataCollatorForLanguageModeling
 from transformers.training_args import OptimizerNames
-from datasets import load_dataset, load_metric
+from datasets import load_metric
 
-from zeroshot_encoder.util import *
+from zeroshot_encoder.preprocess import *
 
 
 PT_LOSS_PAD = -100  # Pytorch indicator value for ignoring loss, used in huggingface for padding tokens
-
-
-def get_dset(
-        dataset_name='ag_news',
-        map_func: Callable = None, remove_columns: Union[str, List[str]] = None,
-        n_sample: int = None, random_seed: int = None, fast=True
-) -> Tuple[datasets.Dataset, ...]:
-    if dataset_name == 'benchmark_joined':
-        dset = datasets.load_from_disk(os.path.join(PATH_BASE, DIR_PROJ, DIR_DSET, 'processed', 'benchmark_joined'))
-    else:
-        dset = load_dataset(dataset_name)
-    tr, vl = dset['train'], dset['test']
-    if n_sample is not None:
-        tr = tr.select(range(n_sample))
-        vl = vl.select(range(n_sample))
-    if map_func is not None:
-        num_proc = None
-        n_cpu = os.cpu_count()
-        if fast and n_cpu >= 2:
-            num_proc = n_cpu // 2
-            datasets.set_progress_bar_enabled(False)
-
-        tr = tr.map(map_func, batched=True, remove_columns=remove_columns, num_proc=num_proc)
-        vl = vl.map(map_func, batched=True, remove_columns=remove_columns, num_proc=num_proc)
-        datasets.set_progress_bar_enabled(True)
-
-        if 'dataset_name' in tr.column_names:
-            tr = tr.remove_columns('dataset_name')  # TODO: Why is it added in the first place?
-            vl = vl.remove_columns('dataset_name')
-    if random_seed:
-        tr, vl = tr.shuffle(seed=random_seed), vl.shuffle(seed=random_seed)
-    return tr, vl
 
 
 class ZsGPT2Tokenizer(GPT2TokenizerFast):
@@ -107,7 +80,11 @@ class ZsGPT2Tokenizer(GPT2TokenizerFast):
             ZsGPT2Tokenizer.SPEC_TOKS[k] for k in ('type_ques', 'type_text', 'type_answ')
         )  # Type tokens
 
-        self.warned_desc = set()  # Warning for each dataset happens once
+        self.warned_desc = set()  # Warning for each dataset happens once    @property
+
+    @property
+    def max_len_single_sentence(self) -> int:
+        return self.model_max_length - 2 * 3  # 3 pairs of (special start token, eos token)
 
     def _call_paren(self, s: str, **kwargs) -> List[int]:
         return super().__call__(s, **kwargs)['input_ids']
@@ -137,37 +114,46 @@ class ZsGPT2Tokenizer(GPT2TokenizerFast):
         def call_single(i, dataset_id: int, text: str, label: int):
             dset_nm = config('benchmark.dataset_id2name')[dataset_id]
             if is_benchmark:
-                labels = config(f'benchmark.datasets.{dset_nm}.labels.train')  # TODO: Assume `train` split
-                n_cls = len(labels)
-                d_lb2desc, lb_int2desc = config(f'baselines.gpt2-nvidia'), None
-                # The ordering indicates int<=>str label mapping, see `process_benchmark_dataset`
-                if dset_nm in d_lb2desc:  # TODO: make descriptors for each dataset?
-                    lb_int2desc = d_lb2desc[dset_nm]
-                    lb_int2desc = {i: lb_int2desc[s] for i, s in enumerate(labels)}
-                else:
-                    lb_int2desc = {i: lb for i, lb in enumerate(labels)}
-                    if dset_nm not in self.warned_desc:
-                        warn(f'Labels for dataset {dset_nm} may not be descriptive with labels {labels}')
-                        self.warned_desc.add(dset_nm)
-
+                descs = config(f'benchmark.datasets.{dset_nm}.labels.train')  # Descriptions; TODO: Assume `train` split
+                n_cls = len(descs)
                 # `label` is shared across all datasets, map to local label within dataset
                 if self.cache_bm is None:
                     self.cache_bm = datasets.load_from_disk(
-                        os.path.join(PATH_BASE, DIR_PROJ, DIR_DSET, 'processed', 'benchmark_joined')
+                        os.path.join(get_output_base(), DIR_PROJ, DIR_DSET, 'processed', 'benchmark_joined')
                     )['train'].features['label']  # TODO: assume `train` split
-                label = labels.index(self.cache_bm.int2str(label))  # Index is int label
+                # The ordering indicates int<=>str label mapping, i.e., index is int label,
+                # see `process_benchmark_dataset`
+
+                def lb_int2desc(lb: int) -> str:
+                    """
+                    Map from local dataset label ordinal, in range(n_cls) to the descriptor
+                    """
+                    return descs[lb]
+                answer = self.cache_bm.int2str(label)
             else:
-                n_cls, lb_int2desc = (self.cache[dset_nm][k] for k in ('n_classes', 'label2feature_str'))
+                n_cls, label2feature_str = (self.cache[dset_nm][k] for k in ('n_classes', 'label2feature_str'))
+
+                def lb_int2desc(lb: int) -> str:
+                    return label2feature_str[lb]
+                answer = label2feature_str[label]
 
             idx_lbs = np.arange(n_cls)
             np.random.shuffle(idx_lbs)
-            strs_lb = ' , '.join(f'" {lb_int2desc[idx]} "' for idx in idx_lbs)
+            strs_lb = ' , '.join(f'" {lb_int2desc(idx)} "' for idx in idx_lbs)
             question = self.templates[idxs_tpl[i]].format(strs_lb)
-            answer = lb_int2desc[label]
 
             ids_ques = self._call_paren(question, **kwargs)
             ids_text = self._call_paren(text, **kwargs)
             ids_answ = self._call_paren(answer, **kwargs)
+            ln_q, ln_t, ln_a = len(ids_ques), len(ids_text), len(ids_answ)
+            ln_total = ln_q + ln_t + ln_a
+            if ln_total > self.max_len_single_sentence:
+                # Crop the text portion, keep question and label intact, i.e., ensure no classification label is cropped
+                ln_t_ = self.max_len_single_sentence - (ln_q + ln_a)
+                assert ln_t_ > 0
+                warn(f'Sample longer than model max sequence length: {ln_total+6} > {self.model_max_length}'
+                     f' - Text portion cropped: {ln_t} > {ln_t_}')
+                ids_text = ids_text[:ln_t_]
             # Number of contex tokens, up until answer token, inclusive
             n_ques, n_text, n_answ = (1 + len(ids_ques) + 1), (1 + len(ids_text) + 1), (1 + len(ids_answ) + 1)
             n_cont = n_ques + n_text + 1
@@ -209,55 +195,58 @@ class ZsGPT2Tokenizer(GPT2TokenizerFast):
             ))]
             return BatchEncoding({k: [d[k] for d in ds] for k in ds[0]})  # Stack all the ids
         else:
-            return BatchEncoding(call_single(0, *[samples[k] for k in ['dataset_name', 'text', 'label']]))
+            return BatchEncoding(call_single(0, *[samples[k] for k in ['dataset_id', 'text', 'label']]))
 
 
 class ZsGPT2Model(GPT2Model):
     """
     Modifying the `GPT2Model` for 0-shot classification paper
     """
-    def __init__(self, config):
-        super().__init__(config)
+    def __init__(self, config_):
+        super().__init__(config_)
         # Override internal state, instead of adding internal state, so that forward pass stays untouched
         # Double the positional embedding matrix, as if stacking the context & output embedding matrices together
         # See positional id assignment in `ZsGPT2Tokenizer`
-        self.wpe = nn.Embedding(config.max_position_embeddings*2, self.embed_dim)
+        self.wpe = nn.Embedding(config_.max_position_embeddings*2, self.embed_dim)
 
 
 class ZsGPT2LMHeadModel(GPT2LMHeadModel):
     """
     So that `ZsGPT2Model` is loaded
     """
-    def __init__(self, config):
-        super().__init__(config)
-        self.transformer = ZsGPT2Model(config)  # Override internal state
+    def __init__(self, config_):
+        super().__init__(config_)
+        self.transformer = ZsGPT2Model(config_)  # Override internal state
 
     def forward(self, dataset_id=None, **kwargs):
         # Function override to ignore `dataset_id`, not need in learning; Just need to pass value for evaluation
-        # ids = kwargs['input_ids']  # Sanity check
-        # for ids_ in ids:
-        #     print(tokenizer.decode(ids_))
+        ids, d_ids, = kwargs['input_ids'].detach(), kwargs['dataset_id'].detach()  # Sanity check
+        pad = tkzer.enc_spec(tkzer.pad_token)
+        id2name = config('benchmark.dataset_id2name')
+        for d_id, ids_ in zip(ids, d_ids):
+            print(id2name[d_id], end=' ')
+            print(tkzer.tokenize(tkzer.decode(ids_[ids_ != pad])))
         return super().forward(**kwargs)
 
     @classmethod
     def from_pretrained(cls, *args, **kwargs):
-        md = super().from_pretrained(*args, **kwargs)  # Loads the GPT2LMHeadModel while ignoring `wpe.weight`
+        md_ = super().from_pretrained(*args, **kwargs)  # Loads the GPT2LMHeadModel while ignoring `wpe.weight`
         md_ori = GPT2LMHeadModel.from_pretrained(*args, **kwargs)
         weight_pretrained = md_ori.transformer.wpe.state_dict()['weight']
         # Check `vars(md_ori.transformer.wpe)`, weight is the only parameter
         del md_ori
 
         with torch.no_grad():  # Crude loading the pretrained weights, to each half of the doubled positional embedding
-            n_tok = md.transformer.wpe.weight.shape[0]
+            n_tok = md_.transformer.wpe.weight.shape[0]
             if n_tok == 1024 * 2:
-                md.transformer.wpe.weight[:1024, :] = weight_pretrained
-                md.transformer.wpe.weight[1024:, :] = weight_pretrained
+                md_.transformer.wpe.weight[:1024, :] = weight_pretrained
+                md_.transformer.wpe.weight[1024:, :] = weight_pretrained
             else:
                 warn('Wrong model size, positional not loaded. This is expected in debugging')
-        return md
+        return md_
 
 
-def tokenize_func(tokenizer_, dataset_name='ag_news', max_length=None):
+def tokenize_func(tokenizer_: ZsGPT2Tokenizer, dataset_name='ag_news', max_length=None):
     def _tokenize_func(sample: Dict[str, List]):
         """
         :param sample: A batch of data samples
@@ -288,7 +277,7 @@ def get_model_n_tokenizer(model_name='gpt2') -> Tuple[
         model_ = ZsGPT2LMHeadModel.from_pretrained(pretrained_model_name, config=conf, ignore_mismatched_sizes=True)
         model_max_length = n_token
     else:
-        model_max_length = 512  # Reduce max seq len to 512 as in paper
+        model_max_length = 1024  # Keep max seq len of 1024, instead of 512 in paper, for longer texts & more labels
         conf = AutoConfig.from_pretrained(model_name)
         conf.update(dict(use_cache=False))  # For enabling `gradient_checkpointing`, see `get_train_setup`
         # Keep the 1024 token length, reducing to 512 tokens involves loading part of pretrained weights, complicated
@@ -333,7 +322,7 @@ def get_train_setup(model_name='gpt2', do_eval=True) -> TrainingArguments:
             batch_size=32,
             gradient_accumulation_steps=4,  # Effectively batch size 128 as in paper, to fit in memory
             weight_decay=1e-2,
-            num_train_epochs=1,
+            num_train_epochs=50,
             lr_scheduler_type=SchedulerType.COSINE,
         )
     }
@@ -341,15 +330,8 @@ def get_train_setup(model_name='gpt2', do_eval=True) -> TrainingArguments:
         'learning_rate', 'batch_size', 'weight_decay',
         'num_train_epochs', 'lr_scheduler_type', 'gradient_accumulation_steps'
     ])
-
-    if get_hostname() == 'clarity2':
-        # Remote machine `clarity2`, save the models somewhere else to save `/home` disk space
-        out_base = os.path.join('/data')
-    else:
-        out_base = PATH_BASE
-
     args = dict(
-        output_dir=os.path.join(out_base, DIR_PROJ, DIR_MDL, 'gpt2', model_name, now(sep='-')),
+        output_dir=os.path.join(get_output_base(), DIR_PROJ, DIR_MDL, 'gpt2', model_name, now(sep='-')),
         do_train=True,
         do_eval=do_eval,
         evaluation_strategy='steps' if do_eval else 'no',
@@ -370,8 +352,7 @@ def get_train_setup(model_name='gpt2', do_eval=True) -> TrainingArguments:
         log_level='warning',
         logging_strategy='steps',
         logging_steps=1,
-        save_steps=1000,
-        save_total_limit=32,
+        save_strategy='epoch',
         fp16=torch.cuda.is_available(),
         fp16_full_eval=torch.cuda.is_available(),
         optim=OptimizerNames.ADAMW_TORCH,
@@ -403,10 +384,7 @@ def compute_metrics(eval_pred):
 
 def get_all_setup(
         model_name, dataset_name: str = 'ag_news', n_sample=None, random_seed=None, do_eval=True, custom_logging=True
-) -> Tuple[
-    GPT2LMHeadModel, GPT2TokenizerFast, DataCollatorForLanguageModeling, TrainingArguments,
-    datasets.Dataset, datasets.Dataset, Trainer
-]:
+) -> Tuple[GPT2LMHeadModel, GPT2TokenizerFast, datasets.Dataset, datasets.Dataset, Trainer]:
     if model_name == 'debug-gpt-ori':  # Sanity check: As if keep training GPT-2, with padding for simplicity
         conf = AutoConfig.from_pretrained('gpt2')
         conf.update(dict(use_cache=False))
@@ -438,7 +416,8 @@ def get_all_setup(
 
     dset_tr_, dset_vl_ = get_dset(
         dataset_name=dataset_name, map_func=map_func, remove_columns=['label', 'text'],
-        n_sample=n_sample, random_seed=random_seed
+        n_sample=n_sample, random_seed=random_seed,
+        fast='debug' not in model_name
     )
     trainer_args = dict(
         model=model_, args=train_args_, data_collator=data_collator_,
@@ -448,7 +427,7 @@ def get_all_setup(
         tokenizer=tokenizer_, custom_logging=custom_logging, compute_cls_acc=model_name != 'debug-gpt-ori',
         **trainer_args
     )
-    return model_, tokenizer_, data_collator_, train_args_, dset_tr_, dset_vl_, trainer_
+    return model_, tokenizer_, dset_tr_, dset_vl_, trainer_
 
 
 class TrainPlot:
@@ -578,21 +557,23 @@ class MyLoggingCallback(TrainerCallback):
         self.logger_fl.setLevel(logging.DEBUG)
         self.fl_handler = None
 
-        self.out_dict: Dict[str, Union[str, int, float, List]] = None
+        self.out_dict = None
+        self.out_dict_tr: Dict[str, Union[str, int, float, List]] = None
         self.is_compute_loss_on_train = True
+        self.k_acc = 'acc_meta'
         self.k_cls = 'classification_acc_meta'  # See `CustomTrainer`
         self.k_cls_eval = f'{self.k_cls}_eval'
 
         self.parent_trainer = parent_trainer
         self.do_eval = do_eval
-        args, dset_tr__, dset_vl_, md, tokzer = (
+        args, dset_tr__, dset_vl_, md_, tokzer = (
             getattr(parent_trainer, k) for k in ['args', 'train_dataset', 'eval_dataset', 'model', 'tokenizer']
         )
         self.n_eval = len(dset_vl_)
         lr, n_ep = args.learning_rate, args.num_train_epochs
         self.bsz = args.per_device_train_batch_size * args.gradient_accumulation_steps
         seq_max_len = len(dset_tr__[0]['input_ids'])
-        n_data, md_sz = len(dset_tr__), md.config.n_positions
+        n_data, md_sz = len(dset_tr__), md_.config.n_positions
         self.n_step = max(math.ceil(len(dset_tr__) // self.bsz), 1) * n_ep  # #step/epoch at least 1
         self.train_meta = OrderedDict([
             ('#data', n_data), ('model size', md_sz),
@@ -659,7 +640,7 @@ class MyLoggingCallback(TrainerCallback):
                 self.plot.plot_single(self.log_hist)
         self.mode = 'eval'
 
-    def on_log(self, args: TrainingArguments, state, control, logs: Dict = None, **kwargs):
+    def on_log(self, args: TrainingArguments, state, control, logs_: Dict = None, **kwargs):
         def out_dict2str(d: Dict, return_wo_color: bool = False):
             keys_ = [
                 'step', 'epoch', 'train_loss', 'eval_loss', 'train_acc', 'eval_acc',
@@ -693,14 +674,16 @@ class MyLoggingCallback(TrainerCallback):
             if self.interactive:
                 self.plot.update(self.log_hist)
 
-        def cls_stats2dict(d_stats: List[Dict], n_sample: int, prefix: str) -> Dict:
+        def cls_stats2dict(out_dict: Dict, n_sample: int, prefix: str) -> Dict:
             """
-            Convert `classification_acc_meta` dict to stats for logging
+            Convert `acc_meta`, `classification_acc_meta` dict to stats for logging
             """
-            stats: pd.Series = pd.DataFrame(d_stats).sum(axis=0)
+            stats_acc: pd.Series = pd.DataFrame(out_dict[self.k_acc]).sum(axis=0)
+            stats_acc_cls: pd.Series = pd.DataFrame(out_dict[self.k_cls]).sum(axis=0)
             return {
-                f'{prefix}_acc_cls': stats.n_acc/stats.n_total if stats.n_total != 0 else 0,
-                f'{prefix}_acc_mis': stats.n_missing/n_sample  # As a fraction
+                f'{prefix}_acc': stats_acc.n_acc / stats_acc.n_total,
+                f'{prefix}_acc_cls': (stats_acc_cls.n_acc/stats_acc_cls.n_total) if stats_acc_cls.n_total != 0 else 0,
+                f'{prefix}_acc_mis': stats_acc_cls.n_missing/n_sample  # As a fraction
             }
 
         def set_eval_cls_acc():  # TODO: support gradient accumulation
@@ -719,16 +702,16 @@ class MyLoggingCallback(TrainerCallback):
             if self.mode == 'train':
                 step = state.global_step
                 if self.do_eval:
-                    if 'src' in logs and logs['src'] == 'compute_loss':  # Custom added metric computation
+                    if 'src' in logs_ and logs_['src'] == 'compute_loss':  # Custom added metric computation
                         if step == 0:  # Before model runs, initial call
                             if not self.called_val_init:  # Prevents circular logging call, see Trainer.evaluate()
                                 # Got to here, cos the 1st, training compute_loss logging
                                 assert self.is_compute_loss_on_train
                                 self.called_val_init = True
-                                tr_acc, tr_loss, n_ep = (logs[k] for k in ('acc', 'loss', 'epoch'))
-                                self.out_dict = {
+                                tr_acc, tr_loss, n_ep = (logs_[k] for k in ('acc', 'loss', 'epoch'))
+                                self.out_dict: Dict[str, Union[str, int, float, List]] = {
                                     **dict(step=step, epoch=0, train_acc=tr_acc, train_loss=tr_loss,),
-                                    **cls_stats2dict(logs[self.k_cls], self.bsz, prefix='train')
+                                    **cls_stats2dict(logs_[self.k_cls], self.bsz, prefix='train')
                                 }
 
                                 # Prep for Trainer internal evaluation call
@@ -749,30 +732,30 @@ class MyLoggingCallback(TrainerCallback):
                             elif not self.is_compute_loss_on_train:  # `compute_loss` ran on evaluation set
                                 # => Keep track of the batch-wise classification accuracy
                                 if self.k_cls_eval not in self.out_dict:
-                                    self.out_dict[self.k_cls_eval] = [logs[self.k_cls]]
+                                    self.out_dict[self.k_cls_eval] = [logs_[self.k_cls]]
                                 else:
-                                    self.out_dict[self.k_cls_eval].append(logs[self.k_cls])
+                                    self.out_dict[self.k_cls_eval].append(logs_[self.k_cls])
                         else:  # Need to look for the accuracy calculated for the training batch
                             # Heuristic: 1st call to `compute_loss` corresponds to training
                             if self.is_compute_loss_on_train:
                                 self.is_compute_loss_on_train = False
-                                acc, loss = logs.get('acc', None), logs.get('loss', None)
+                                acc, loss = logs_.get('acc', None), logs_.get('loss', None)
                                 assert acc is not None and loss is not None
                                 if self.out_dict is None:
                                     # Now is the 1st call, after logging for last batch completes
                                     self.out_dict = {
                                         **dict(step=step, train_acc=acc, train_loss=loss),
-                                        **cls_stats2dict(logs[self.k_cls], self.bsz, prefix='train')
+                                        **cls_stats2dict(logs_[self.k_cls], self.bsz, prefix='train')
                                     }
                             else:  # On eval set, keep track like above
                                 if self.k_cls_eval not in self.out_dict:
-                                    self.out_dict[self.k_cls_eval] = [logs[self.k_cls]]
+                                    self.out_dict[self.k_cls_eval] = [logs_[self.k_cls]]
                                 else:
-                                    self.out_dict[self.k_cls_eval].append(logs[self.k_cls])
-                    elif 'loss' in logs:  # Internal training log
+                                    self.out_dict[self.k_cls_eval].append(logs_[self.k_cls])
+                    elif 'loss' in logs_:  # Internal training log
                         # Edge case step = 1: Before training start, i.e. step=1, stats for training already logged,
                         # But log anyway, for after gradient update, evaluation loss changes
-                        tr_loss, lr, n_ep = (logs.get(k, None) for k in ('loss', 'learning_rate', 'epoch'))
+                        tr_loss, lr, n_ep = (logs_.get(k, None) for k in ('loss', 'learning_rate', 'epoch'))
                         assert all(elm is not None for elm in (tr_loss, lr, n_ep))
                         tr_loss_compute: int = self.out_dict.get('train_loss', None)
                         # Without overriding `_maybe_log_save_evaluate`,
@@ -781,10 +764,10 @@ class MyLoggingCallback(TrainerCallback):
                         # See Trainer.train(); compute_loss executes before step increments
                         assert self.out_dict['step'] == step-1  # Override step & loss
                         self.out_dict.update(dict(step=step, train_loss=tr_loss, lr=lr, epoch=n_ep))
-                    elif 'eval_loss' in logs:
+                    elif 'eval_loss' in logs_:
                         if step != 0:
                             vl_loss, vl_acc, n_ep_ = (
-                                logs.get(k, None) for k in ('eval_loss', 'eval_accuracy', 'epoch')
+                                logs_.get(k, None) for k in ('eval_loss', 'eval_accuracy', 'epoch')
                             )
                             assert all(elm is not None for elm in (vl_loss, vl_acc, n_ep_))
                             assert step == self.out_dict['step']
@@ -796,37 +779,46 @@ class MyLoggingCallback(TrainerCallback):
                             log_update(self.out_dict)
                             self.out_dict = None
                             self.is_compute_loss_on_train = True
-                    elif any('runtime' in k for k in logs.keys()):
-                        log_default(logs)
+                    elif any('runtime' in k for k in logs_.keys()):
+                        log_default(logs_)
                     else:
-                        print('unhandled case', logs)
+                        print('unhandled case', logs_)
                         exit(1)
                 else:  # Only training without evaluation supported
-                    if 'src' in logs and logs['src'] == 'compute_loss':
+                    if 'src' in logs_ and logs_['src'] == 'compute_loss':
                         # For gradient_accumulation, many batches of `compute_loss` may be called,
                         # before going into train logging
-                        tr_acc, tr_loss, n_ep = (logs[k] for k in ('acc', 'loss', 'epoch'))
-                        # Loss here is per batch, not per gradient update
-                        self.out_dict = dict(step=step, epoch=n_ep, train_acc=tr_acc)
-                        if self.parent_trainer.compute_cls_acc:
-                            if self.k_cls not in self.out_dict:  # Aggregate classification accuracy counts
-                                self.out_dict[self.k_cls] = [logs[self.k_cls]]
-                            else:
-                                self.out_dict[self.k_cls].append(logs[self.k_cls])
-                    elif 'loss' in logs:  # The Trainer default training loss logging
-                        self.out_dict.update(cls_stats2dict(self.out_dict[self.k_cls], self.bsz, prefix='train'))
-                        del self.out_dict[self.k_cls]
-                        self.out_dict['learning_rate'] = logs['learning_rate']
-                        self.out_dict['train_loss'] = logs['loss']
-                        log_update(self.out_dict)
-                    elif any('runtime' in k for k in logs.keys()):
-                        self.logger.info(log_dict(logs) if isinstance(logs, dict) else logs)
+                        # Loss here is per batch, not per gradient update, ignore
+                        if self.out_dict_tr is None:
+                            n_ep = logs_['epoch']
+                            self.out_dict_tr = {'step': step, 'epoch': n_ep, self.k_acc: [logs_[self.k_acc]]}
+                            # Aggregate accuracy & classification accuracy counts
+                            if self.parent_trainer.compute_cls_acc:
+                                self.out_dict_tr[self.k_cls] = [logs_[self.k_cls]]
+                        else:  # Later batch in the same gradient accumulation
+                            step_, n_ep = self.out_dict_tr['step'], self.out_dict_tr['epoch']
+                            n_ep_ = logs_['epoch']
+                            assert step_ == step and n_ep_ == n_ep
+                            self.out_dict_tr[self.k_acc].append(logs_[self.k_acc])
+                            if self.parent_trainer.compute_cls_acc:
+                                self.out_dict_tr[self.k_cls].append(logs_[self.k_cls])
+                    elif 'loss' in logs_:  # The Trainer default training loss logging
+                        # Take the averaging by parent `Trainer` for granted
+                        self.out_dict_tr.update(cls_stats2dict(self.out_dict_tr, self.bsz, prefix='train'))
+                        del self.out_dict_tr[self.k_acc]
+                        del self.out_dict_tr[self.k_cls]
+                        self.out_dict_tr['learning_rate'] = logs_['learning_rate']
+                        self.out_dict_tr['train_loss'] = logs_['loss']
+                        log_update(self.out_dict_tr)
+                        self.out_dict_tr = None  # Rest for next global step
+                    elif any('runtime' in k for k in logs_.keys()):
+                        self.logger.info(log_dict(logs_) if isinstance(logs_, dict) else logs_)
                     else:
-                        print('unhandled case', logs)
+                        print('unhandled case', logs_)
                         exit(1)
             else:
-                if 'src' not in logs:  # Skip custom compute_loss logging
-                    log_default(logs)
+                if 'src' not in logs_:  # Skip custom compute_loss logging
+                    log_default(logs_)
 
 
 class ColoredPrinterCallback(TrainerCallback):
@@ -845,9 +837,9 @@ class ColoredPrinterCallback(TrainerCallback):
             setattr(handler, hd_attr_nm, name)
             self.logger.addHandler(handler)
 
-    def on_log(self, args, state, control, logs=None, **kwargs):
+    def on_log(self, args, state, control, logs_=None, **kwargs):
         if state.is_local_process_zero:
-            self.logger.info(log_dict(logs) if isinstance(logs, dict) else logs)
+            self.logger.info(log_dict(logs_) if isinstance(logs_, dict) else logs_)
 
 
 class CustomTrainer(Trainer):
@@ -887,6 +879,7 @@ class CustomTrainer(Trainer):
 
         # ========================== Begin of added ==========================
         inputs: Dict[str, torch.Tensor]
+        d_log = None
         if self.custom_logging and 'labels' in inputs:
             preds = outputs.logits.detach().argmax(axis=-1)
             labels_ = inputs['labels'].detach()
@@ -896,7 +889,7 @@ class CustomTrainer(Trainer):
             mask_non_pad = labels_ != PT_LOSS_PAD  # Consider only the actual tokens for accuracy
             preds_non_pad, labels_non_pad = preds[mask_non_pad], labels_[mask_non_pad]
             matches: torch.Tensor = (preds_non_pad == labels_non_pad)
-            d_log = dict(src='compute_loss', acc=round((matches.sum() / preds_non_pad.numel()).item(), 4))
+            d_log = dict(src='compute_loss', acc_meta=dict(n_acc=matches.sum().item(), n_total=preds_non_pad.numel()))
 
             if self.compute_cls_acc:
                 token_type_ids, dataset_id = inputs['token_type_ids'].detach(), inputs['dataset_id'].detach()
@@ -1061,12 +1054,13 @@ if __name__ == '__main__':
     nm = 'gpt2-medium'
 
     # n = 1
-    # n = 1024
-    n = None
-    model, tokenizer, data_collator, tr_args, dset_tr, dset_vl, trainer = get_all_setup(
+    n = 1024
+    # n = None
+    md, tkzer, dset_tr, dset_vl, trainer = get_all_setup(
         nm, dnm, do_eval=False, custom_logging=True, n_sample=n, random_seed=seed
     )
-    # ic(model_param_size(model))
+    ic(trainer.args)
+    exit(1)
     trainer.train()
     trainer.save_model(os.path.join(trainer.args.output_dir))
     trainer.evaluate()

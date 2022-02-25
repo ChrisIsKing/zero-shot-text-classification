@@ -320,9 +320,17 @@ def plot_points(arr, **kwargs):
     plt.plot(arr[:, 0], arr[:, 1], **kwargs)
 
 
+def get_output_base():
+    # Remote machine `clarity2`, save the models somewhere else to save `/home` disk space
+    if 'clarity' in get_hostname():
+        return os.path.join('/data')
+    else:
+        return PATH_BASE
+
+
 def process_benchmark_dataset(join=False):
     ext = config('benchmark.dataset_ext')
-    path_dset = os.path.join(PATH_BASE, DIR_PROJ, DIR_DSET)
+    path_dset = os.path.join(get_output_base(), DIR_PROJ, DIR_DSET)
 
     def path2dsets(dnm: str, d_dset: Dict) -> Union[datasets.DatasetDict, Dict[str, pd.DataFrame]]:
         path = d_dset['path']
@@ -348,13 +356,11 @@ def process_benchmark_dataset(join=False):
         return datasets.DatasetDict({split: json2dset(split, dset) for split, dset in dsets_.items()})
     d_dsets = {dnm: path2dsets(dnm, d) for dnm, d in config('benchmark.datasets').items()}
     if join:
-        # TODO: Which data for training? For now, merge all `train` splits
         dnm2id = config('benchmark.dataset_name2id')
 
         def pre_concat(dnm: str, df_: pd.DataFrame) -> pd.DataFrame:
             df_['dataset_id'] = [dnm2id[dnm]] * len(df_)  # Add dataset source information to each row
             return df_
-
         # Global label across all datasets, all splits
         # Needed for inversely mapping to local label regardless of joined split, e.g. train/test,
         #   in case some label only in certain split
@@ -372,15 +378,28 @@ def process_benchmark_dataset(join=False):
             )
             return datasets.Dataset.from_pandas(df, features=features)
         tr = dfs2dset(pre_concat(dnm, dsets['train']) for dnm, dsets in d_dsets.items())
-        vl = dfs2dset(
-            pre_concat(dnm, dsets['test'] if dnm != 'clinc' else dsets['val'])  # TODO: how to combine the splits?
-            for dnm, dsets in d_dsets.items()
-        )
+        vl = dfs2dset(pre_concat(dnm, dsets['test']) for dnm, dsets in d_dsets.items())
         dsets = datasets.DatasetDict(train=tr, test=vl)
         dsets.save_to_disk(os.path.join(path_dset, 'processed', 'benchmark_joined'))
     else:
         for dnm, dsets in d_dsets.items():
             dsets.save_to_disk(os.path.join(path_dset, 'processed', dnm))
+
+
+def map_ag_news():
+    dnm = 'ag_news'
+    d_dset = config(f'benchmark.datasets.{dnm}')
+    ext = config('benchmark.dataset_ext')
+    path_dset = os.path.join(PATH_BASE, DIR_PROJ, DIR_DSET)
+    path = d_dset['path']
+    path = os.path.join(path_dset, f'{path}.{ext}')
+    with open(path) as f:
+        dsets: Dict = json.load(f)
+    d_lb2desc = config(f'baselines.gpt2-nvidia.label-descriptors.{dnm}')
+    for split, dset in dsets.items():
+        dsets[split] = [[txt, d_lb2desc[lb]] for txt, lb in dset]
+    with open(os.path.join(path_dset, f'{dnm}.json'), 'w') as f:
+        json.dump(dsets, f, indent=4)
 
 
 if __name__ == '__main__':
@@ -398,5 +417,8 @@ if __name__ == '__main__':
             os.path.join(PATH_BASE, DIR_PROJ, DIR_DSET, 'processed', 'benchmark_joined')
         )['test']
         lbs = dset.features['label']
+        ic(lbs)
         ic(dset[60], lbs.int2str(118))
-    # sanity_check()
+    sanity_check()
+
+    # map_ag_news()
