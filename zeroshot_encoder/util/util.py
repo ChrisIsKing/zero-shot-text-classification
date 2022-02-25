@@ -320,9 +320,17 @@ def plot_points(arr, **kwargs):
     plt.plot(arr[:, 0], arr[:, 1], **kwargs)
 
 
+def get_output_base():
+    # Remote machine `clarity2`, save the models somewhere else to save `/home` disk space
+    if 'clarity' in get_hostname():
+        return os.path.join('/data')
+    else:
+        return PATH_BASE
+
+
 def process_benchmark_dataset(join=False):
     ext = config('benchmark.dataset_ext')
-    path_dset = os.path.join(PATH_BASE, DIR_PROJ, DIR_DSET)
+    path_dset = os.path.join(get_output_base(), DIR_PROJ, DIR_DSET)
 
     def path2dsets(dnm: str, d_dset: Dict) -> Union[datasets.DatasetDict, Dict[str, pd.DataFrame]]:
         path = d_dset['path']

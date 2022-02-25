@@ -64,13 +64,20 @@
                     "Sci/Tech": "Science & Technology"
                 }
             }
+        },
+        "bert-mnli": {
+            "templates": {
+                "sentiment": "This text expresses a {} sentiment",
+                "intent": "This text expresses the intent of {}",
+                "topic": "This text belongs to the topic of {}"
+            }
         }
     },
     "benchmark": {
         "datasets": {
             "clinc": {
                 "path": "clinc_150",
-                "type": "intent",
+                "aspect": "intent",
                 "labels": {
                     "train": [
                         "accept reservations",
@@ -380,7 +387,7 @@
             },
             "sgd": {
                 "path": "sgd",
-                "type": "intent",
+                "aspect": "intent",
                 "labels": {
                     "train": [
                         "Add Event",
@@ -460,7 +467,7 @@
             },
             "slurp": {
                 "path": "slurp",
-                "type": "intent",
+                "aspect": "intent",
                 "labels": {
                     "train": [
                         "add contact",
@@ -636,7 +643,7 @@
             },
             "sentiment": {
                 "path": "emotion",
-                "type": "sentiment",
+                "aspect": "sentiment",
                 "labels": {
                     "train": [
                         "anger",
@@ -658,7 +665,7 @@
             },
             "go_emotion": {
                 "path": "go_emotion",
-                "type": "sentiment",
+                "aspect": "sentiment",
                 "labels": {
                     "train": [
                         "admiration sentiment",
@@ -724,7 +731,7 @@
             },
             "sentiment_tweets_2020": {
                 "path": "sentiment_tweets_2020",
-                "type": "sentiment",
+                "aspect": "sentiment",
                 "labels": {
                     "train": [
                         "negative sentiment",
@@ -740,7 +747,7 @@
             },
             "ag_news": {
                 "path": "ag_news",
-                "type": "topic",
+                "aspect": "topic",
                 "labels": {
                     "train": [
                         "Business",
@@ -758,7 +765,7 @@
             },
             "dbpedia": {
                 "path": "dbpedia",
-                "type": "topic",
+                "aspect": "topic",
                 "labels": {
                     "train": [
                         "Album",
@@ -796,7 +803,7 @@
             },
             "yahoo": {
                 "path": "yahoo",
-                "type": "topic",
+                "aspect": "topic",
                 "labels": {
                     "train": [
                         "Business & Finance",

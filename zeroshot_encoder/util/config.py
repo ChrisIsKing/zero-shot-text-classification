@@ -70,19 +70,26 @@ config = {
                     'Sci/Tech': 'Science & Technology'
                 }
             )
-        }
+        },
+        'bert-mnli': dict(
+            templates=dict(
+                sentiment='This text expresses a {} sentiment',
+                intent='This text expresses the intent of {}',
+                topic='This text belongs to the topic of {}'
+            )
+        ),
     },
     'benchmark': dict(
         datasets=dict(
-            clinc=dict(path='clinc_150', type='intent'),
-            sgd=dict(path='sgd', type='intent'),
-            slurp=dict(path='slurp', type='intent'),
-            sentiment=dict(path='emotion', type='sentiment'),
-            go_emotion=dict(path='go_emotion', type='sentiment'),
-            sentiment_tweets_2020=dict(path='sentiment_tweets_2020', type='sentiment'),
-            ag_news=dict(path='ag_news', type='topic'),
-            dbpedia=dict(path='dbpedia', type='topic'),
-            yahoo=dict(path='yahoo', type='topic')
+            clinc=dict(path='clinc_150', aspect='intent'),
+            sgd=dict(path='sgd', aspect='intent'),
+            slurp=dict(path='slurp', aspect='intent'),
+            sentiment=dict(path='emotion', aspect='sentiment'),
+            go_emotion=dict(path='go_emotion', aspect='sentiment'),
+            sentiment_tweets_2020=dict(path='sentiment_tweets_2020', aspect='sentiment'),
+            ag_news=dict(path='ag_news', aspect='topic'),
+            dbpedia=dict(path='dbpedia', aspect='topic'),
+            yahoo=dict(path='yahoo', aspect='topic')
         ),
         dataset_ext='json'  # all in json
     ),
