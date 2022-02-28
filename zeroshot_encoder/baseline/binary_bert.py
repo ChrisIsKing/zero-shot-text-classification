@@ -1,5 +1,6 @@
 import math
 import logging
+import json
 import seaborn as sns
 import pandas as pd
 from argparse import ArgumentParser
@@ -79,6 +80,7 @@ if __name__ == "__main__":
             
             print('{} Dataset Accuracy = {}'.format(dataset, correct/len(test)))
             report = classification_report(gold, preds, output_dict=True)
+            json.dump([ [test[i][0], pred, gold[i]] for i, pred in enumerate(preds)], open('preds/binary_bert_{}.json'.format(dataset), 'w'), indent=4)
             # plt = sns.heatmap(pd.DataFrame(report).iloc[:-1, :].T, annot=True)
             # plt.figure.savefig('figures/binary_bert_{}.png'.format(dataset))
             df = pd.DataFrame(report).transpose()
