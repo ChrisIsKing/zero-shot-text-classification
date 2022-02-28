@@ -56,7 +56,7 @@ if __name__ == "__main__":
         # load model
         model = CrossEncoder('./models/binary_bert')
 
-        label_map = ["true", "false"]
+        label_map = ["false", "true"]
 
         # loop through all datasets
         for dataset in datasets:
@@ -73,7 +73,7 @@ if __name__ == "__main__":
                 results = model.predict(query, apply_softmax=True)
 
                 # compute which pred is higher
-                pred = labels[results[:,0].argmax()]
+                pred = labels[results[:,1].argmax()]
                 preds.append(pred)
                 if pred == gold[index]:
                     correct += 1
