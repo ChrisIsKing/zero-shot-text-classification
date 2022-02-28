@@ -7,6 +7,8 @@ dataset/*.json
 models/
 test_lang*
 examples/
+results
+figures
 gpt2_training_sanitycheck.py
 language_modeling_from_scratch.ipynb
 gpt2-wikitext2/
