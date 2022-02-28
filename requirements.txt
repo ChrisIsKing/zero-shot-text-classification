@@ -10,7 +10,6 @@ charset-normalizer==2.0.11
 click==8.0.3
 conllu==4.4.1
 cycler==0.11.0
-dataclasses==0.8
 datasets==1.18.3
 Deprecated==1.2.13
 dill==0.3.4

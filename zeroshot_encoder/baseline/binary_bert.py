@@ -17,7 +17,7 @@ train = binary_cls_format(data["all"]["train"])
 test = binary_cls_format(data["all"]["test"], train=False)
 
 train_batch_size = 16
-num_epochs = 1
+num_epochs = 3
 model_save_path = 'models/binary_bert'
 
 model = CrossEncoder('bert-base-uncased', num_labels=2)
@@ -31,8 +31,8 @@ logger.info("Warmup-steps: {}".format(warmup_steps))
 
 # Train the model
 model.fit(train_dataloader=train_dataloader,
-          evaluator=evaluator,
-          epochs=num_epochs,
-          evaluation_steps=10000,
-          warmup_steps=warmup_steps,
-          output_path=model_save_path)
+            evaluator=evaluator,
+            epochs=num_epochs,
+            evaluation_steps=10000,
+            warmup_steps=warmup_steps,
+            output_path=model_save_path)
