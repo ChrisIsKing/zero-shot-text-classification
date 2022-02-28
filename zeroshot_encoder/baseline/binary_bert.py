@@ -25,8 +25,14 @@ data = get_all_zero_data()
 if __name__ == "__main__":
     args = parse_args()
     if args.train:
-        train = binary_cls_format(data["all"]["train"])
-        test = binary_cls_format(data["all"]["test"], train=False)
+        # get keys from data dict
+        datasets = list(data.keys())
+        datasets.remove("all")
+        train = []
+        test = []
+        for dataset in datasets:
+            train += binary_cls_format(data[dataset]["train"])
+            test += binary_cls_format(data[dataset]["test"], train=False)
 
         train_batch_size = 16
         num_epochs = 5
@@ -56,7 +62,7 @@ if __name__ == "__main__":
         # load model
         model = CrossEncoder('./models/binary_bert')
 
-        label_map = ["true", "false"]
+        label_map = ["false", "true"]
 
         # loop through all datasets
         for dataset in datasets:
