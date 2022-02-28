@@ -1,15 +1,11 @@
 import math
 import logging
-import os
-import random
 import seaborn as sns
 import pandas as pd
 from argparse import ArgumentParser
+from tqdm import tqdm
 from sklearn.metrics import classification_report
-from statistics import mode
-from torch import ge
 from torch.utils.data import DataLoader
-from sentence_transformers import LoggingHandler, util
 from sentence_transformers.cross_encoder import CrossEncoder
 from sentence_transformers.cross_encoder.evaluation import CESoftmaxAccuracyEvaluator
 from dataset.load_data import get_all_zero_data, binary_cls_format
@@ -68,18 +64,23 @@ if __name__ == "__main__":
             gold = [x[1] for x in test]
 
             preds = []
+            correct = 0
             # loop through each test example
-            for example in test:
+            print("Evaluating dataset: {}".format(dataset))
+            for index, example in enumerate(tqdm(test)):
                 query = [(label, example[0]) for label in labels]
                 results = model.predict(query, apply_softmax=True)
 
                 # compute which pred is higher
                 pred = labels[results[:,0].argmax()]
                 preds.append(pred)
+                if pred == gold[index]:
+                    correct += 1
             
+            print('{} Dataset Accuracy = {}'.format(dataset, correct/len(test)))
             report = classification_report(gold, preds, output_dict=True)
-            plt = sns.heatmap(pd.DataFrame(report).iloc[:-1, :].T, annot=True)
-            plt.figure.savefig('figures/binary_bert_{}.png'.format(dataset))
+            # plt = sns.heatmap(pd.DataFrame(report).iloc[:-1, :].T, annot=True)
+            # plt.figure.savefig('figures/binary_bert_{}.png'.format(dataset))
             df = pd.DataFrame(report).transpose()
             df.to_csv('./results/binary_bert_{}.csv'.format(dataset))
             
