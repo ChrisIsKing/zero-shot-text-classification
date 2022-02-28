@@ -79,7 +79,7 @@ if __name__ == "__main__":
                 results = model.predict(query, apply_softmax=True)
 
                 # compute which pred is higher
-                pred = labels[results[:,0].argmax()]
+                pred = labels[results[:,1].argmax()]
                 preds.append(pred)
                 if pred == gold[index]:
                     correct += 1
