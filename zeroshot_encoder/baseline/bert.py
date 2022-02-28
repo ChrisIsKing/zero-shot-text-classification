@@ -18,7 +18,6 @@ from transformers import Trainer
 from zeroshot_encoder.preprocess import *
 
 
-BertTokenizerFast.encode
 
 class ZsBertTokenizer(BertTokenizerFast):
     def __init__(self, **kwargs):
