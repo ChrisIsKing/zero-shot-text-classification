@@ -1,6 +1,7 @@
 import math
 import logging
 import json
+import random
 import seaborn as sns
 import pandas as pd
 from argparse import ArgumentParser
@@ -10,6 +11,8 @@ from torch.utils.data import DataLoader
 from sentence_transformers.cross_encoder import CrossEncoder
 from sentence_transformers.cross_encoder.evaluation import CESoftmaxAccuracyEvaluator
 from dataset.load_data import get_all_zero_data, binary_cls_format
+
+random.seed(42)
 
 def parse_args():
     args =  ArgumentParser()
@@ -36,7 +39,7 @@ if __name__ == "__main__":
 
         train_batch_size = 16
         num_epochs = 5
-        model_save_path = 'models/binary_bert'
+        model_save_path = 'models/binary_bert_rand'
 
         model = CrossEncoder('bert-base-uncased', num_labels=2)
 
@@ -60,7 +63,7 @@ if __name__ == "__main__":
         datasets.remove("all")
 
         # load model
-        model = CrossEncoder('./models/binary_bert')
+        model = CrossEncoder('./models/binary_bert_rand')
 
         label_map = ["false", "true"]
 
