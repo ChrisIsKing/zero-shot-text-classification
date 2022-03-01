@@ -15,9 +15,10 @@ from transformers import GPT2Model, GPT2LMHeadModel  # LMHead for CLM training
 from transformers import Trainer, TrainingArguments, SchedulerType, TrainerCallback
 from transformers import DataCollatorForLanguageModeling
 from transformers.training_args import OptimizerNames
-from datasets import load_metric
+from datasets import load_metric, load_dataset
 
-from zeroshot_encoder.preprocess import *
+from zeroshot_encoder.util import *
+from zeroshot_encoder.preprocess import get_dset
 
 
 PT_LOSS_PAD = -100  # Pytorch indicator value for ignoring loss, used in huggingface for padding tokens
@@ -69,7 +70,7 @@ class ZsGPT2Tokenizer(GPT2TokenizerFast):
         ))
 
         self.templates = config('baselines.gpt2-nvidia.templates')
-        # Mapping from dataset name to label for non-benchmark cases
+        # Mapping from dataset name to label for non-UTCD cases
         self.cache: Dict[str, Dict] = ZsGPT2Tokenizer.Cache()
         self.cache_bm: datasets.ClassLabel = None
 
@@ -97,7 +98,7 @@ class ZsGPT2Tokenizer(GPT2TokenizerFast):
         assert len(id_) == 1
         return id_[0]  # Intended for special tokens
 
-    def __call__(self, samples: Dict[str, Union[List, str, int]], is_benchmark=False, **kwargs):
+    def __call__(self, samples: Dict[str, Union[List, str, int]], is_utcd=False, **kwargs):
         """
         :param samples: Data sample(s) with keys [`dataset_name`, `label`, `text`]
             Each value an element or a list of elements
@@ -112,17 +113,17 @@ class ZsGPT2Tokenizer(GPT2TokenizerFast):
         idxs_tpl = np.random.randint(len(self.templates), size=ln)
 
         def call_single(i, dataset_id: int, text: str, label: int):
-            dset_nm = config('benchmark.dataset_id2name')[dataset_id]
-            if is_benchmark:
-                descs = config(f'benchmark.datasets.{dset_nm}.labels.train')  # Descriptions; TODO: Assume `train` split
+            dset_nm = config('UTCD.dataset_id2name')[dataset_id]
+            if is_utcd:
+                descs = config(f'UTCD.datasets.{dset_nm}.labels.train')  # Descriptions; TODO: Assume `train` split
                 n_cls = len(descs)
                 # `label` is shared across all datasets, map to local label within dataset
                 if self.cache_bm is None:
                     self.cache_bm = datasets.load_from_disk(
-                        os.path.join(get_output_base(), DIR_PROJ, DIR_DSET, 'processed', 'benchmark_joined')
+                        os.path.join(get_output_base(), DIR_PROJ, DIR_DSET, 'processed', 'UTCD')
                     )['train'].features['label']  # TODO: assume `train` split
                 # The ordering indicates int<=>str label mapping, i.e., index is int label,
-                # see `process_benchmark_dataset`
+                # see `process_utcd_dataset`
 
                 def lb_int2desc(lb: int) -> str:
                     """
@@ -218,7 +219,7 @@ def pprint_gpt2_input(d: Dict[str, torch.Tensor]):
     n_pad = n_ct + n_dnm + 3
     ids, pids, tids, dids = (d[k].detach() for k in ('input_ids', 'position_ids', 'token_type_ids', 'dataset_id'))
     pad = tkzer.enc_spec(tkzer.pad_token)
-    id2name = config('benchmark.dataset_id2name')
+    id2name = config('UTCD.dataset_id2name')
 
     for i, (ids_, did, pids_, tids_) in enumerate(zip(ids, dids, pids, tids)):
         msk = (ids_ != pad)
@@ -276,10 +277,10 @@ def tokenize_func(tokenizer_: ZsGPT2Tokenizer, dataset_name='ag_news', max_lengt
         """
         :param sample: A batch of data samples
         """
-        if dataset_name != 'benchmark_joined':
-            sample['dataset_id'] = [config('benchmark.dataset_name2id')[dataset_name]] * len(sample['label'])
+        if dataset_name != 'UTCD':
+            sample['dataset_id'] = [config('UTCD.dataset_name2id')[dataset_name]] * len(sample['label'])
         # Otherwise, `dataset_id` already part of input
-        return tokenizer_(sample, is_benchmark=dataset_name == 'benchmark_joined', max_length=max_length)
+        return tokenizer_(sample, is_utcd=dataset_name == 'UTCD', max_length=max_length)
     return _tokenize_func
 
 
@@ -345,8 +346,8 @@ def get_train_setup(model_name='gpt2', do_eval=True) -> TrainingArguments:
         ),
         'gpt2-medium': dict(
             learning_rate=4e-5,
-            batch_size=8,  # TODO: low memory on machine now
-            gradient_accumulation_steps=16,  # Effectively batch size 128 as in paper, to fit in memory
+            batch_size=16,
+            gradient_accumulation_steps=8,  # To fit in memory; Effectively batch size 128 as in paper
             weight_decay=1e-2,
             num_train_epochs=50,
             lr_scheduler_type=SchedulerType.COSINE,
@@ -906,6 +907,7 @@ class CustomTrainer(Trainer):
 
         # ========================== Begin of added ==========================
         inputs: Dict[str, torch.Tensor]
+        # torch.cuda.empty_cache()
         d_log = None
         if self.custom_logging and 'labels' in inputs:
             preds = outputs.logits.detach().argmax(axis=-1)
@@ -940,8 +942,8 @@ class CustomTrainer(Trainer):
                                 idxs_, lbs = idxs_[:-1], lbs[:-1]
 
                             dset_id = dataset_id[i].item()
-                            dnm_ = config('benchmark.dataset_id2name')[dset_id]
-                            descs = config(f'benchmark.datasets.{dnm_}.labels.train')  # TODO: assume `train` mode
+                            dnm_ = config('UTCD.dataset_id2name')[dset_id]
+                            descs = config(f'UTCD.datasets.{dnm_}.labels.train')  # TODO: assume `train` mode
                             if self.tokenizer.decode(lbs) in descs:
                                 return dict(idxs=idxs_, labels=lbs)
 
@@ -1065,12 +1067,13 @@ if __name__ == '__main__':
     from icecream import ic
 
     from zeroshot_encoder.util import *
+    # torch.cuda.set_per_process_memory_fraction(1., 0)
 
     seed = config('random-seed')
     transformers.set_seed(seed)
 
     # dnm = 'ag_news'
-    dnm = 'benchmark_joined'
+    dnm = 'UTCD'
 
     # nm = 'debug'
     # nm = 'debug-gpt-ori'
@@ -1085,6 +1088,8 @@ if __name__ == '__main__':
         nm, dnm, do_eval=False, custom_logging=True, n_sample=n, random_seed=seed
     )
     # ic(trainer.args)
+    # print(torch.cuda.memory_summary())
+    # torch.cuda.empty_cache()
     trainer.train()
     trainer.save_model(os.path.join(trainer.args.output_dir))
     trainer.evaluate()

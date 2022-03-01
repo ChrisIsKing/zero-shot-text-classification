@@ -73,7 +73,7 @@
             }
         }
     },
-    "benchmark": {
+    "UTCD": {
         "datasets": {
             "clinc": {
                 "path": "clinc_150",

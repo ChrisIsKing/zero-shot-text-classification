@@ -79,7 +79,7 @@ config = {
             )
         ),
     },
-    'benchmark': dict(
+    'UTCD': dict(
         datasets=dict(
             clinc=dict(path='clinc_150', aspect='intent'),
             sgd=dict(path='sgd', aspect='intent'),
@@ -97,7 +97,7 @@ config = {
 }
 
 path_dset = os.path.join(PATH_BASE, DIR_PROJ, DIR_DSET)
-ext = config['benchmark']['dataset_ext']
+ext = config['UTCD']['dataset_ext']
 
 
 def path2dataset_labels(path: str) -> Dict[str, List[str]]:
@@ -110,12 +110,12 @@ def path2dataset_labels(path: str) -> Dict[str, List[str]]:
     return {split: samples2lbs(dset) for split, dset in dsets.items()}  # Labels for each split
 
 
-d_dsets = config['benchmark']['datasets']
+d_dsets = config['UTCD']['datasets']
 for dnm, d in d_dsets.items():
     d.update(dict(labels=path2dataset_labels(d['path'])))
 dnms = sorted(d_dsets)
-config['benchmark']['dataset_name2id'] = {dnm: i for i, dnm in enumerate(dnms)}
-config['benchmark']['dataset_id2name'] = {i: dnm for i, dnm in enumerate(dnms)}
+config['UTCD']['dataset_name2id'] = {dnm: i for i, dnm in enumerate(dnms)}
+config['UTCD']['dataset_id2name'] = {i: dnm for i, dnm in enumerate(dnms)}
 
 
 if __name__ == '__main__':
