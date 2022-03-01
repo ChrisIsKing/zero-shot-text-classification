@@ -2,6 +2,7 @@ venv
 clinc_test
 dataset/*.json
 dataset/*.zip
+dataset/*.gz
 .idea/
 .vscode/
 .DS_Store
