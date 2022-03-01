@@ -23,8 +23,14 @@ import sty
 from zeroshot_encoder.util.data_path import PATH_BASE, DIR_DSET, DIR_PROJ, DIR_MDL, PKG_NM
 
 
-rcParams['figure.constrained_layout.use'] = True
+pd.set_option('expand_frame_repr', False)
+pd.set_option('display.precision', 2)
+pd.set_option('max_colwidth', 40)
+
+plt.rcParams['figure.constrained_layout.use'] = True
+plt.rcParams['figure.figsize'] = (16, 9)
 sns.set_style('darkgrid')
+
 LN_KWARGS = dict(marker='o', ms=0.3, lw=0.25)  # matplotlib line plot default args
 
 
@@ -153,7 +159,7 @@ def log(s, c: str = 'log', c_time='green', as_str=False):
         print(f'{c}{log(now(), c=c_time, as_str=True)}| {s}{log.reset}')
 
 
-def logs(s, c):
+def log_s(s, c):
     return log(s, c=c, as_str=True)
 
 
@@ -161,7 +167,7 @@ def logi(s):
     """
     Syntactic sugar for logging `info` as string
     """
-    return logs(s, c='i')
+    return log_s(s, c='i')
 
 
 def log_dict(d: Dict = None, with_color=True, **kwargs) -> str:
@@ -171,8 +177,8 @@ def log_dict(d: Dict = None, with_color=True, **kwargs) -> str:
     if d is None:
         d = kwargs
     pairs = (f'{k}: {logi(v) if with_color else v}' for k, v in d.items())
-    pref = logs('{', c='m') if with_color else '{'
-    post = logs('}', c='m') if with_color else '}'
+    pref = log_s('{', c='m') if with_color else '{'
+    post = log_s('}', c='m') if with_color else '}'
     return pref + ', '.join(pairs) + post
 
 

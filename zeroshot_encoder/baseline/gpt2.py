@@ -701,7 +701,7 @@ class MyLoggingCallback(TrainerCallback):
             if self.interactive:
                 self.plot.update(self.log_hist)
 
-        def cls_stats2dict(out_dict: Dict, n_sample: int, prefix: str) -> Dict:
+        def acc_stats2dict(out_dict: Dict, n_sample: int, prefix: str) -> Dict:
             """
             Convert `acc_meta`, `classification_acc_meta` dict to stats for logging
             """
@@ -719,7 +719,7 @@ class MyLoggingCallback(TrainerCallback):
             stats_cls_acc: Dict = {k: sum(d[k] for d in stats_cls_acc) for k in stats_cls_acc[0]}
             self.out_dict = {
                 **self.out_dict,
-                **cls_stats2dict(stats_cls_acc, self.n_eval, prefix='eval')
+                **acc_stats2dict(stats_cls_acc, self.n_eval, prefix='eval')
             }
 
         def log_default(d_stats: Dict):
@@ -739,7 +739,7 @@ class MyLoggingCallback(TrainerCallback):
                                 tr_acc, tr_loss, n_ep = (logs[k] for k in ('acc', 'loss', 'epoch'))
                                 self.out_dict: Dict[str, Union[str, int, float, List]] = {
                                     **dict(step=step, epoch=0, train_acc=tr_acc, train_loss=tr_loss,),
-                                    **cls_stats2dict(logs[self.k_cls], self.bsz, prefix='train')
+                                    **acc_stats2dict(logs[self.k_cls], self.bsz, prefix='train')
                                 }
 
                                 # Prep for Trainer internal evaluation call
@@ -773,7 +773,7 @@ class MyLoggingCallback(TrainerCallback):
                                     # Now is the 1st call, after logging for last batch completes
                                     self.out_dict = {
                                         **dict(step=step, train_acc=acc, train_loss=loss),
-                                        **cls_stats2dict(logs[self.k_cls], self.bsz, prefix='train')
+                                        **acc_stats2dict(logs[self.k_cls], self.bsz, prefix='train')
                                     }
                             else:  # On eval set, keep track like above
                                 if self.k_cls_eval not in self.out_dict:
@@ -832,7 +832,7 @@ class MyLoggingCallback(TrainerCallback):
                                 self.out_dict_tr[self.k_cls].append(logs[self.k_cls])
                     elif 'loss' in logs:  # The Trainer default training loss logging
                         # Take the averaging by parent `Trainer` for granted
-                        self.out_dict_tr.update(cls_stats2dict(self.out_dict_tr, self.bsz, prefix='train'))
+                        self.out_dict_tr.update(acc_stats2dict(self.out_dict_tr, self.bsz, prefix='train'))
                         del self.out_dict_tr[self.k_acc]
                         del self.out_dict_tr[self.k_cls]
                         self.out_dict_tr['learning_rate'] = logs['learning_rate']
@@ -865,9 +865,9 @@ class ColoredPrinterCallback(TrainerCallback):
             setattr(handler, hd_attr_nm, name)
             self.logger.addHandler(handler)
 
-    def on_log(self, args, state, control, logs_=None, **kwargs):
+    def on_log(self, args, state, control, logs=None, **kwargs):
         if state.is_local_process_zero:
-            self.logger.info(log_dict(logs_) if isinstance(logs_, dict) else logs_)
+            self.logger.info(log_dict(logs) if isinstance(logs, dict) else logs)
 
 
 class CustomTrainer(Trainer):
@@ -1075,11 +1075,11 @@ if __name__ == '__main__':
     # dnm = 'ag_news'
     dnm = 'UTCD'
 
-    # nm = 'debug'
+    nm = 'debug'
     # nm = 'debug-gpt-ori'
     # nm = 'debug-large'
     # nm = 'gpt2'
-    nm = 'gpt2-medium'
+    # nm = 'gpt2-medium'
 
     # n = 1
     # n = 1024

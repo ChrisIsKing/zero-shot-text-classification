@@ -19,7 +19,6 @@ from zeroshot_encoder.util import *
 from zeroshot_encoder.preprocess import *
 
 
-
 class ZsBertTokenizer(BertTokenizerFast):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)

@@ -81,10 +81,10 @@ config = {
     },
     'UTCD': dict(
         datasets=dict(
-            clinc=dict(path='clinc_150', aspect='intent'),
+            clinc_150=dict(path='clinc_150', aspect='intent'),
             sgd=dict(path='sgd', aspect='intent'),
             slurp=dict(path='slurp', aspect='intent'),
-            sentiment=dict(path='emotion', aspect='sentiment'),
+            emotion=dict(path='emotion', aspect='sentiment'),
             go_emotion=dict(path='go_emotion', aspect='sentiment'),
             sentiment_tweets_2020=dict(path='sentiment_tweets_2020', aspect='sentiment'),
             ag_news=dict(path='ag_news', aspect='topic'),
