@@ -38,11 +38,12 @@ if __name__ == "__main__":
             test += binary_cls_format(data[dataset]["test"], train=False)
 
         train_batch_size = 16
-        num_epochs = 5
+        num_epochs = 3
         model_save_path = 'models/binary_bert_rand'
 
         model = CrossEncoder('bert-base-uncased', num_labels=2)
 
+        random.shuffle(train)
         train_dataloader = DataLoader(train, shuffle=True, batch_size=train_batch_size)
 
         evaluator = CESoftmaxAccuracyEvaluator.from_input_examples(test, name='UTCD-test')
@@ -54,7 +55,7 @@ if __name__ == "__main__":
         model.fit(train_dataloader=train_dataloader,
                 evaluator=evaluator,
                 epochs=num_epochs,
-                evaluation_steps=10000,
+                evaluation_steps=100000,
                 warmup_steps=warmup_steps,
                 output_path=model_save_path)
     if args.test:
