@@ -284,12 +284,10 @@ def tokenize_func(tokenizer_: ZsGPT2Tokenizer, dataset_name='ag_news', max_lengt
     return _tokenize_func
 
 
-def get_model_n_tokenizer(model_name='gpt2') -> Tuple[
+def get_model_n_tokenizer(model_name='gpt2', save_gpu_memory: bool = True) -> Tuple[
     ZsGPT2LMHeadModel, ZsGPT2Tokenizer, DataCollatorForLanguageModeling
 ]:
-    """
-    :param model_name: Model name, one of [`debug`, `gpt2`, `gpt2-medium`]
-    """
+
     pretrained_model_name = 'gpt2'
 
     if 'debug' in model_name:  # Try a smaller model for training sanity check
@@ -305,7 +303,8 @@ def get_model_n_tokenizer(model_name='gpt2') -> Tuple[
     else:
         model_max_length = 1024  # Keep max seq len of 1024, instead of 512 in paper, for longer texts & more labels
         conf = AutoConfig.from_pretrained(model_name)
-        conf.update(dict(use_cache=False))  # For enabling `gradient_checkpointing`, see `get_train_setup`
+        # `use_cache` in compatible with `gradient_checkpointing`, see `get_train_setup`
+        conf.update(dict(use_cache=not (torch.cuda.is_available() and save_gpu_memory)))
         # Keep the 1024 token length, reducing to 512 tokens involves loading part of pretrained weights, complicated
         model_ = ZsGPT2LMHeadModel.from_pretrained(model_name, config=conf, ignore_mismatched_sizes=True)
 
@@ -317,7 +316,10 @@ def get_model_n_tokenizer(model_name='gpt2') -> Tuple[
     return model_, tokenizer_, DataCollatorForLanguageModeling(tokenizer=tokenizer_, mlm=False)
 
 
-def get_train_setup(model_name='gpt2', do_eval=True) -> TrainingArguments:
+def get_train_setup(
+        model_name='gpt2', do_eval=True, train_args: Dict = None,
+        save_gpu_memory: bool = True
+) -> TrainingArguments:
     name_ = model_name
     if name_ == 'debug-gpt-ori':
         name_ = 'gpt2'
@@ -346,7 +348,7 @@ def get_train_setup(model_name='gpt2', do_eval=True) -> TrainingArguments:
         ),
         'gpt2-medium': dict(
             learning_rate=4e-5,
-            batch_size=64,
+            batch_size=128,
             gradient_accumulation_steps=1,  # To fit in memory; Effectively batch size 128 as in paper
             weight_decay=1e-2,
             num_train_epochs=50,
@@ -381,7 +383,9 @@ def get_train_setup(model_name='gpt2', do_eval=True) -> TrainingArguments:
         num_train_epochs=n_ep,
         lr_scheduler_type=sch,
         warmup_ratio=1e-2,
-        log_level='warning',
+        log_level='info',
+        # log_on_each_node=False,
+        log_level_replica='info',
         logging_strategy='steps',
         logging_steps=1,
         save_strategy='epoch',
@@ -393,9 +397,12 @@ def get_train_setup(model_name='gpt2', do_eval=True) -> TrainingArguments:
         remove_unused_columns=False,
         report_to='none',
         # Set to True on CPU gives warning; Enable for fitting in `clarity1` memory
-        gradient_checkpointing=torch.cuda.is_available()
+        gradient_checkpointing=torch.cuda.is_available() and save_gpu_memory
     )
+    if train_args is None:
+        train_args = dict()
     args = {k: v for k, v in args.items() if v is not None}
+    args.update(train_args)
     return TrainingArguments(**args)
 
 
@@ -415,7 +422,9 @@ def compute_metrics(eval_pred):
 
 
 def get_all_setup(
-        model_name, dataset_name: str = 'ag_news', n_sample=None, random_seed=None, do_eval=True, custom_logging=True
+        model_name, dataset_name: str = 'ag_news',
+        n_sample=None, random_seed=None, do_eval=True, custom_logging=True,
+        train_args: Dict = None
 ) -> Tuple[GPT2LMHeadModel, GPT2TokenizerFast, datasets.Dataset, datasets.Dataset, Trainer]:
     if model_name == 'debug-gpt-ori':  # Sanity check: As if keep training GPT-2, with padding for simplicity
         conf = AutoConfig.from_pretrained('gpt2')
@@ -442,8 +451,10 @@ def get_all_setup(
             return result
         map_func = group_texts
     else:
-        model_, tokenizer_, data_collator_ = get_model_n_tokenizer(model_name)
-        train_args_ = get_train_setup(model_name, do_eval=do_eval)
+        # save_gpu_mem = 'arc-ts' not in get_hostname()
+        save_gpu_mem = True  # Gradient checkpointing still needed - otherwise doesn't fit in 44G GPU
+        model_, tokenizer_, data_collator_ = get_model_n_tokenizer(model_name, save_gpu_memory=save_gpu_mem)
+        train_args_ = get_train_setup(model_name, do_eval=do_eval, train_args=train_args, save_gpu_memory=save_gpu_mem)
         map_func = tokenize_func(tokenizer_, dataset_name=dataset_name)
 
     dset_tr_, dset_vl_ = get_dset(
@@ -457,7 +468,6 @@ def get_all_setup(
     )
     trainer_ = CustomTrainer(
         tokenizer=tokenizer_, custom_logging=custom_logging, compute_cls_acc=model_name != 'debug-gpt-ori',
-        # tokenizer=tokenizer_, custom_logging=False, compute_cls_acc=model_name != 'debug-gpt-ori',
         **trainer_args
     )
     # trainer_ = Trainer(**trainer_args)
@@ -640,28 +650,31 @@ class MyLoggingCallback(TrainerCallback):
         self.mode = mode
 
     def on_train_begin(self, args: TrainingArguments, state, control, **kwargs):
-        self.logger_fl.removeHandler(self.fl_handler)  # Remove prior `FileHandler`, prep for next potential run
-        self.fl_handler = None
+        if self.parent_trainer.is_local_process_zero():  # For distributed training; TODO: support multi machine?
+            self.logger_fl.removeHandler(self.fl_handler)  # Remove prior `FileHandler`, prep for next potential run
+            self.fl_handler = None
 
-        self.log_fnm = self.log_fnm_tpl.format(now(sep="-"))
-        # Set file write logging
-        os.makedirs(self.out_dir, exist_ok=True)
-        self.fl_handler = logging.FileHandler(os.path.join(self.out_dir, f'{self.log_fnm}.log'))
-        self.fl_handler.setLevel(logging.DEBUG)
-        self.fl_handler.setFormatter(MyFormatter(with_color=False))
-        self.logger_fl.addHandler(self.fl_handler)
+            self.log_fnm = self.log_fnm_tpl.format(now(sep="-"))
+            # Set file write logging
+            os.makedirs(self.out_dir, exist_ok=True)
+            # For only 1 of the processes if distributed training
+            self.fl_handler = logging.FileHandler(os.path.join(self.out_dir, f'{self.log_fnm}.log'))
+            self.fl_handler.setLevel(logging.DEBUG)
+            self.fl_handler.setFormatter(MyFormatter(with_color=False))
+            self.logger_fl.addHandler(self.fl_handler)
 
-        self.logger.info(f'Training started with {log_dict(self.train_meta)}')
-        self.logger_fl.info(f'Training started with {log_dict(self.train_meta, with_color=False)}')
-        out_args = f'Training args: {self.parent_trainer.args}'
-        self.logger.info(out_args)
-        self.logger_fl.info(out_args)
-        self.t_strt = datetime.datetime.now()
+            self.logger.info(f'Training started with {log_dict(self.train_meta)}')
+            self.logger_fl.info(f'Training started with {log_dict(self.train_meta, with_color=False)}')
+            out_args = f'with model config: {self.parent_trainer.model.config} \n' \
+                       f'and training args: {self.parent_trainer.args}'
+            self.logger.info(out_args)
+            self.logger_fl.info(out_args)
+            self.t_strt = datetime.datetime.now()
 
-        self.mode = 'train'
-        self.train_begin = True
-        if self.interactive:
-            self.plot.make_plot()
+            self.mode = 'train'
+            self.train_begin = True
+            if self.interactive:
+                self.plot.make_plot()
 
     def on_train_end(self, args: TrainingArguments, state, control, **kwargs):
         if self.train_begin:
@@ -706,6 +719,7 @@ class MyLoggingCallback(TrainerCallback):
             return out_
 
         def log_update(d_out):
+            # TODO: logging on terminal is ugly if distributed training
             out_console, out_write = out_dict2str(d_out, return_wo_color=True)
             self.logger.info(out_console)
             self.logger_fl.info(out_write)
@@ -1094,7 +1108,6 @@ if __name__ == '__main__':
     from icecream import ic
 
     from zeroshot_encoder.util import *
-    # torch.cuda.set_per_process_memory_fraction(1., 0)
 
     seed = config('random-seed')
     transformers.set_seed(seed)
@@ -1111,9 +1124,25 @@ if __name__ == '__main__':
     # n = 1
     # n = 1024
     n = None
+
+    tr_args = dict(num_train_epochs=1)
+
     md, tkzer, dset_tr, dset_vl, trainer = get_all_setup(
-        nm, dnm, do_eval=False, custom_logging=True, n_sample=n, random_seed=seed
+        nm, dnm, do_eval=False, custom_logging=True, n_sample=n, random_seed=seed, train_args=tr_args
     )
-    trainer.train()
-    trainer.save_model(os.path.join(trainer.args.output_dir))
-    trainer.evaluate()
+    def profile():
+        import cProfile
+        import pstats
+        profiler = cProfile.Profile()
+        profiler.enable()
+        trainer.train()
+        profiler.disable()
+        stats = pstats.Stats(profiler).sort_stats('cumtime')
+        stats.print_stats()
+    # profile()
+
+    def train():
+        trainer.train()
+        trainer.save_model(os.path.join(trainer.args.output_dir))
+        # trainer.evaluate()
+    train()
