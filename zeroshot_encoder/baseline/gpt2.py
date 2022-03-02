@@ -712,42 +712,28 @@ class MyLoggingCallback(TrainerCallback):
             self.log_hist.append(d_out)
             if self.interactive:
                 self.plot.update(self.log_hist)
-            ic('in on log, done', now())
 
         def acc_stats2dict(out_dict: Dict, n_sample: int, prefix: str) -> Dict:
             """
             Convert `acc_meta`, `classification_acc_meta` dict to stats for logging
             """
-            # return dict()
-            ic('in acc_stats2dict')
-            # ic(out_dict[self.k_acc][0])
-            # for k, v in out_dict[self.k_acc][0].items():
-            #     ic(k, type(v))
-            # ic(out_dict[self.k_cls][0])
-            # for k, v in out_dict[self.k_cls][0].items():
-            #     ic(k, type(v))
-            # from copy import deepcopy
-            # d_acc = deepcopy(out_dict[self.k_acc])
-            # d_cls = deepcopy(out_dict[self.k_cls])
-            # # stats_acc: pd.Series = pd.DataFrame(out_dict[self.k_acc]).sum(axis=0)
-            # # stats_acc_cls: pd.Series = pd.DataFrame(out_dict[self.k_cls]).sum(axis=0)
-            # stats_acc: pd.Series = pd.DataFrame(d_acc).sum(axis=0)
-            # stats_acc_cls: pd.Series = pd.DataFrame(d_cls).sum(axis=0)
+            # TODO: with multiple GPUs, creating a pandas Dataframe produces
+            # torch/nn/parallel/_functions.py:68: UserWarning: Was asked to gather along dimension 0,
+            # but all input tensors were scalars; will instead unsqueeze and return a vector.
+            # stats_acc: pd.Series = pd.DataFrame(out_dict[self.k_acc]).sum(axis=0)
+            # stats_acc_cls: pd.Series = pd.DataFrame(out_dict[self.k_cls]).sum(axis=0)
             # assert stats_acc_cls.n_missing/n_sample  == 0
             # return {
             #     f'{prefix}_acc': stats_acc.n_acc / stats_acc.n_total,
             #     f'{prefix}_acc_cls': (stats_acc_cls.n_acc/stats_acc_cls.n_total) if stats_acc_cls.n_total != 0 else 0,
             #     # f'{prefix}_acc_mis': stats_acc_cls.n_missing/n_sample  # As a fraction
             # }
-            # stats_acc = out_dict[self.k_acc][0]
-            # stats_acc_cls = out_dict[self.k_cls][0]
             stats_acc = {k: sum(d[k] for d in out_dict[self.k_acc]) for k in out_dict[self.k_acc][0].keys()}
             stats_acc_cls = {k: sum(d[k] for d in out_dict[self.k_cls]) for k in out_dict[self.k_cls][0].keys()}
             assert stats_acc_cls['n_missing']/n_sample  == 0
             return {
                 f'{prefix}_acc': stats_acc['n_acc'] / stats_acc['n_total'],
                 f'{prefix}_acc_cls': (stats_acc_cls['n_acc']/stats_acc_cls['n_total']) if stats_acc_cls['n_total'] != 0 else 0,
-                # f'{prefix}_acc_mis': stats_acc_cls.n_missing/n_sample  # As a fraction
             }
 
         def set_eval_cls_acc():  # TODO: support gradient accumulation
@@ -766,7 +752,6 @@ class MyLoggingCallback(TrainerCallback):
             if self.mode == 'train':
                 step = state.global_step
                 if self.do_eval:
-                    ic('code here obsolete')
                     if 'src' in logs and logs['src'] == 'compute_loss':  # Custom added metric computation
                         if step == 0:  # Before model runs, initial call
                             if not self.called_val_init:  # Prevents circular logging call, see Trainer.evaluate()
@@ -850,10 +835,8 @@ class MyLoggingCallback(TrainerCallback):
                         print('unhandled case', logs)
                         exit(1)
                 else:  # Only training without evaluation supported
-                    ic('in on log', now())
                     # self.logger.info(log_dict(logs) if isinstance(logs, dict) else logs)
                     if 'src' in logs and logs['src'] == 'compute_loss':
-                        # ic('in compute loss logging')
                         # For gradient_accumulation, many batches of `compute_loss` may be called,
                         # before going into train logging
                         # Loss here is per batch, not per gradient update, ignore
@@ -864,17 +847,14 @@ class MyLoggingCallback(TrainerCallback):
                             if self.parent_trainer.compute_cls_acc:
                                 self.out_dict_tr[self.k_cls] = [logs[self.k_cls]]
                         else:  # Later batch in the same gradient accumulation
-                            # ic('didn\'t reach here')
                             step_, n_ep = self.out_dict_tr['step'], self.out_dict_tr['epoch']
                             n_ep_ = logs['epoch']
                             assert step_ == step and n_ep_ == n_ep
                             self.out_dict_tr[self.k_acc].append(logs[self.k_acc])
                             if self.parent_trainer.compute_cls_acc:
                                 self.out_dict_tr[self.k_cls].append(logs[self.k_cls])
-                        # ic('in compute loss logging ended')
                     elif 'loss' in logs:  # The Trainer default training loss logging
                         # Take the averaging by parent `Trainer` for granted
-                        # ic('in final logging')
                         self.out_dict_tr.update(acc_stats2dict(self.out_dict_tr, self.bsz, prefix='train'))
                         del self.out_dict_tr[self.k_acc]
                         del self.out_dict_tr[self.k_cls]
@@ -882,7 +862,6 @@ class MyLoggingCallback(TrainerCallback):
                         self.out_dict_tr['train_loss'] = logs['loss']
                         log_update(self.out_dict_tr)
                         self.out_dict_tr = None  # Rest for next global step
-                        # ic('in final logging ended')
                     elif any('runtime' in k for k in logs.keys()):
                         self.logger.info(log_dict(logs) if isinstance(logs, dict) else logs)
                     else:
@@ -949,9 +928,7 @@ class CustomTrainer(Trainer):
             labels = inputs.pop("labels")
         else:
             labels = None
-        ic('in compute loss, before forward')
         outputs = model(**inputs)
-        ic('in compute loss, after forward')
 
         # ========================== Begin of added ==========================
         inputs: Dict[str, torch.Tensor]
@@ -1035,7 +1012,6 @@ class CustomTrainer(Trainer):
         Override `Trainer.prediction_step` for reducing memory footprint
         """
         # ========================== Begin of added =========================
-        ic('in prediction step')
         from transformers.file_utils import is_sagemaker_mp_enabled
         from transformers.trainer_pt_utils import nested_detach
         if is_sagemaker_mp_enabled():
