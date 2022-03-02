@@ -12,10 +12,7 @@ def get_dset(
         n_sample: int = None, random_seed: int = None, fast=True
 ) -> Tuple[datasets.Dataset, ...]:
     if dataset_name == 'UTCD':
-        if 'clarity' in get_hostname():
-            out_base = os.path.join('/data')
-        else:
-            out_base = PATH_BASE
+        out_base = get_output_base()
         dset = datasets.load_from_disk(os.path.join(out_base, DIR_PROJ, DIR_DSET, 'processed', 'UTCD'))
     else:
         dset = load_dataset(dataset_name)

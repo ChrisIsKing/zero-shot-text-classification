@@ -327,9 +327,12 @@ def plot_points(arr, **kwargs):
 
 
 def get_output_base():
-    # Remote machine `clarity2`, save the models somewhere else to save `/home` disk space
-    if 'clarity' in get_hostname():
-        return os.path.join('/data')
+    # For remote machines, save the models somewhere else to save `/home` disk space
+    hnm = get_hostname()
+    if 'clarity' in hnm:  # Clarity lab
+        return '/data'
+    elif 'arc-ts' in hnm:  # Great Lakes; `profmars0` picked arbitrarily among [`profmars0`, `profmars1`]
+        return os.path.join('/scratch', 'profmars_root', 'profmars0', 'stefanhg')  # Per https://arc.umich.edu/greatlakes/user-guide/
     else:
         return PATH_BASE
 
@@ -338,8 +341,10 @@ def process_utcd_dataset(join=False):
     ext = config('UTCD.dataset_ext')
     path_dsets = os.path.join(PATH_BASE, DIR_PROJ, DIR_DSET)
     path_out = os.path.join(get_output_base(), DIR_PROJ, DIR_DSET)
+    ic(path_out)
 
     def path2dsets(dnm: str, d_dset: Dict) -> Union[datasets.DatasetDict, Dict[str, pd.DataFrame]]:
+        ic(dnm)
         path = d_dset['path']
         path = os.path.join(path_dsets, f'{path}.{ext}')
         with open(path) as f:
@@ -421,12 +426,14 @@ if __name__ == '__main__':
     process_utcd_dataset(join=True)
 
     def sanity_check():
-        dset = datasets.load_from_disk(
-            os.path.join(get_output_base(), DIR_PROJ, DIR_DSET, 'processed', 'UTCD')
-        )['test']
-        lbs = dset.features['label']
+        path = os.path.join(get_output_base(), DIR_PROJ, DIR_DSET, 'processed', 'UTCD')
+        ic(path)
+        dset = datasets.load_from_disk(path)
+        te, vl = dset['train'], dset['test']
+        ic(len(te), len(vl))
+        lbs = vl.features['label']
         ic(lbs)
-        ic(dset[60], lbs.int2str(118))
+        ic(vl[60], lbs.int2str(118))
     sanity_check()
 
     # map_ag_news()

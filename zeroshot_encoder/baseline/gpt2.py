@@ -346,8 +346,8 @@ def get_train_setup(model_name='gpt2', do_eval=True) -> TrainingArguments:
         ),
         'gpt2-medium': dict(
             learning_rate=4e-5,
-            batch_size=16,
-            gradient_accumulation_steps=8,  # To fit in memory; Effectively batch size 128 as in paper
+            batch_size=64,
+            gradient_accumulation_steps=1,  # To fit in memory; Effectively batch size 128 as in paper
             weight_decay=1e-2,
             num_train_epochs=50,
             lr_scheduler_type=SchedulerType.COSINE,
@@ -357,6 +357,10 @@ def get_train_setup(model_name='gpt2', do_eval=True) -> TrainingArguments:
         'learning_rate', 'batch_size', 'weight_decay',
         'num_train_epochs', 'lr_scheduler_type', 'gradient_accumulation_steps'
     ])
+    if torch.cuda.is_available():
+        bsz /= torch.cuda.device_count()  # Distribute among GPUs
+        assert bsz.is_integer()
+        bsz = int(bsz)
     args = dict(
         output_dir=os.path.join(get_output_base(), DIR_PROJ, DIR_MDL, 'gpt2', model_name, now(sep='-')),
         do_train=True,
@@ -369,6 +373,7 @@ def get_train_setup(model_name='gpt2', do_eval=True) -> TrainingArguments:
         # Adam's beta1, beta2, epsilon taken from the GPT2 config in
         # https://github.com/huggingface/transformers/blob/master/examples/pytorch/language-modeling/run_clm.py
         learning_rate=lr,
+        weight_decay=decay,
         adam_beta1=0.9,
         adam_beta2=0.999,
         adam_epsilon=1e-08,
@@ -452,8 +457,10 @@ def get_all_setup(
     )
     trainer_ = CustomTrainer(
         tokenizer=tokenizer_, custom_logging=custom_logging, compute_cls_acc=model_name != 'debug-gpt-ori',
+        # tokenizer=tokenizer_, custom_logging=False, compute_cls_acc=model_name != 'debug-gpt-ori',
         **trainer_args
     )
+    # trainer_ = Trainer(**trainer_args)
     return model_, tokenizer_, dset_tr_, dset_vl_, trainer_
 
 
@@ -599,6 +606,8 @@ class MyLoggingCallback(TrainerCallback):
         self.n_eval = len(dset_vl_)
         lr, n_ep = args.learning_rate, args.num_train_epochs
         self.bsz = args.per_device_train_batch_size * args.gradient_accumulation_steps
+        if torch.cuda.is_available() and self.parent_trainer.args.n_gpu > 1:
+            self.bsz *= self.parent_trainer.args.n_gpu
         seq_max_len = len(dset_tr__[0]['input_ids'])
         n_data, md_sz = len(dset_tr__), md_.config.n_positions
         self.n_step = max(math.ceil(len(dset_tr__) // self.bsz), 1) * n_ep  # #step/epoch at least 1
@@ -644,6 +653,9 @@ class MyLoggingCallback(TrainerCallback):
 
         self.logger.info(f'Training started with {log_dict(self.train_meta)}')
         self.logger_fl.info(f'Training started with {log_dict(self.train_meta, with_color=False)}')
+        out_args = f'Training args: {self.parent_trainer.args}'
+        self.logger.info(out_args)
+        self.logger_fl.info(out_args)
         self.t_strt = datetime.datetime.now()
 
         self.mode = 'train'
@@ -700,17 +712,41 @@ class MyLoggingCallback(TrainerCallback):
             self.log_hist.append(d_out)
             if self.interactive:
                 self.plot.update(self.log_hist)
+            ic('in on log, done', now())
 
         def acc_stats2dict(out_dict: Dict, n_sample: int, prefix: str) -> Dict:
             """
             Convert `acc_meta`, `classification_acc_meta` dict to stats for logging
             """
-            stats_acc: pd.Series = pd.DataFrame(out_dict[self.k_acc]).sum(axis=0)
-            stats_acc_cls: pd.Series = pd.DataFrame(out_dict[self.k_cls]).sum(axis=0)
-            assert stats_acc_cls.n_missing/n_sample  == 0
+            # return dict()
+            ic('in acc_stats2dict')
+            # ic(out_dict[self.k_acc][0])
+            # for k, v in out_dict[self.k_acc][0].items():
+            #     ic(k, type(v))
+            # ic(out_dict[self.k_cls][0])
+            # for k, v in out_dict[self.k_cls][0].items():
+            #     ic(k, type(v))
+            # from copy import deepcopy
+            # d_acc = deepcopy(out_dict[self.k_acc])
+            # d_cls = deepcopy(out_dict[self.k_cls])
+            # # stats_acc: pd.Series = pd.DataFrame(out_dict[self.k_acc]).sum(axis=0)
+            # # stats_acc_cls: pd.Series = pd.DataFrame(out_dict[self.k_cls]).sum(axis=0)
+            # stats_acc: pd.Series = pd.DataFrame(d_acc).sum(axis=0)
+            # stats_acc_cls: pd.Series = pd.DataFrame(d_cls).sum(axis=0)
+            # assert stats_acc_cls.n_missing/n_sample  == 0
+            # return {
+            #     f'{prefix}_acc': stats_acc.n_acc / stats_acc.n_total,
+            #     f'{prefix}_acc_cls': (stats_acc_cls.n_acc/stats_acc_cls.n_total) if stats_acc_cls.n_total != 0 else 0,
+            #     # f'{prefix}_acc_mis': stats_acc_cls.n_missing/n_sample  # As a fraction
+            # }
+            # stats_acc = out_dict[self.k_acc][0]
+            # stats_acc_cls = out_dict[self.k_cls][0]
+            stats_acc = {k: sum(d[k] for d in out_dict[self.k_acc]) for k in out_dict[self.k_acc][0].keys()}
+            stats_acc_cls = {k: sum(d[k] for d in out_dict[self.k_cls]) for k in out_dict[self.k_cls][0].keys()}
+            assert stats_acc_cls['n_missing']/n_sample  == 0
             return {
-                f'{prefix}_acc': stats_acc.n_acc / stats_acc.n_total,
-                f'{prefix}_acc_cls': (stats_acc_cls.n_acc/stats_acc_cls.n_total) if stats_acc_cls.n_total != 0 else 0,
+                f'{prefix}_acc': stats_acc['n_acc'] / stats_acc['n_total'],
+                f'{prefix}_acc_cls': (stats_acc_cls['n_acc']/stats_acc_cls['n_total']) if stats_acc_cls['n_total'] != 0 else 0,
                 # f'{prefix}_acc_mis': stats_acc_cls.n_missing/n_sample  # As a fraction
             }
 
@@ -730,6 +766,7 @@ class MyLoggingCallback(TrainerCallback):
             if self.mode == 'train':
                 step = state.global_step
                 if self.do_eval:
+                    ic('code here obsolete')
                     if 'src' in logs and logs['src'] == 'compute_loss':  # Custom added metric computation
                         if step == 0:  # Before model runs, initial call
                             if not self.called_val_init:  # Prevents circular logging call, see Trainer.evaluate()
@@ -813,7 +850,10 @@ class MyLoggingCallback(TrainerCallback):
                         print('unhandled case', logs)
                         exit(1)
                 else:  # Only training without evaluation supported
+                    ic('in on log', now())
+                    # self.logger.info(log_dict(logs) if isinstance(logs, dict) else logs)
                     if 'src' in logs and logs['src'] == 'compute_loss':
+                        # ic('in compute loss logging')
                         # For gradient_accumulation, many batches of `compute_loss` may be called,
                         # before going into train logging
                         # Loss here is per batch, not per gradient update, ignore
@@ -824,14 +864,17 @@ class MyLoggingCallback(TrainerCallback):
                             if self.parent_trainer.compute_cls_acc:
                                 self.out_dict_tr[self.k_cls] = [logs[self.k_cls]]
                         else:  # Later batch in the same gradient accumulation
+                            # ic('didn\'t reach here')
                             step_, n_ep = self.out_dict_tr['step'], self.out_dict_tr['epoch']
                             n_ep_ = logs['epoch']
                             assert step_ == step and n_ep_ == n_ep
                             self.out_dict_tr[self.k_acc].append(logs[self.k_acc])
                             if self.parent_trainer.compute_cls_acc:
                                 self.out_dict_tr[self.k_cls].append(logs[self.k_cls])
+                        # ic('in compute loss logging ended')
                     elif 'loss' in logs:  # The Trainer default training loss logging
                         # Take the averaging by parent `Trainer` for granted
+                        # ic('in final logging')
                         self.out_dict_tr.update(acc_stats2dict(self.out_dict_tr, self.bsz, prefix='train'))
                         del self.out_dict_tr[self.k_acc]
                         del self.out_dict_tr[self.k_cls]
@@ -839,6 +882,7 @@ class MyLoggingCallback(TrainerCallback):
                         self.out_dict_tr['train_loss'] = logs['loss']
                         log_update(self.out_dict_tr)
                         self.out_dict_tr = None  # Rest for next global step
+                        # ic('in final logging ended')
                     elif any('runtime' in k for k in logs.keys()):
                         self.logger.info(log_dict(logs) if isinstance(logs, dict) else logs)
                     else:
@@ -847,6 +891,8 @@ class MyLoggingCallback(TrainerCallback):
             else:
                 if 'src' not in logs:  # Skip custom compute_loss logging
                     log_default(logs)
+        # if state.is_local_process_zero:
+        #     self.logger.info(log_dict(logs) if isinstance(logs, dict) else logs)
 
 
 class ColoredPrinterCallback(TrainerCallback):
@@ -903,11 +949,12 @@ class CustomTrainer(Trainer):
             labels = inputs.pop("labels")
         else:
             labels = None
+        ic('in compute loss, before forward')
         outputs = model(**inputs)
+        ic('in compute loss, after forward')
 
         # ========================== Begin of added ==========================
         inputs: Dict[str, torch.Tensor]
-        # torch.cuda.empty_cache()
         d_log = None
         if self.custom_logging and 'labels' in inputs:
             preds = outputs.logits.detach().argmax(axis=-1)
@@ -974,7 +1021,10 @@ class CustomTrainer(Trainer):
 
         # ========================== Begin of added ==========================
         if self.custom_logging and 'labels' in inputs:
-            d_log['loss'] = loss.detach().item()
+            # loss_ = loss.detach()
+            # if self.args.n_gpu > 1:  # See `Trainer.training_step()`
+            #     loss_ = loss_.mean()
+            # d_log['loss'] = loss_.item()
             self.log(d_log)
         # ========================== End of added ==========================
 
@@ -985,6 +1035,7 @@ class CustomTrainer(Trainer):
         Override `Trainer.prediction_step` for reducing memory footprint
         """
         # ========================== Begin of added =========================
+        ic('in prediction step')
         from transformers.file_utils import is_sagemaker_mp_enabled
         from transformers.trainer_pt_utils import nested_detach
         if is_sagemaker_mp_enabled():
@@ -1075,11 +1126,11 @@ if __name__ == '__main__':
     # dnm = 'ag_news'
     dnm = 'UTCD'
 
-    nm = 'debug'
+    # nm = 'debug'
     # nm = 'debug-gpt-ori'
     # nm = 'debug-large'
     # nm = 'gpt2'
-    # nm = 'gpt2-medium'
+    nm = 'gpt2-medium'
 
     # n = 1
     # n = 1024
@@ -1087,9 +1138,6 @@ if __name__ == '__main__':
     md, tkzer, dset_tr, dset_vl, trainer = get_all_setup(
         nm, dnm, do_eval=False, custom_logging=True, n_sample=n, random_seed=seed
     )
-    # ic(trainer.args)
-    # print(torch.cuda.memory_summary())
-    # torch.cuda.empty_cache()
     trainer.train()
     trainer.save_model(os.path.join(trainer.args.output_dir))
     trainer.evaluate()

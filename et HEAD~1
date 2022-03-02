@@ -1,0 +1,278 @@
+commit 11cdbb771c33bbd649538a89337aac9fac986ef8
+Author: Stefan Heng <stefanhg@gl1507.arc-ts.umich.edu>
+Date:   Wed Mar 2 11:04:21 2022 -0500
+
+    New: training on great lakes with multiple GPU integration
+
+commit 1dcca3ed4d1167c6de32162b48af3bbca231c3e1
+Author: Stefan Heng <43276957+SpongeBobBang@users.noreply.github.com>
+Date:   Tue Mar 1 13:40:09 2022 -0500
+
+    Chore: refractoring
+
+commit 4cf8f3c2fbe22b6a9209cce17aa200552e554653
+Author: Stefan Heng <43276957+SpongeBobBang@users.noreply.github.com>
+Date:   Tue Mar 1 13:21:36 2022 -0500
+
+    Update: gpt2 300M training on clarity2 integration
+
+commit d29acce7bd4f1896724021c7e6845a5d530aab5d
+Author: ChrisIsKing <christopher.clarke@v75inc.com>
+Date:   Tue Mar 1 00:30:36 2022 -0500
+
+    Updated requirements
+
+commit 2ef46e24b8f150dee86ec31a4e1acc847f2213f6
+Author: ChrisIsKing <christopher.clarke@v75inc.com>
+Date:   Tue Mar 1 00:11:49 2022 -0500
+
+    Added mnli pre-training
+
+commit afae2eae0089a48958d4fd822bfaaadd48f2356b
+Author: Christopher Shamar Clarke <csclarke@clarity1.eecs.umich.edu>
+Date:   Mon Feb 28 21:02:30 2022 -0500
+
+    Modified eval steps
+
+commit fb236aa5f766c41b81bbc100ed24de289c47ee74
+Author: ChrisIsKing <christopher.clarke@v75inc.com>
+Date:   Mon Feb 28 19:58:44 2022 -0500
+
+    Updated neg sampling strategy
+
+commit 70bb84dd19c357f2434f7f6b8a9e652f17157648
+Merge: f5a4c46 7348d53
+Author: ChrisIsKing <christopher.clarke@v75inc.com>
+Date:   Mon Feb 28 18:40:50 2022 -0500
+
+    Merge branch 'master' of github.com:ChrisIsKing/Zero-shot-text-classification
+
+commit f5a4c46751a2a19f9a316c4185078e8fa1ca0062
+Author: ChrisIsKing <christopher.clarke@v75inc.com>
+Date:   Mon Feb 28 18:40:44 2022 -0500
+
+    Adjust neg sampling
+
+commit 7348d53bcc9c9410bf087b329472ef254dcfda11
+Author: Christopher Shamar Clarke <csclarke@clarity1.eecs.umich.edu>
+Date:   Mon Feb 28 18:34:50 2022 -0500
+
+    Fixed label map bug
+
+commit 0155b85e4a66aea3b844d2b2a376b8b77f76ec03
+Author: Christopher Shamar Clarke <csclarke@clarity1.eecs.umich.edu>
+Date:   Mon Feb 28 12:13:25 2022 -0500
+
+    Added pred output for debugging
+
+commit 6cbd712971f57632ff46599a0775b7020ba9989a
+Merge: cfd6526 b2f5339
+Author: Christopher Shamar Clarke <csclarke@clarity1.eecs.umich.edu>
+Date:   Mon Feb 28 03:01:30 2022 -0500
+
+    Merge branch 'master' of https://github.com/ChrisIsKing/Zero-shot-text-classification
+
+commit b2f5339c0c38b10735275e58dac9c4777064e256
+Author: ChrisIsKing <christopher.clarke@v75inc.com>
+Date:   Mon Feb 28 03:01:21 2022 -0500
+
+    Added logging to eval
+
+commit cfd6526ca85afe337b65fd821f769edfbd8a161f
+Merge: 66a0f34 8b27549
+Author: Christopher Shamar Clarke <csclarke@clarity1.eecs.umich.edu>
+Date:   Mon Feb 28 02:36:57 2022 -0500
+
+    Merge branch 'master' of https://github.com/ChrisIsKing/Zero-shot-text-classification
+
+commit 66a0f346b5bef538beea4fccc400629dd5c57ae9
+Author: Christopher Shamar Clarke <csclarke@clarity1.eecs.umich.edu>
+Date:   Mon Feb 28 02:27:15 2022 -0500
+
+    update gitignore
+
+commit 8b27549f2a594fb4e8a458ff6d09d4dcc37cc131
+Merge: 03944ce 501ff45
+Author: ChrisIsKing <christopher.clarke@v75inc.com>
+Date:   Mon Feb 28 01:27:16 2022 -0500
+
+    Merge branch 'master' of github.com:ChrisIsKing/Zero-shot-text-classification
+
+commit 03944cef6ebb06b084e72565b42e69da03bbfd01
+Author: ChrisIsKing <christopher.clarke@v75inc.com>
+Date:   Mon Feb 28 01:27:04 2022 -0500
+
+    added eval
+
+commit 501ff45e7c44327ead506d21cbf9a40fc8c2795e
+Author: Stefan Heng <43276957+SpongeBobBang@users.noreply.github.com>
+Date:   Fri Feb 25 14:41:12 2022 -0500
+
+    Update: processed unified dset storage; gpt2 sanity check
+
+commit b5161aa24c684d2133c3846b9f38906133a0f31c
+Author: ChrisIsKing <christopher.clarke@v75inc.com>
+Date:   Thu Feb 24 21:26:44 2022 -0500
+
+    Updated requirements.txt
+
+commit 1acbde89e0ecd0bcfd154a447ba6fabcccdb2473
+Merge: e08b9f0 fcedd7d
+Author: ChrisIsKing <christopher.clarke@v75inc.com>
+Date:   Thu Feb 24 21:18:56 2022 -0500
+
+    Merge branch 'master' of github.com:ChrisIsKing/Zero-shot-text-classification
+
+commit e08b9f0f19a57d6b57547ac4ae037b001b9f775e
+Author: ChrisIsKing <christopher.clarke@v75inc.com>
+Date:   Thu Feb 24 21:18:42 2022 -0500
+
+    Added binary bert
+
+commit fcedd7ddf0df8fe9347f738d362b854f077efd8d
+Author: Stefan Heng <43276957+SpongeBobBang@users.noreply.github.com>
+Date:   Thu Feb 24 19:37:02 2022 -0500
+
+    New: bert mnli; Update: requirements.txt; proceesed dataset storage
+
+commit b7496fe38c615d9857524207f2532306eb52acc9
+Merge: 26b2704 0fab351
+Author: Stefan Heng <43276957+SpongeBobBang@users.noreply.github.com>
+Date:   Wed Feb 23 14:03:22 2022 -0500
+
+    Merge branch 'master' of github.com:ChrisIsKing/Zero-shot-text-classification
+
+commit 26b270444906edd13011a7eba83a258220e025f7
+Author: Stefan Heng <43276957+SpongeBobBang@users.noreply.github.com>
+Date:   Wed Feb 23 14:03:03 2022 -0500
+
+    chore: test commit author
+
+commit c9bdb1e82f3407ffb3e4787d76baf6dd46353ea5
+Author: Stefan Heng <43276957+SpongeBobBang@users.noreply.github.com>
+Date:   Wed Feb 23 14:00:48 2022 -0500
+
+    Update: remove datasets in repo; unified dataset with descriptor training; Fix: gradient accumulation acc calculation
+
+commit 0fab35120d5618dd96a676267e44121f59c0e70f
+Author: Stefan Heng <stefanhg@clarity2.eecs.umich.edu>
+Date:   Wed Feb 23 13:21:37 2022 -0500
+
+    Update: remove datasets in repo; unified dataset with descriptor training; Fix: gradient accumulation acc calculation
+
+commit 78eab1a508e6403b3db2cc333172fd9489715541
+Merge: ea164ff 7edb6cc
+Author: ChrisIsKing <christopher.clarke@v75inc.com>
+Date:   Tue Feb 22 23:47:57 2022 -0500
+
+    Merge branch 'master' of github.com:ChrisIsKing/Zero-shot-text-classification
+
+commit ea164ff5f224156edef32f845647921832db0240
+Author: ChrisIsKing <christopher.clarke@v75inc.com>
+Date:   Tue Feb 22 23:47:53 2022 -0500
+
+    starting binary bert
+
+commit 7edb6ccfe5e8c08400be0ff50f0ee7e0607d41b0
+Author: Stefan Heng <43276957+SpongeBobBang@users.noreply.github.com>
+Date:   Tue Feb 22 20:57:33 2022 -0500
+
+    New: gradient accumulation training; log lr
+
+commit a58d60fd76f52fd9fa1d648fae725a2a2e30ceca
+Author: Stefan Heng <43276957+SpongeBobBang@users.noreply.github.com>
+Date:   Tue Feb 22 19:39:50 2022 -0500
+
+    Update: plot & log save path
+
+commit f87dabb25586a6146e2b7b7694fa24a6f4d929c8
+Merge: cc30bd7 dfe59ff
+Author: Stefan Heng <43276957+SpongeBobBang@users.noreply.github.com>
+Date:   Tue Feb 22 12:38:32 2022 -0500
+
+    Merge branch 'master' of github.com:ChrisIsKing/Zero-shot-text-classification into master
+
+commit cc30bd786bb2a8e0b8e2018d6225805135853aaa
+Author: Stefan Heng <43276957+SpongeBobBang@users.noreply.github.com>
+Date:   Tue Feb 22 12:38:16 2022 -0500
+
+    Update: remote model save path for disk space
+
+commit dfe59ff534ae4d1fa886a9ef8d6f89c71544945e
+Author: ChrisIsKing <christopher.clarke@v75inc.com>
+Date:   Tue Feb 22 09:07:05 2022 -0500
+
+    unlfs
+
+commit 3a0ba8fcb96ae37f98f6e6f21687b6f26b6aee00
+Author: Stefan Heng <43276957+SpongeBobBang@users.noreply.github.com>
+Date:   Tue Feb 22 00:02:14 2022 -0500
+
+    Fix: NTP & cls accuracy calculation
+
+commit b77b81a601105af922123ab4e28e406a2f8af457
+Author: Stefan Heng <43276957+SpongeBobBang@users.noreply.github.com>
+Date:   Mon Feb 21 21:58:05 2022 -0500
+
+    New: benchmarking dataset loading & training
+
+commit 868554c77dc54fe372d78e8451e2da21e0061f68
+Author: Stefan Heng <43276957+SpongeBobBang@users.noreply.github.com>
+Date:   Sun Feb 20 21:34:41 2022 -0500
+
+    Update: logging file formatting; New: sanity check gpt2 training
+
+commit bc454c6c19208fa093a8606cb2fa4425cd4175b9
+Author: ChrisIsKing <christopher.clarke@v75inc.com>
+Date:   Sat Feb 19 20:48:01 2022 -0500
+
+    added yahoo
+
+commit a43fe8880bb363361306f62fa52fb64f9d751b2a
+Author: ChrisIsKing <christopher.clarke@v75inc.com>
+Date:   Sat Feb 19 20:15:49 2022 -0500
+
+    Added lfs
+
+commit 5070009efee652b12e4c1f8dc4301f8f23b99130
+Author: ChrisIsKing <christopher.clarke@v75inc.com>
+Date:   Sat Feb 19 20:14:11 2022 -0500
+
+    Added dbpedia lfs
+
+commit 3640dfac09a9e255e1e15209c9dae710a50156b5
+Merge: 721f532 d31c2ef
+Author: ChrisIsKing <christopher.clarke@v75inc.com>
+Date:   Sat Feb 19 20:03:18 2022 -0500
+
+    merged changes
+
+commit 721f5324839af232f73af9ddc4f8122967212c0e
+Author: ChrisIsKing <christopher.clarke@v75inc.com>
+Date:   Sat Feb 19 19:57:24 2022 -0500
+
+    Added zeroshot data
+
+commit d31c2ef6875e3fadba9f2c97c96b3f540bab0705
+Author: Stefan Heng <43276957+SpongeBobBang@users.noreply.github.com>
+Date:   Fri Feb 18 21:36:45 2022 -0500
+
+    Fix: training memory usage
+
+commit 3a46f5fb95bcc6fb60e666c5692b77c13232360a
+Author: Stefan Heng <stefan.hg@outlook.com>
+Date:   Fri Feb 18 00:04:59 2022 -0500
+
+    New: debugging with as much pretrained weights; plot classification acc; log write to file
+
+commit 9fb06cf3044c782b5aab135abd7c0b4d5e0953c4
+Author: Stefan Heng <43276957+SpongeBobBang@users.noreply.github.com>
+Date:   Wed Feb 16 23:37:20 2022 -0500
+
+    Update: readme
+
+commit 31fea22215a983fff4a2e5e82f11b05df54e21d3
+Author: Stefan Heng <43276957+SpongeBobBang@users.noreply.github.com>
+Date:   Wed Feb 16 23:35:42 2022 -0500
+
+    New: init commit; gpt2 baseline training
