@@ -72,7 +72,7 @@ class ZsGPT2Tokenizer(GPT2TokenizerFast):
         self.templates = config('baselines.gpt2-nvidia.templates')
         # Mapping from dataset name to label for non-UTCD cases
         self.cache: Dict[str, Dict] = ZsGPT2Tokenizer.Cache()
-        self.cache_bm: datasets.ClassLabel = None
+        self.cache_bm = None
 
         self.ques_token, self.text_token, self.answ_token = (
             ZsGPT2Tokenizer.SPEC_TOKS[k] for k in ('pref_ques', 'pref_text', 'pref_answ')
@@ -351,7 +351,7 @@ def get_train_setup(
             batch_size=128,
             gradient_accumulation_steps=1,  # To fit in memory; Effectively batch size 128 as in paper
             weight_decay=1e-2,
-            num_train_epochs=50,
+            num_train_epochs=10,
             lr_scheduler_type=SchedulerType.COSINE,
         )
     }
@@ -602,13 +602,13 @@ class MyLoggingCallback(TrainerCallback):
         self.fl_handler = None
 
         self.out_dict = None
-        self.out_dict_tr: Dict[str, Union[str, int, float, List]] = None
+        self.out_dict_tr = None
         self.is_compute_loss_on_train = True
         self.k_acc = 'acc_meta'
         self.k_cls = 'classification_acc_meta'  # See `CustomTrainer`
         self.k_cls_eval = f'{self.k_cls}_eval'
 
-        self.parent_trainer = parent_trainer
+        self.trainer = parent_trainer
         self.do_eval = do_eval
         args, dset_tr__, dset_vl_, md_, tokzer = (
             getattr(parent_trainer, k) for k in ['args', 'train_dataset', 'eval_dataset', 'model', 'tokenizer']
@@ -616,8 +616,8 @@ class MyLoggingCallback(TrainerCallback):
         self.n_eval = len(dset_vl_)
         lr, n_ep = args.learning_rate, args.num_train_epochs
         self.bsz = args.per_device_train_batch_size * args.gradient_accumulation_steps
-        if torch.cuda.is_available() and self.parent_trainer.args.n_gpu > 1:
-            self.bsz *= self.parent_trainer.args.n_gpu
+        if torch.cuda.is_available() and self.trainer.args.n_gpu > 1:
+            self.bsz *= self.trainer.args.n_gpu
         seq_max_len = len(dset_tr__[0]['input_ids'])
         n_data, md_sz = len(dset_tr__), md_.config.n_positions
         self.n_step = max(math.ceil(len(dset_tr__) // self.bsz), 1) * n_ep  # #step/epoch at least 1
@@ -630,7 +630,7 @@ class MyLoggingCallback(TrainerCallback):
 
         self.log_fnm_tpl = f'{name}, n={n_data}, l={md_sz}, a={lr}, bsz={self.bsz}, n_ep={n_ep}, {{}}'
         self.log_fnm = None  # Current logging file name template & file instance during training
-        paths_ = self.parent_trainer.args.output_dir.split(os.sep)
+        paths_ = self.trainer.args.output_dir.split(os.sep)
         path_proj = paths_[paths_.index(DIR_PROJ):]
         self.out_dir = os.path.join(PATH_BASE, *path_proj)  # Keep the logging & plotting inside project directory
 
@@ -650,7 +650,7 @@ class MyLoggingCallback(TrainerCallback):
         self.mode = mode
 
     def on_train_begin(self, args: TrainingArguments, state, control, **kwargs):
-        if self.parent_trainer.is_local_process_zero():  # For distributed training; TODO: support multi machine?
+        if self.trainer.is_local_process_zero():  # For distributed training; TODO: support multi machine?
             self.logger_fl.removeHandler(self.fl_handler)  # Remove prior `FileHandler`, prep for next potential run
             self.fl_handler = None
 
@@ -665,8 +665,8 @@ class MyLoggingCallback(TrainerCallback):
 
             self.logger.info(f'Training started with {log_dict(self.train_meta)}')
             self.logger_fl.info(f'Training started with {log_dict(self.train_meta, with_color=False)}')
-            out_args = f'with model config: {self.parent_trainer.model.config} \n' \
-                       f'and training args: {self.parent_trainer.args}'
+            out_args = f'with model config: {self.trainer.model.config} \n' \
+                       f'and training args: {self.trainer.args}'
             self.logger.info(out_args)
             self.logger_fl.info(out_args)
             self.t_strt = datetime.datetime.now()
@@ -700,7 +700,8 @@ class MyLoggingCallback(TrainerCallback):
                 'learning_rate'
             ]
             fmt = [
-                f':>{len(str(self.n_step))}', ':6.2f', ':7.4f', ':7.4f', ':6.2f', ':6.2f',
+                f':>{len(str(self.n_step))}', f':{len(str(self.trainer.args.num_train_epochs)) + 4}.3f',
+                ':7.4f', ':7.4f', ':6.2f', ':6.2f',
                 ':6.2f', ':6.2f', ':6.2f', ':6.2f', ':.2e'
             ]
             s_fmts = [f'{{{k}{fmt_}}}' for k, fmt_ in zip(keys_, fmt)]  # Enforce ordering
@@ -780,7 +781,7 @@ class MyLoggingCallback(TrainerCallback):
 
                                 # Prep for Trainer internal evaluation call
                                 self.is_compute_loss_on_train = False
-                                out: Dict = self.parent_trainer.evaluate()  # Expanded to branch below then comes back
+                                out: Dict = self.trainer.evaluate()  # Expanded to branch below then comes back
                                 # Disable, seems like an edge case 1st training step, not sure ow
                                 # self.is_compute_loss_on_train = True
                                 n_ep_, vl_acc, vl_loss = (out.get(k, None) for k in (
@@ -858,14 +859,14 @@ class MyLoggingCallback(TrainerCallback):
                             n_ep = logs['epoch']
                             self.out_dict_tr = {'step': step, 'epoch': n_ep, self.k_acc: [logs[self.k_acc]]}
                             # Aggregate accuracy & classification accuracy counts
-                            if self.parent_trainer.compute_cls_acc:
+                            if self.trainer.compute_cls_acc:
                                 self.out_dict_tr[self.k_cls] = [logs[self.k_cls]]
                         else:  # Later batch in the same gradient accumulation
                             step_, n_ep = self.out_dict_tr['step'], self.out_dict_tr['epoch']
                             n_ep_ = logs['epoch']
                             assert step_ == step and n_ep_ == n_ep
                             self.out_dict_tr[self.k_acc].append(logs[self.k_acc])
-                            if self.parent_trainer.compute_cls_acc:
+                            if self.trainer.compute_cls_acc:
                                 self.out_dict_tr[self.k_cls].append(logs[self.k_cls])
                     elif 'loss' in logs:  # The Trainer default training loss logging
                         # Take the averaging by parent `Trainer` for granted
@@ -913,6 +914,7 @@ class CustomTrainer(Trainer):
     def __init__(self, tokenizer: ZsGPT2Tokenizer = None, custom_logging=True, compute_cls_acc=True, **kwargs):
         super().__init__(**kwargs)
         assert 'args' in kwargs
+
         self.custom_logging = custom_logging
         self.compute_cls_acc = compute_cls_acc
 
@@ -1122,10 +1124,12 @@ if __name__ == '__main__':
     nm = 'gpt2-medium'
 
     # n = 1
+    # n = 128
     # n = 1024
     n = None
 
-    tr_args = dict(num_train_epochs=1)
+    tr_args = None
+    # tr_args = dict(num_train_epochs=32)
 
     md, tkzer, dset_tr, dset_vl, trainer = get_all_setup(
         nm, dnm, do_eval=False, custom_logging=True, n_sample=n, random_seed=seed, train_args=tr_args
@@ -1139,10 +1143,10 @@ if __name__ == '__main__':
         profiler.disable()
         stats = pstats.Stats(profiler).sort_stats('cumtime')
         stats.print_stats()
-    # profile()
+    profile()
 
     def train():
         trainer.train()
         trainer.save_model(os.path.join(trainer.args.output_dir))
         # trainer.evaluate()
-    train()
+    # train()
