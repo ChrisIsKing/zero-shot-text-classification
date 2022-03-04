@@ -19,7 +19,6 @@ Deprecated==1.2.13
 dill==0.3.4
 en-core-web-md @ https://github.com/explosion/spacy-models/releases/download/en_core_web_md-3.2.0/en_core_web_md-3.2.0-py3-none-any.whl
 filelock==3.4.1
-flair==0.10
 frozenlist==1.2.0
 fsspec==2022.1.0
 ftfy==6.0.3
