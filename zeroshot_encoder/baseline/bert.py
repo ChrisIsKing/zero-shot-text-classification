@@ -15,8 +15,8 @@ from transformers import BertTokenizerFast
 from transformers import BertForSequenceClassification
 from transformers import Trainer
 
+from zeroshot_encoder.util import *
 from zeroshot_encoder.preprocess import *
-
 
 
 class ZsBertTokenizer(BertTokenizerFast):
@@ -25,7 +25,7 @@ class ZsBertTokenizer(BertTokenizerFast):
 
         self.cache: datasets.ClassLabel = None
         tmpls = config('baselines.bert-mnli.templates')
-        self.dnm2tpl = {dnm: tmpls[d['aspect']] for dnm, d in config('benchmark.datasets').items()}
+        self.dnm2tpl = {dnm: tmpls[d['aspect']] for dnm, d in config('UTCD.datasets').items()}
         ic(self.dnm2tpl)
 
     def _call_paren(self, *args, **kwargs) -> Dict:
@@ -56,14 +56,14 @@ class ZsBertTokenizer(BertTokenizerFast):
             # Convert multi-class labels to binary labels: 0 => `non-entailment`, 1=> `entailment`
             if self.cache is None:
                 self.cache = datasets.load_from_disk(
-                    os.path.join(get_output_base(), DIR_PROJ, DIR_DSET, 'processed', 'benchmark_joined')
+                    os.path.join(get_output_base(), DIR_PROJ, DIR_DSET, 'processed', 'UTCD')
                 )['train'].features['label']  # TODO: assume `train` split
 
-            dset_nm = config('benchmark.dataset_id2name')[dataset_id]
-            descs = config(f'benchmark.datasets.{dset_nm}.labels.train')
+            dset_nm = config('UTCD.dataset_id2name')[dataset_id]
+            descs = config(f'UTCD.datasets.{dset_nm}.labels.train')
             # ic(descs)
             ic(dataset_id, text, label)
-            label = descs.index(self.cache.int2str(label))  # Global benchmark label to local dataset ordinal label
+            label = descs.index(self.cache.int2str(label))  # Global UTCD label to local dataset ordinal label
             ic(label)
             n_lb = len(descs)
             # for i_lb, desc in enumerate(descs):
@@ -90,10 +90,10 @@ class ZsBertTokenizer(BertTokenizerFast):
 
 
 def get_all_setup(
-        model_name, dataset_name: str = 'benchmark_joined',
+        model_name, dataset_name: str = 'UTCD',
         n_sample=None, random_seed=None, do_eval=True, custom_logging=True
 ) -> Tuple[BertForSequenceClassification, BertTokenizerFast, datasets.Dataset, datasets.Dataset, Trainer]:
-    assert dataset_name == 'benchmark_joined'
+    assert dataset_name == 'UTCD'
     path = os.path.join(PATH_BASE, DIR_PROJ, DIR_MDL, 'bert', 'mnli-pretrained')
     model_ = BertForSequenceClassification.from_pretrained(path)
     assert model_.num_labels == 2  # Binary classification of entailment
@@ -103,7 +103,7 @@ def get_all_setup(
         path, model_max_length=BertTokenizerFast.max_model_input_sizes[model_name_]
     )
     tr, vl = get_dset(
-        'benchmark_joined', map_func=tokenizer_, n_sample=n_sample, remove_columns=['label', 'text'], random_seed=random_seed,
+        'UTCD', map_func=tokenizer_, n_sample=n_sample, remove_columns=['label', 'text'], random_seed=random_seed,
         fast='debug' not in model_name
     )
     return model_, tokenizer_, tr, vl,
@@ -119,7 +119,7 @@ if __name__ == '__main__':
     # nm = 'model'
 
     get_all_setup(
-        model_name=nm, dataset_name='benchmark_joined',
+        model_name=nm, dataset_name='UTCD',
         do_eval=False, custom_logging=True, n_sample=n, random_seed=seed
     )
 

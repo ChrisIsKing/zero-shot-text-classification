@@ -23,8 +23,14 @@ import sty
 from zeroshot_encoder.util.data_path import PATH_BASE, DIR_DSET, DIR_PROJ, DIR_MDL, PKG_NM
 
 
-rcParams['figure.constrained_layout.use'] = True
+pd.set_option('expand_frame_repr', False)
+pd.set_option('display.precision', 2)
+pd.set_option('max_colwidth', 40)
+
+plt.rcParams['figure.constrained_layout.use'] = True
+plt.rcParams['figure.figsize'] = (16, 9)
 sns.set_style('darkgrid')
+
 LN_KWARGS = dict(marker='o', ms=0.3, lw=0.25)  # matplotlib line plot default args
 
 
@@ -85,8 +91,8 @@ def config(attr):
     if not hasattr(config, 'config'):
         with open(os.path.join(PATH_BASE, DIR_PROJ, PKG_NM, 'util', 'config.json'), 'r') as f:
             config.config = json.load(f)
-    config.config['benchmark']['dataset_id2name'] = {  # Convert str keys to int
-        int(k): v for k, v in config.config['benchmark']['dataset_id2name'].items()
+    config.config['UTCD']['dataset_id2name'] = {  # Convert str keys to int
+        int(k): v for k, v in config.config['UTCD']['dataset_id2name'].items()
     }
     return get(config.config, attr)
 
@@ -153,7 +159,7 @@ def log(s, c: str = 'log', c_time='green', as_str=False):
         print(f'{c}{log(now(), c=c_time, as_str=True)}| {s}{log.reset}')
 
 
-def logs(s, c):
+def log_s(s, c):
     return log(s, c=c, as_str=True)
 
 
@@ -161,7 +167,7 @@ def logi(s):
     """
     Syntactic sugar for logging `info` as string
     """
-    return logs(s, c='i')
+    return log_s(s, c='i')
 
 
 def log_dict(d: Dict = None, with_color=True, **kwargs) -> str:
@@ -171,8 +177,8 @@ def log_dict(d: Dict = None, with_color=True, **kwargs) -> str:
     if d is None:
         d = kwargs
     pairs = (f'{k}: {logi(v) if with_color else v}' for k, v in d.items())
-    pref = logs('{', c='m') if with_color else '{'
-    post = logs('}', c='m') if with_color else '}'
+    pref = log_s('{', c='m') if with_color else '{'
+    post = log_s('}', c='m') if with_color else '}'
     return pref + ', '.join(pairs) + post
 
 
@@ -321,24 +327,29 @@ def plot_points(arr, **kwargs):
 
 
 def get_output_base():
-    # Remote machine `clarity2`, save the models somewhere else to save `/home` disk space
-    if 'clarity' in get_hostname():
-        return os.path.join('/data')
+    # For remote machines, save the models somewhere else to save `/home` disk space
+    hnm = get_hostname()
+    if 'clarity' in hnm:  # Clarity lab
+        return '/data'
+    elif 'arc-ts' in hnm:  # Great Lakes; `profmars0` picked arbitrarily among [`profmars0`, `profmars1`]
+        return os.path.join('/scratch', 'profmars_root', 'profmars0', 'stefanhg')  # Per https://arc.umich.edu/greatlakes/user-guide/
     else:
         return PATH_BASE
 
 
-def process_benchmark_dataset(join=False):
-    ext = config('benchmark.dataset_ext')
+def process_utcd_dataset(join=False):
+    ext = config('UTCD.dataset_ext')
     path_dsets = os.path.join(PATH_BASE, DIR_PROJ, DIR_DSET)
     path_out = os.path.join(get_output_base(), DIR_PROJ, DIR_DSET)
+    ic(path_out)
 
     def path2dsets(dnm: str, d_dset: Dict) -> Union[datasets.DatasetDict, Dict[str, pd.DataFrame]]:
+        ic(dnm)
         path = d_dset['path']
         path = os.path.join(path_dsets, f'{path}.{ext}')
         with open(path) as f:
             dsets_: Dict = json.load(f)
-        d_lbs = config(f'benchmark.datasets.{dnm}.labels')
+        d_lbs = config(f'UTCD.datasets.{dnm}.labels')
 
         def json2dset(split: str, dset: List) -> Union[datasets.Dataset, pd.DataFrame]:
             assert all(sample[0] != '' for sample in dset)
@@ -356,9 +367,9 @@ def process_benchmark_dataset(join=False):
                 df_.label.replace(to_replace=lbs.names, value=range(lbs.num_classes), inplace=True)
                 return datasets.Dataset.from_pandas(df_, features=features_)
         return datasets.DatasetDict({split: json2dset(split, dset) for split, dset in dsets_.items()})
-    d_dsets = {dnm: path2dsets(dnm, d) for dnm, d in config('benchmark.datasets').items()}
+    d_dsets = {dnm: path2dsets(dnm, d) for dnm, d in config('UTCD.datasets').items()}
     if join:
-        dnm2id = config('benchmark.dataset_name2id')
+        dnm2id = config('UTCD.dataset_name2id')
 
         def pre_concat(dnm: str, df_: pd.DataFrame) -> pd.DataFrame:
             df_['dataset_id'] = [dnm2id[dnm]] * len(df_)  # Add dataset source information to each row
@@ -382,7 +393,7 @@ def process_benchmark_dataset(join=False):
         tr = dfs2dset(pre_concat(dnm, dsets['train']) for dnm, dsets in d_dsets.items())
         vl = dfs2dset(pre_concat(dnm, dsets['test']) for dnm, dsets in d_dsets.items())
         dsets = datasets.DatasetDict(train=tr, test=vl)
-        dsets.save_to_disk(os.path.join(path_out, 'processed', 'benchmark_joined'))
+        dsets.save_to_disk(os.path.join(path_out, 'processed', 'UTCD'))
     else:
         for dnm, dsets in d_dsets.items():
             dsets.save_to_disk(os.path.join(path_out, 'processed', dnm))
@@ -390,8 +401,8 @@ def process_benchmark_dataset(join=False):
 
 def map_ag_news():
     dnm = 'ag_news'
-    d_dset = config(f'benchmark.datasets.{dnm}')
-    ext = config('benchmark.dataset_ext')
+    d_dset = config(f'UTCD.datasets.{dnm}')
+    ext = config('UTCD.dataset_ext')
     path_dset = os.path.join(PATH_BASE, DIR_PROJ, DIR_DSET)
     path = d_dset['path']
     path = os.path.join(path_dset, f'{path}.{ext}')
@@ -411,16 +422,18 @@ if __name__ == '__main__':
 
     # ic(fmt_num(124439808))
 
-    # process_benchmark_dataset()
-    process_benchmark_dataset(join=True)
+    # process_utcd_dataset()
+    process_utcd_dataset(join=True)
 
     def sanity_check():
-        dset = datasets.load_from_disk(
-            os.path.join(get_output_base(), DIR_PROJ, DIR_DSET, 'processed', 'benchmark_joined')
-        )['test']
-        lbs = dset.features['label']
+        path = os.path.join(get_output_base(), DIR_PROJ, DIR_DSET, 'processed', 'UTCD')
+        ic(path)
+        dset = datasets.load_from_disk(path)
+        te, vl = dset['train'], dset['test']
+        ic(len(te), len(vl))
+        lbs = vl.features['label']
         ic(lbs)
-        ic(dset[60], lbs.int2str(118))
+        ic(vl[60], lbs.int2str(118))
     sanity_check()
 
     # map_ag_news()

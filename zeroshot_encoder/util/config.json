@@ -73,9 +73,9 @@
             }
         }
     },
-    "benchmark": {
+    "UTCD": {
         "datasets": {
-            "clinc": {
+            "clinc_150": {
                 "path": "clinc_150",
                 "aspect": "intent",
                 "labels": {
@@ -641,7 +641,7 @@
                     ]
                 }
             },
-            "sentiment": {
+            "emotion": {
                 "path": "emotion",
                 "aspect": "sentiment",
                 "labels": {
@@ -835,10 +835,10 @@
         "dataset_ext": "json",
         "dataset_name2id": {
             "ag_news": 0,
-            "clinc": 1,
+            "clinc_150": 1,
             "dbpedia": 2,
-            "go_emotion": 3,
-            "sentiment": 4,
+            "emotion": 3,
+            "go_emotion": 4,
             "sentiment_tweets_2020": 5,
             "sgd": 6,
             "slurp": 7,
@@ -846,10 +846,10 @@
         },
         "dataset_id2name": {
             "0": "ag_news",
-            "1": "clinc",
+            "1": "clinc_150",
             "2": "dbpedia",
-            "3": "go_emotion",
-            "4": "sentiment",
+            "3": "emotion",
+            "4": "go_emotion",
             "5": "sentiment_tweets_2020",
             "6": "sgd",
             "7": "slurp",
