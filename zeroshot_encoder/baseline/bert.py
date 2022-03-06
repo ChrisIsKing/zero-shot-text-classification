@@ -103,7 +103,7 @@ def get_all_setup(
         path, model_max_length=BertTokenizerFast.max_model_input_sizes[model_name_]
     )
     tr, vl = get_dset(
-        'UTCD', map_func=tokenizer_, n_sample=n_sample, remove_columns=['label', 'text'], random_seed=random_seed,
+        'UTCD', tr_map_func=tokenizer_, n_sample=n_sample, remove_columns=['label', 'text'], random_seed=random_seed,
         fast='debug' not in model_name
     )
     return model_, tokenizer_, tr, vl,

@@ -98,7 +98,7 @@ class ZsGPT2Tokenizer(GPT2TokenizerFast):
         assert len(id_) == 1
         return id_[0]  # Intended for special tokens
 
-    def __call__(self, samples: Dict[str, Union[List, str, int]], is_utcd=False, **kwargs):
+    def __call__(self, samples: Dict[str, Union[List, str, int]], is_utcd=False, mode: str = 'train', **kwargs):
         """
         :param samples: Data sample(s) with keys [`dataset_name`, `label`, `text`]
             Each value an element or a list of elements
@@ -115,7 +115,8 @@ class ZsGPT2Tokenizer(GPT2TokenizerFast):
         def call_single(i, dataset_id: int, text: str, label: int):
             dset_nm = config('UTCD.dataset_id2name')[dataset_id]
             if is_utcd:
-                descs = config(f'UTCD.datasets.{dset_nm}.labels.train')  # Descriptions; TODO: Assume `train` split
+                split = 'train' if mode == 'train' else 'test'
+                descs = config(f'UTCD.datasets.{dset_nm}.labels.{split}')  # Descriptive labels
                 n_cls = len(descs)
                 # `label` is shared across all datasets, map to local label within dataset
                 if self.cache_bm is None:
@@ -272,7 +273,7 @@ class ZsGPT2LMHeadModel(GPT2LMHeadModel):
         return md_
 
 
-def tokenize_func(tokenizer_: ZsGPT2Tokenizer, dataset_name='ag_news', max_length=None):
+def tokenize_func(tokenizer_: ZsGPT2Tokenizer, dataset_name='ag_news', max_length=None, mode: str = 'train'):
     def _tokenize_func(sample: Dict[str, List]):
         """
         :param sample: A batch of data samples
@@ -280,7 +281,7 @@ def tokenize_func(tokenizer_: ZsGPT2Tokenizer, dataset_name='ag_news', max_lengt
         if dataset_name != 'UTCD':
             sample['dataset_id'] = [config('UTCD.dataset_name2id')[dataset_name]] * len(sample['label'])
         # Otherwise, `dataset_id` already part of input
-        return tokenizer_(sample, is_utcd=dataset_name == 'UTCD', max_length=max_length)
+        return tokenizer_(sample, is_utcd=dataset_name == 'UTCD', max_length=max_length, mode=mode)
     return _tokenize_func
 
 
@@ -414,6 +415,7 @@ def compute_metrics(eval_pred):
     if not hasattr(compute_metrics, 'metric'):
         compute_metrics.metric = load_metric('accuracy')
     predictions, labels = eval_pred  # `argmax` performed already, see `CustomTrainer.prediction_step`
+    ic('in compute metrics, eval', eval_pred, predictions.shape, labels.shape)
     predictions, labels = predictions[:, :-1], labels[:, 1:]  # For CLM
     labels, predictions = labels.flatten(), predictions.flatten()  # Original 2D tensor gives error
     msk_non_pad = (labels != PT_LOSS_PAD)
@@ -449,16 +451,17 @@ def get_all_setup(
             }
             result['labels'] = result['input_ids'].copy()
             return result
-        map_func = group_texts
+        tr_map_func = vl_map_func = group_texts
     else:
         save_gpu_mem = 'arc-ts' not in get_hostname()
         # save_gpu_mem = True  # Gradient checkpointing still needed - otherwise doesn't fit in 44G GPU
         model_, tokenizer_, data_collator_ = get_model_n_tokenizer(model_name, save_gpu_memory=save_gpu_mem)
         train_args_ = get_train_setup(model_name, do_eval=do_eval, train_args=train_args, save_gpu_memory=save_gpu_mem)
-        map_func = tokenize_func(tokenizer_, dataset_name=dataset_name)
+        tr_map_func = tokenize_func(tokenizer_, dataset_name=dataset_name, mode='train')
+        vl_map_func = tokenize_func(tokenizer_, dataset_name=dataset_name, mode='test')
 
     dset_tr_, dset_vl_ = get_dset(
-        dataset_name=dataset_name, map_func=map_func, remove_columns=['label', 'text'],
+        dataset_name=dataset_name, tr_map_func=tr_map_func, vl_map_func=vl_map_func, remove_columns=['label', 'text'],
         n_sample=n_sample, random_seed=random_seed,
         fast='debug' not in model_name
     )
@@ -1137,6 +1140,7 @@ if __name__ == '__main__':
     md, tkzer, dset_tr, dset_vl, trainer = get_all_setup(
         nm, dnm, do_eval=False, custom_logging=True, n_sample=n, random_seed=seed, train_args=tr_args
     )
+
     def profile():
         import cProfile
         import pstats
@@ -1146,10 +1150,23 @@ if __name__ == '__main__':
         profiler.disable()
         stats = pstats.Stats(profiler).sort_stats('cumtime')
         stats.print_stats()
-    profile()
+    # profile()
 
-    def train():
-        trainer.train()
+    def train(resume=False):
+        if resume:
+            checkpoint_path = '/scratch/profmars_root/profmars0/stefanhg/Zero-shot-text-classification/' \
+                              'models/gpt2/gpt2-medium/2022-03-03 00-23-41/checkpoint-18533'
+            trainer.train(checkpoint_path)  # Resume from checkpoint
+        else:
+            trainer.train()
         trainer.save_model(os.path.join(trainer.args.output_dir))
         # trainer.evaluate()
-    # train()
+    # train(resume=True)
+
+    def evaluate_trained():
+        # With the Trainer.API
+        checkpoint_path = '/scratch/profmars_root/profmars0/stefanhg/Zero-shot-text-classification/' \
+                          'models/gpt2/gpt2-medium/2022-03-03 00-23-41/checkpoint-18533'
+        trainer.model = ZsGPT2LMHeadModel.from_pretrained(checkpoint_path)  # Override the model
+        trainer.evaluate()
+    evaluate_trained()

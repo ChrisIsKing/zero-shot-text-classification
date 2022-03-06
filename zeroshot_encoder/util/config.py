@@ -81,15 +81,16 @@ config = {
     },
     'UTCD': dict(
         datasets=dict(
-            clinc_150=dict(path='clinc_150', aspect='intent'),
-            sgd=dict(path='sgd', aspect='intent'),
-            slurp=dict(path='slurp', aspect='intent'),
-            emotion=dict(path='emotion', aspect='sentiment'),
-            go_emotion=dict(path='go_emotion', aspect='sentiment'),
-            sentiment_tweets_2020=dict(path='sentiment_tweets_2020', aspect='sentiment'),
-            ag_news=dict(path='ag_news', aspect='topic'),
-            dbpedia=dict(path='dbpedia', aspect='topic'),
-            yahoo=dict(path='yahoo', aspect='topic')
+            # in-domain evaluation has the same labels as training
+            clinc_150=dict(path='clinc_150', aspect='intent', eval_labels_same=True),
+            sgd=dict(path='sgd', aspect='intent', eval_labels_same=False),  # has some unique test labels
+            slurp=dict(path='slurp', aspect='intent', eval_labels_same=False),
+            emotion=dict(path='emotion', aspect='sentiment', eval_labels_same=True),
+            go_emotion=dict(path='go_emotion', aspect='sentiment', eval_labels_same=True),
+            sentiment_tweets_2020=dict(path='sentiment_tweets_2020', aspect='sentiment', eval_labels_same=True),
+            ag_news=dict(path='ag_news', aspect='topic', eval_labels_same=True),
+            dbpedia=dict(path='dbpedia', aspect='topic', eval_labels_same=True),
+            yahoo=dict(path='yahoo', aspect='topic', eval_labels_same=True)
         ),
         dataset_ext='json'  # all in json
     ),
@@ -112,7 +113,10 @@ def path2dataset_labels(path: str) -> Dict[str, List[str]]:
 
 d_dsets = config['UTCD']['datasets']
 for dnm, d in d_dsets.items():
-    d.update(dict(labels=path2dataset_labels(d['path'])))
+    d_labels = path2dataset_labels(d['path'])
+    if d['eval_labels_same']:  # Sanity check
+        assert d_labels['train'] == d_labels['test']
+    d.update(dict(labels=d_labels))
 dnms = sorted(d_dsets)
 config['UTCD']['dataset_name2id'] = {dnm: i for i, dnm in enumerate(dnms)}
 config['UTCD']['dataset_id2name'] = {i: dnm for i, dnm in enumerate(dnms)}
