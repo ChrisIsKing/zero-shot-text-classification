@@ -348,8 +348,8 @@ def get_train_setup(
         ),
         'gpt2-medium': dict(
             learning_rate=4e-5,
-            batch_size=128,
-            gradient_accumulation_steps=1,  # To fit in memory; Effectively batch size 128 as in paper
+            batch_size=16,
+            gradient_accumulation_steps=8,  # To fit in memory; Effectively batch size 128 as in paper
             weight_decay=1e-2,
             num_train_epochs=10,
             lr_scheduler_type=SchedulerType.COSINE,
@@ -451,8 +451,8 @@ def get_all_setup(
             return result
         map_func = group_texts
     else:
-        # save_gpu_mem = 'arc-ts' not in get_hostname()
-        save_gpu_mem = True  # Gradient checkpointing still needed - otherwise doesn't fit in 44G GPU
+        save_gpu_mem = 'arc-ts' not in get_hostname()
+        # save_gpu_mem = True  # Gradient checkpointing still needed - otherwise doesn't fit in 44G GPU
         model_, tokenizer_, data_collator_ = get_model_n_tokenizer(model_name, save_gpu_memory=save_gpu_mem)
         train_args_ = get_train_setup(model_name, do_eval=do_eval, train_args=train_args, save_gpu_memory=save_gpu_mem)
         map_func = tokenize_func(tokenizer_, dataset_name=dataset_name)
@@ -875,6 +875,8 @@ class MyLoggingCallback(TrainerCallback):
                         del self.out_dict_tr[self.k_cls]
                         self.out_dict_tr['learning_rate'] = logs['learning_rate']
                         self.out_dict_tr['train_loss'] = logs['loss']
+                        # assert self.out_dict_tr['epoch'] == round(state.epoch, 2)  # Assersion sometimes fails
+                        self.out_dict_tr['epoch'] = state.epoch
                         log_update(self.out_dict_tr)
                         self.out_dict_tr = None  # Rest for next global step
                     elif any('runtime' in k for k in logs.keys()):
@@ -920,6 +922,7 @@ class CustomTrainer(Trainer):
 
         self.tokenizer = tokenizer  # TODO: generalize to more tokenizers?
         self.post_init()
+        ic('Trainer instantiated', self.is_local_process_zero())  # Sanity check for distributed training
 
     def post_init(self):
         callbacks = self.callback_handler.callbacks
