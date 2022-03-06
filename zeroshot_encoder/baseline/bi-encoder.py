@@ -71,7 +71,8 @@ if __name__ == "__main__":
         logger.info("Warmup-steps: {}".format(warmup_steps))
 
         model.fit(train_objectives=[(train_dataloader, train_loss)], 
-                epochs=num_epochs, 
+                epochs=num_epochs,
+                evaluator=evauator, 
                 warmup_steps=warmup_steps,
                 evaluation_steps=100000,
                 output_path=model_save_path)
