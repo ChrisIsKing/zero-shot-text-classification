@@ -21,7 +21,6 @@ def parse_args():
     subparser = parser.add_subparsers(dest='command')
     train = subparser.add_parser('train')
     test = subparser.add_parser('test')
-    pre_train = subparser.add_parser('pre_train')
 
     # set train arguments
     train.add_argument('--output', type=str, required=True)
