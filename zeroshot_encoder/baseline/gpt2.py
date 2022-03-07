@@ -4,9 +4,11 @@ Implementation of NVIDIA-GPT2 approach.
 [Zero-shot Text Classification With Generative Language Models](https://arxiv.org/abs/1912.10165)
 """
 
+from typing import Optional, NamedTuple
 from warnings import warn
 
 from torch import nn
+from torch.utils.data import DataLoader
 import transformers
 from transformers import BatchEncoding
 from transformers import AutoConfig
@@ -15,6 +17,7 @@ from transformers import GPT2Model, GPT2LMHeadModel  # LMHead for CLM training
 from transformers import Trainer, TrainingArguments, SchedulerType, TrainerCallback
 from transformers import DataCollatorForLanguageModeling
 from transformers.training_args import OptimizerNames
+from transformers.trainer_utils import EvalLoopOutput, EvalPrediction
 from datasets import load_metric, load_dataset
 
 from zeroshot_encoder.util import *
@@ -256,21 +259,28 @@ class ZsGPT2LMHeadModel(GPT2LMHeadModel):
         return super().forward(**kwargs)
 
     @classmethod
-    def from_pretrained(cls, *args, **kwargs):
-        md_ = super().from_pretrained(*args, **kwargs)  # Loads the GPT2LMHeadModel while ignoring `wpe.weight`
-        md_ori = GPT2LMHeadModel.from_pretrained(*args, **kwargs)
-        weight_pretrained = md_ori.transformer.wpe.state_dict()['weight']
-        # Check `vars(md_ori.transformer.wpe)`, weight is the only parameter
-        del md_ori
+    def from_pretrained(cls, *args, is_zs_gpt2: bool = False, **kwargs):
+        """
+        :param is_zs_gpt2: If True, loads a local `ZsGPT2LMHeadModel`; otherwise, expects a GPT2 model
+        """
+        if is_zs_gpt2:
+            return super().from_pretrained(*args, **kwargs)
+        else:
+            md_ = super().from_pretrained(*args, **kwargs)  # Loads the GPT2LMHeadModel while ignoring `wpe.weight`
+            md_ori = GPT2LMHeadModel.from_pretrained(*args, **kwargs)
+            weight_pretrained = md_ori.transformer.wpe.state_dict()['weight']
+            # Check `vars(md_ori.transformer.wpe)`, weight is the only parameter
+            del md_ori
 
-        with torch.no_grad():  # Crude loading the pretrained weights, to each half of the doubled positional embedding
-            n_tok = md_.transformer.wpe.weight.shape[0]
-            if n_tok == 1024 * 2:
-                md_.transformer.wpe.weight[:1024, :] = weight_pretrained
-                md_.transformer.wpe.weight[1024:, :] = weight_pretrained
-            else:
-                warn('Wrong model size, positional not loaded. This is expected in debugging')
-        return md_
+            # Crude loading the pretrained weights, to each half of the doubled positional embedding
+            with torch.no_grad():
+                n_tok = md_.transformer.wpe.weight.shape[0]
+                if n_tok == 1024 * 2:
+                    md_.transformer.wpe.weight[:1024, :] = weight_pretrained
+                    md_.transformer.wpe.weight[1024:, :] = weight_pretrained
+                else:
+                    warn('Wrong model size, positional not loaded. This is expected in debugging')
+            return md_
 
 
 def tokenize_func(tokenizer_: ZsGPT2Tokenizer, dataset_name='ag_news', max_length=None, mode: str = 'train'):
@@ -391,7 +401,8 @@ def get_train_setup(
         logging_steps=1,
         save_strategy='epoch',
         fp16=torch.cuda.is_available(),
-        fp16_full_eval=torch.cuda.is_available(),
+        fp16_full_eval=True,
+        # fp16_full_eval=False,  # As in doc, harms metric
         optim=OptimizerNames.ADAMW_TORCH,
         disable_tqdm=True,
         # Pass dataset name information down to `compute_loss` for computing text classification accuracy
@@ -407,19 +418,26 @@ def get_train_setup(
     return TrainingArguments(**args)
 
 
+class MyEvalPrediction(NamedTuple):
+    """
+    Support `dataset_id`, see `compute_metrics` and `CustomTrainer.prediction_step`
+    """
+    # TODO: wouldn't work if subclass `EvalPrediction`; see https://github.com/python/mypy/issues/11721
+    predictions: Union[np.ndarray, Tuple[np.ndarray]]
+    label_ids: Union[np.ndarray, Tuple[np.ndarray]]
+    dataset_ids: Union[np.ndarray, Tuple[np.ndarray]]
+
+
 def compute_metrics(eval_pred):
     """
-    :param eval_pred: 2-tuple of (greedy prediction **ids**, labels)
+    :param eval_pred: 2-tuple of (dataset prediction label ids, true ids)
         Intended to work with `CustomTrainer.prediction_step`
     """
     if not hasattr(compute_metrics, 'metric'):
         compute_metrics.metric = load_metric('accuracy')
-    predictions, labels = eval_pred  # `argmax` performed already, see `CustomTrainer.prediction_step`
+    # Labels are per-sample already, see `CustomTrainer.prediction_step`
+    predictions, labels = eval_pred.predictions, eval_pred.label_ids
     ic('in compute metrics, eval', eval_pred, predictions.shape, labels.shape)
-    predictions, labels = predictions[:, :-1], labels[:, 1:]  # For CLM
-    labels, predictions = labels.flatten(), predictions.flatten()  # Original 2D tensor gives error
-    msk_non_pad = (labels != PT_LOSS_PAD)
-    labels, predictions = labels[msk_non_pad], predictions[msk_non_pad]
     return compute_metrics.metric.compute(predictions=predictions, references=labels)
 
 
@@ -748,10 +766,12 @@ class MyLoggingCallback(TrainerCallback):
             # }
             stats_acc = {k: sum(d[k] for d in out_dict[self.k_acc]) for k in out_dict[self.k_acc][0].keys()}
             stats_acc_cls = {k: sum(d[k] for d in out_dict[self.k_cls]) for k in out_dict[self.k_cls][0].keys()}
-            assert stats_acc_cls['n_missing']/n_sample  == 0
+            assert stats_acc_cls['n_missing']/n_sample == 0
             return {
                 f'{prefix}_acc': stats_acc['n_acc'] / stats_acc['n_total'],
-                f'{prefix}_acc_cls': (stats_acc_cls['n_acc']/stats_acc_cls['n_total']) if stats_acc_cls['n_total'] != 0 else 0,
+                f'{prefix}_acc_cls': (
+                    (stats_acc_cls['n_acc']/stats_acc_cls['n_total']) if stats_acc_cls['n_total'] != 0 else 0
+                )
             }
 
         def set_eval_cls_acc():  # TODO: support gradient accumulation
@@ -767,7 +787,7 @@ class MyLoggingCallback(TrainerCallback):
             self.logger_fl.info(log_dict(d_stats, with_color=False) if isinstance(d_stats, dict) else d_stats)
 
         if state.is_local_process_zero:
-            if self.mode == 'train':
+            if self.trainer.mode == 'train':  # cos `evaluate` may be called during training
                 step = state.global_step
                 if self.do_eval:
                     if 'src' in logs and logs['src'] == 'compute_loss':  # Custom added metric computation
@@ -888,8 +908,10 @@ class MyLoggingCallback(TrainerCallback):
                         print('unhandled case', logs)
                         exit(1)
             else:
-                if 'src' not in logs:  # Skip custom compute_loss logging
-                    log_default(logs)
+                assert self.trainer.mode == 'eval'
+                log_default(logs)
+                # if 'src' not in logs:  # Skip custom compute_loss logging
+                #     log_default(logs)
         # if state.is_local_process_zero:
         #     self.logger.info(log_dict(logs) if isinstance(logs, dict) else logs)
 
@@ -915,6 +937,76 @@ class ColoredPrinterCallback(TrainerCallback):
             self.logger.info(log_dict(logs) if isinstance(logs, dict) else logs)
 
 
+def get_accs(
+        inputs: Dict[str, torch.Tensor], logits: torch.Tensor, tokenizer: ZsGPT2Tokenizer, mode: str = 'train',
+        compute_cls_acc: bool = False
+) -> Dict:
+    """
+    :param inputs: Dictionary of a 2D batch of input tensors, with keys [`labels`, `token_type_ids`, `dataset_id`]
+    :param logits: logits by ZsGPT2LMHeadModel's forward pass
+    :param tokenizer: ZsGPT2Tokenizer for getting the class label
+    :param mode: Determines which split the labels are from, one of [`train`, `eval`]
+    :param compute_cls_acc: Whether to compute classification accuracy
+    :return: NTP accuracy & sample classification accuracy metadata
+    """
+    preds = logits.argmax(dim=-1)
+    labels_ = inputs['labels'].detach()
+    # CLM, predicting the next token given current, so shift
+    # Last prediction is not part of input label, 1st input is fed into model & not predicted
+    preds, labels_ = preds[:, :-1], labels_[:, 1:]
+    mask_non_pad = labels_ != PT_LOSS_PAD  # Consider only the actual tokens for accuracy
+    preds_non_pad, labels_non_pad = preds[mask_non_pad], labels_[mask_non_pad]
+    matches: torch.Tensor = (preds_non_pad == labels_non_pad)
+    d_ret = dict(acc_meta=dict(n_acc=matches.sum().item(), n_total=preds_non_pad.numel()))
+
+    if compute_cls_acc:
+        token_type_ids, dataset_id = inputs['token_type_ids'].detach(), inputs['dataset_id'].detach()
+
+        id_att = tokenizer.enc_spec(tokenizer.answ_type_token)
+        id_answ = tokenizer.enc_spec(tokenizer.answ_token)
+        id_eos = tokenizer.enc_spec(tokenizer.eos_token)
+        # Also shift by 1
+        lst_idxs_answ: List[List[int]] = [(row == id_att).nonzero().flatten().tolist() for row in token_type_ids[:, 1:]]
+
+        def get_label_id(i_sample: int, idxs_answ: List[int]) -> Dict[str, int]:
+            """
+            :return: classification label predicted & expected
+
+            ..note:: answer tokens should be present in each row/sample
+            """
+            assert len(idxs_answ)  # Should always exist, see `ZsGPT2Tokenizer.__call__`
+            token_ids_true = labels_[i_sample, idxs_answ].tolist()  # Inputs are labels
+            assert token_ids_true[0] == id_answ  # Remove answer special prefix token & potentially the ending token
+            idxs_answ, token_ids_true = idxs_answ[1:], token_ids_true[1:]
+            assert len(token_ids_true)  # Labels should always be available
+            if token_ids_true[-1] == id_eos:
+                idxs_answ, token_ids_true = idxs_answ[:-1], token_ids_true[:-1]
+                assert len(token_ids_true)
+
+            dset_id = dataset_id[i_sample].item()
+            dnm_ = config('UTCD.dataset_id2name')[dset_id]
+            split = 'train' if mode == 'train' else 'test'
+            descs = config(f'UTCD.datasets.{dnm_}.labels.{split}')  # TODO: assume `train` mode
+            desc_true = tokenizer.decode(token_ids_true)
+            assert desc_true in descs
+            # By default, the predictions and labels will not agree
+            d_lbs_ = dict(label_id_pred=-1, label_id_true=descs.index(desc_true))  # Local label wrt dataset
+            desc_pred = tokenizer.decode(preds[i_sample, idxs_answ])
+            if desc_pred in descs:
+                d_lbs_['label_id_pred'] = descs.index(desc_pred)
+            return d_lbs_
+
+        lst_idxs_n_lbs = [get_label_id(i_sample, idxs_answ) for i_sample, idxs_answ in enumerate(lst_idxs_answ)]
+        # sample2idxs_n_lbs = {k: v for k, v in sample2idxs_n_lbs.items() if v is not None}
+        d_lbs: Dict[str, List[int]] = {k_id: [d[k_id] for d in lst_idxs_n_lbs] for k_id in lst_idxs_n_lbs[0].keys()}
+        ids_pred, ids_true = d_lbs['label_id_pred'], d_lbs['label_id_true']
+        n_acc = sum(p == t for p, t in zip(ids_pred, ids_true))  # prediction ids match label ids
+        n_total = len(ids_true)
+        assert n_total == len(labels_)  # Number of samples with complete label
+        d_ret['classification_acc_meta'] = dict(n_acc=n_acc, n_total=n_total, ids_pred=ids_pred, ids_true=ids_true)
+    return d_ret
+
+
 class CustomTrainer(Trainer):
     def __init__(self, tokenizer: ZsGPT2Tokenizer = None, custom_logging=True, compute_cls_acc=True, **kwargs):
         super().__init__(**kwargs)
@@ -924,6 +1016,8 @@ class CustomTrainer(Trainer):
         self.compute_cls_acc = compute_cls_acc
 
         self.tokenizer = tokenizer  # TODO: generalize to more tokenizers?
+        self.mode: str = None
+
         self.post_init()
         ic('Trainer instantiated', self.is_local_process_zero())  # Sanity check for distributed training
 
@@ -937,6 +1031,19 @@ class CustomTrainer(Trainer):
             self.add_callback(MyLoggingCallback(self, do_eval=self.args.do_eval, interactive=False))
         else:
             self.add_callback(ColoredPrinterCallback())
+
+    def train(self, **kwargs):
+        self.mode = 'train'
+        return super().train(**kwargs)
+
+    def evaluate(self, **kwargs):
+        self.mode = 'eval'
+        ic(self.args)
+        return super().evaluate(**kwargs)
+
+    # def my_evaluate(self):
+    #     """ Instead of Trainer API """
+    #     self.mode = 'eval'
 
     def compute_loss(self, model, inputs, return_outputs=False):
         """
@@ -956,54 +1063,59 @@ class CustomTrainer(Trainer):
         inputs: Dict[str, torch.Tensor]
         d_log = None
         if self.custom_logging and 'labels' in inputs:
-            preds = outputs.logits.detach().argmax(axis=-1)
-            labels_ = inputs['labels'].detach()
-            # CLM, predicting the next token given current, so shift
-            # Last prediction is not part of input label, 1st input is fed into model & not predicted
-            preds, labels_ = preds[:, :-1], labels_[:, 1:]
-            mask_non_pad = labels_ != PT_LOSS_PAD  # Consider only the actual tokens for accuracy
-            preds_non_pad, labels_non_pad = preds[mask_non_pad], labels_[mask_non_pad]
-            matches: torch.Tensor = (preds_non_pad == labels_non_pad)
-            d_log = dict(src='compute_loss', acc_meta=dict(n_acc=matches.sum().item(), n_total=preds_non_pad.numel()))
-
-            if self.compute_cls_acc:
-                token_type_ids, dataset_id = inputs['token_type_ids'].detach(), inputs['dataset_id'].detach()
-
-                id_att = self.tokenizer.enc_spec(self.tokenizer.answ_type_token)
-                id_answ = self.tokenizer.enc_spec(self.tokenizer.answ_token)
-                id_eos = self.tokenizer.enc_spec(self.tokenizer.eos_token)
-                sample2idxs: Dict[int, List[int]] = {
-                    i_sample: (row == id_att).nonzero().flatten().tolist()
-                    for i_sample, row in enumerate(token_type_ids[:, 1:])  # Also shift by 1
-                }
-
-                # For each unique row/sample with answer tokens present, check if it forms a classification label string
-                def get_labels(i, idxs_):
-                    if idxs_:
-                        lbs = labels_[i, idxs_].tolist()  # Inputs are labels
-                        assert lbs[0] == id_answ  # Remove answer special prefix token & potentially the ending token
-                        idxs_, lbs = idxs_[1:], lbs[1:]
-                        if lbs:  # Labels are still available
-                            if lbs[-1] == id_eos:
-                                idxs_, lbs = idxs_[:-1], lbs[:-1]
-
-                            dset_id = dataset_id[i].item()
-                            dnm_ = config('UTCD.dataset_id2name')[dset_id]
-                            descs = config(f'UTCD.datasets.{dnm_}.labels.train')  # TODO: assume `train` mode
-                            if self.tokenizer.decode(lbs) in descs:
-                                return dict(idxs=idxs_, labels=lbs)
-
-                sample2idxs_n_lbs = {i_sample: get_labels(i_sample, idxs) for i_sample, idxs in sample2idxs.items()}
-                sample2idxs_n_lbs = {k: v for k, v in sample2idxs_n_lbs.items() if v is not None}
-                d_log['classification_acc_meta'] = dict(
-                    # prediction ids match label ids
-                    n_acc=sum(
-                        preds[i_sample, d['idxs']].tolist() == d['labels']
-                        for i_sample, d in sample2idxs_n_lbs.items()
-                    ),
-                    n_total=len(sample2idxs_n_lbs),  # Number of samples with complete label
-                    n_missing=dataset_id.numel()-len(sample2idxs_n_lbs)
-                )
+            d_log = get_accs(
+                inputs, outputs.logits.detach(), self.tokenizer, mode=self.mode, compute_cls_acc=self.compute_cls_acc
+            )
+            d_log['src'] = 'compute_loss'
+            # preds = outputs.logits.detach().argmax(axis=-1)
+            # labels_ = inputs['labels'].detach()
+            # # CLM, predicting the next token given current, so shift
+            # # Last prediction is not part of input label, 1st input is fed into model & not predicted
+            # preds, labels_ = preds[:, :-1], labels_[:, 1:]
+            # mask_non_pad = labels_ != PT_LOSS_PAD  # Consider only the actual tokens for accuracy
+            # preds_non_pad, labels_non_pad = preds[mask_non_pad], labels_[mask_non_pad]
+            # matches: torch.Tensor = (preds_non_pad == labels_non_pad)
+            # d_log = dict(src='compute_loss', acc_meta=dict(n_acc=matches.sum().item(), n_total=preds_non_pad.numel()))
+            #
+            # if self.compute_cls_acc:
+            #     token_type_ids, dataset_id = inputs['token_type_ids'].detach(), inputs['dataset_id'].detach()
+            #
+            #     id_att = self.tokenizer.enc_spec(self.tokenizer.answ_type_token)
+            #     id_answ = self.tokenizer.enc_spec(self.tokenizer.answ_token)
+            #     id_eos = self.tokenizer.enc_spec(self.tokenizer.eos_token)
+            #     sample2idxs: Dict[int, List[int]] = {
+            #         i_sample: (row == id_att).nonzero().flatten().tolist()
+            #         for i_sample, row in enumerate(token_type_ids[:, 1:])  # Also shift by 1
+            #     }
+            #
+            #     # For each unique row/sample with answer tokens present, check if it forms a classification label string
+            #     def get_labels(i, idxs_):
+            #         if idxs_:
+            #             lbs = labels_[i, idxs_].tolist()  # Inputs are labels
+            #             assert lbs[0] == id_answ  # Remove answer special prefix token & potentially the ending token
+            #             idxs_, lbs = idxs_[1:], lbs[1:]
+            #             if lbs:  # Labels are still available
+            #                 if lbs[-1] == id_eos:
+            #                     idxs_, lbs = idxs_[:-1], lbs[:-1]
+            #
+            #                 dset_id = dataset_id[i].item()
+            #                 dnm_ = config('UTCD.dataset_id2name')[dset_id]
+            #                 split = 'train' if self.mode == 'train' else 'test'
+            #                 descs = config(f'UTCD.datasets.{dnm_}.labels.{split}')  # TODO: assume `train` mode
+            #                 if self.tokenizer.decode(lbs) in descs:
+            #                     return dict(idxs_token_ids_pred=idxs_, token_ids_true=lbs)
+            #
+            #     sample2idxs_n_lbs = {i_sample: get_labels(i_sample, idxs) for i_sample, idxs in sample2idxs.items()}
+            #     sample2idxs_n_lbs = {k: v for k, v in sample2idxs_n_lbs.items() if v is not None}
+            #     d_log['classification_acc_meta'] = dict(
+            #         # prediction ids match label ids
+            #         n_acc=sum(
+            #             preds[i_sample, d['idxs_token_ids_pred']].tolist() == d['token_ids_true']
+            #             for i_sample, d in sample2idxs_n_lbs.items()
+            #         ),
+            #         n_total=len(sample2idxs_n_lbs),  # Number of samples with complete label
+            #         n_missing=dataset_id.numel()-len(sample2idxs_n_lbs)
+            #     )
         # ========================== End of added ==========================
 
         # Save past state if it exists
@@ -1105,11 +1217,249 @@ class CustomTrainer(Trainer):
         if len(logits) == 1:
             logits = logits[0]
         # ========================== Begin of added =========================
-        # Compute the labels right away,
-        # instead of potentially concatenating the original evaluation matrix of shape (#eval, #model size, #vocab)
-        logits = logits.argmax(dim=-1)
+        if self.mode == 'eval':
+            # Compute the labels right away,
+            # instead of potentially concatenating the original evaluation matrix of shape (#eval, #model size, #vocab)
+            # shape now is (#eval) cos for classification
+            d_acc = get_accs(inputs, logits, self.tokenizer, mode=self.mode, compute_cls_acc=self.compute_cls_acc)
+            return (
+                loss,
+                torch.Tensor(d_acc['classification_acc_meta']['ids_pred']),
+                torch.Tensor(d_acc['classification_acc_meta']['ids_true']),
+                inputs['dataset_id'].detach()
+            )
+        else:
+            return loss, logits, labels, None
+    # ========================== End of added =========================
+
+    def evaluation_loop(
+        self,
+        dataloader: DataLoader,
+        description: str,
+        prediction_loss_only: Optional[bool] = None,
+        ignore_keys: Optional[List[str]] = None,
+        metric_key_prefix: str = "eval",
+    ) -> EvalLoopOutput:
+        """
+        For sending `dataset_id` to evaluate
+        """
+        # ========================== Begin of added =========================
+        from transformers.deepspeed import deepspeed_init
+        import collections
+        from transformers.trainer_utils import denumpify_detensorize
+        from torch.utils.data import IterableDataset
+        from transformers.trainer_pt_utils import (
+            find_batch_size, nested_concat, nested_numpify, nested_truncate, IterableDatasetShard
+        )
+        from transformers.file_utils import is_torch_tpu_available
+        if is_torch_tpu_available():
+            import torch_xla.core.xla_model as xm
+            import torch_xla.distributed.parallel_loader as pl
         # ========================== End of added =========================
-        return loss, logits, labels
+        args = self.args
+
+        prediction_loss_only = prediction_loss_only if prediction_loss_only is not None else args.prediction_loss_only
+
+        # if eval is called w/o train init deepspeed here
+        if args.deepspeed and not self.deepspeed:
+
+            # XXX: eval doesn't have `resume_from_checkpoint` arg but we should be able to do eval
+            # from the checkpoint eventually
+            deepspeed_engine, _, _ = deepspeed_init(
+                self, num_training_steps=0, resume_from_checkpoint=None, inference=True
+            )
+            self.model = deepspeed_engine.module
+            self.model_wrapped = deepspeed_engine
+            self.deepspeed = deepspeed_engine
+
+        model = self._wrap_model(self.model, training=False)
+
+        # if full fp16 or bf16 eval is wanted and this ``evaluation`` or ``predict`` isn't called
+        # while ``train`` is running, cast it to the right dtype first and then put on device
+        if not self.is_in_train:
+            if args.fp16_full_eval:
+                model = model.to(dtype=torch.float16, device=args.device)
+            elif args.bf16_full_eval:
+                model = model.to(dtype=torch.bfloat16, device=args.device)
+
+        batch_size = dataloader.batch_size
+
+        # ========================== Begin of added =========================
+        from transformers.utils import logging
+        logger = logging.get_logger(__name__)
+        # ========================== End of added =========================
+        logger.info(f"***** Running {description} *****")
+        if isinstance(dataloader.dataset, collections.abc.Sized):
+            logger.info(f"  Num examples = {self.num_examples(dataloader)}")
+        else:
+            logger.info("  Num examples: Unknown")
+        logger.info(f"  Batch size = {batch_size}")
+
+        model.eval()
+
+        self.callback_handler.eval_dataloader = dataloader
+        # Do this before wrapping.
+        eval_dataset = dataloader.dataset
+
+        if is_torch_tpu_available():
+            dataloader = pl.ParallelLoader(dataloader, [args.device]).per_device_loader(args.device)
+
+        if args.past_index >= 0:
+            self._past = None
+
+        # Initialize containers
+        # losses/preds/labels on GPU/TPU (accumulated for eval_accumulation_steps)
+        losses_host = None
+        preds_host = None
+        labels_host = None
+        # ========================== Begin of added =========================
+        dataset_ids_host = None
+        # ========================== End of added =========================
+        # losses/preds/labels on CPU (final containers)
+        all_losses = None
+        all_preds = None
+        all_labels = None
+        # ========================== Begin of added =========================
+        all_dataset_ids = None
+        # ========================== End of added =========================
+        # Will be useful when we have an iterable dataset so don't know its length.
+
+        observed_num_examples = 0
+        # Main evaluation loop
+        for step, inputs in enumerate(dataloader):
+            # Update the observed num examples
+            observed_batch_size = find_batch_size(inputs)
+            if observed_batch_size is not None:
+                observed_num_examples += observed_batch_size
+                # For batch samplers, batch_size is not known by the dataloader in advance.
+                if batch_size is None:
+                    batch_size = observed_batch_size
+
+            # Prediction step
+            loss, logits, labels, dataset_ids = self.prediction_step(
+                model, inputs, prediction_loss_only, ignore_keys=ignore_keys
+            )
+
+            if is_torch_tpu_available():
+                xm.mark_step()
+
+            # Update containers on host
+            if loss is not None:
+                losses = self._nested_gather(loss.repeat(batch_size))
+                losses_host = losses if losses_host is None else torch.cat((losses_host, losses), dim=0)
+            if logits is not None:
+                logits = self._pad_across_processes(logits)
+                logits = self._nested_gather(logits)
+                preds_host = logits if preds_host is None else nested_concat(preds_host, logits, padding_index=-100)
+            if labels is not None:
+                labels = self._pad_across_processes(labels)
+                labels = self._nested_gather(labels)
+                labels_host = labels if labels_host is None else nested_concat(labels_host, labels, padding_index=-100)
+            # ========================== Begin of added =========================
+            if dataset_ids is not None:
+                dataset_ids = self._pad_across_processes(dataset_ids)
+                dataset_ids = self._nested_gather(dataset_ids)
+                dataset_ids_host = (
+                    dataset_ids if dataset_ids_host is None
+                    else nested_concat(dataset_ids_host, dataset_ids, padding_index=-100)
+                )
+            # ========================== End of added =========================
+            self.control = self.callback_handler.on_prediction_step(args, self.state, self.control)
+
+            # Gather all tensors and put them back on the CPU if we have done enough accumulation steps.
+            if args.eval_accumulation_steps is not None and (step + 1) % args.eval_accumulation_steps == 0:
+                if losses_host is not None:
+                    losses = nested_numpify(losses_host)
+                    all_losses = losses if all_losses is None else np.concatenate((all_losses, losses), axis=0)
+                if preds_host is not None:
+                    logits = nested_numpify(preds_host)
+                    all_preds = logits if all_preds is None else nested_concat(all_preds, logits, padding_index=-100)
+                if labels_host is not None:
+                    labels = nested_numpify(labels_host)
+                    all_labels = (
+                        labels if all_labels is None else nested_concat(all_labels, labels, padding_index=-100)
+                    )
+                # ========================== Begin of added =========================
+                if dataset_ids_host is not None:
+                    dataset_ids = nested_numpify(dataset_ids_host)
+                    all_dataset_ids = (
+                        dataset_ids if all_dataset_ids is None
+                        else nested_concat(all_dataset_ids, dataset_ids, padding_index=-100)
+                    )
+                # ========================== End of added =========================
+
+                # Set back to None to begin a new accumulation
+                losses_host, preds_host, labels_host = None, None, None
+
+        if args.past_index and hasattr(self, "_past"):
+            # Clean the state at the end of the evaluation loop
+            delattr(self, "_past")
+
+        # Gather all remaining tensors and put them back on the CPU
+        if losses_host is not None:
+            losses = nested_numpify(losses_host)
+            all_losses = losses if all_losses is None else np.concatenate((all_losses, losses), axis=0)
+        if preds_host is not None:
+            logits = nested_numpify(preds_host)
+            all_preds = logits if all_preds is None else nested_concat(all_preds, logits, padding_index=-100)
+        if labels_host is not None:
+            labels = nested_numpify(labels_host)
+            all_labels = labels if all_labels is None else nested_concat(all_labels, labels, padding_index=-100)
+        # ========================== Begin of added =========================
+        if dataset_ids_host is not None:
+            dataset_ids = nested_numpify(dataset_ids_host)
+            all_dataset_ids = (
+                dataset_ids if all_dataset_ids is None
+                else nested_concat(all_labels, all_dataset_ids, padding_index=-100)
+            )
+        # ========================== End of added =========================
+
+        # Number of samples
+        if not isinstance(eval_dataset, IterableDataset):
+            num_samples = len(eval_dataset)
+        # The instance check is weird and does not actually check for the type, but whether the dataset has the right
+        # methods. Therefore we need to make sure it also has the attribute.
+        elif isinstance(eval_dataset, IterableDatasetShard) and hasattr(eval_dataset, "num_examples"):
+            num_samples = eval_dataset.num_examples
+        else:
+            num_samples = observed_num_examples
+
+        # Number of losses has been rounded to a multiple of batch_size and in a distributed training, the number of
+        # samplers has been rounded to a multiple of batch_size, so we truncate.
+        if all_losses is not None:
+            all_losses = all_losses[:num_samples]
+        if all_preds is not None:
+            all_preds = nested_truncate(all_preds, num_samples)
+        if all_labels is not None:
+            all_labels = nested_truncate(all_labels, num_samples)
+        # ========================== Begin of added =========================
+        if all_dataset_ids is not None:
+            all_dataset_ids = nested_truncate(all_dataset_ids, num_samples)
+        # ========================== End of added =========================
+
+        # Metrics!
+        if self.compute_metrics is not None and all_preds is not None and all_labels is not None:
+            # ========================== Begin of modified =========================
+            # metrics = self.compute_metrics(EvalPrediction(predictions=all_preds, label_ids=all_labels))
+            metrics = self.compute_metrics(MyEvalPrediction(
+                predictions=all_preds, label_ids=all_labels, dataset_ids=all_dataset_ids
+            ))
+            # ========================== End of modified =========================
+        else:
+            metrics = {}
+
+        # To be JSON-serializable, we need to remove numpy types or zero-d tensors
+        metrics = denumpify_detensorize(metrics)
+
+        if all_losses is not None:
+            metrics[f"{metric_key_prefix}_loss"] = all_losses.mean().item()
+
+        # Prefix all keys with metric_key_prefix + '_'
+        for key in list(metrics.keys()):
+            if not key.startswith(f"{metric_key_prefix}_"):
+                metrics[f"{metric_key_prefix}_{key}"] = metrics.pop(key)
+
+        return EvalLoopOutput(predictions=all_preds, label_ids=all_labels, metrics=metrics, num_samples=num_samples)
 
 
 if __name__ == '__main__':
@@ -1130,9 +1480,9 @@ if __name__ == '__main__':
     nm = 'gpt2-medium'
 
     # n = 1
-    # n = 128
+    n = 128
     # n = 1024
-    n = None
+    # n = None
 
     tr_args = None
     # tr_args = dict(num_train_epochs=32)
@@ -1165,8 +1515,10 @@ if __name__ == '__main__':
 
     def evaluate_trained():
         # With the Trainer.API
-        checkpoint_path = '/scratch/profmars_root/profmars0/stefanhg/Zero-shot-text-classification/' \
-                          'models/gpt2/gpt2-medium/2022-03-03 00-23-41/checkpoint-18533'
-        trainer.model = ZsGPT2LMHeadModel.from_pretrained(checkpoint_path)  # Override the model
-        trainer.evaluate()
+        checkpoint_path = os.path.join(
+            PATH_BASE, DIR_PROJ, 'trained-models', 'gpt2-nvidia', '2022-03-04 21-33-12', 'checkpoint-37066'
+        )
+        # Override the model
+        trainer.model = ZsGPT2LMHeadModel.from_pretrained(checkpoint_path, is_zs_gpt2=True).to('cuda')
+        ic(trainer.evaluate())
     evaluate_trained()
