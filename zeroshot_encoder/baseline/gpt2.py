@@ -3,11 +3,10 @@ Implementation of NVIDIA-GPT2 approach.
 
 [Zero-shot Text Classification With Generative Language Models](https://arxiv.org/abs/1912.10165)
 """
-
 from warnings import warn
 
 from torch import nn
-
+from sklearn.metrics import classification_report
 import transformers
 from transformers import BatchEncoding
 from transformers import AutoConfig
@@ -20,6 +19,9 @@ from datasets import load_metric, load_dataset
 
 from zeroshot_encoder.util import *
 from zeroshot_encoder.preprocess import get_dset
+
+
+MODEL_NAME = 'gpt2-nvidia'
 
 
 class ZsGPT2Tokenizer(GPT2TokenizerFast):
@@ -354,7 +356,8 @@ def get_train_setup(
         ),
         'gpt2-medium': dict(
             learning_rate=4e-5,
-            batch_size=16,
+            train_batch_size=16,
+            eval_batch_size=48,
             gradient_accumulation_steps=8,  # To fit in memory; Effectively batch size 128 as in paper
             weight_decay=1e-2,
             num_train_epochs=10,
@@ -365,17 +368,22 @@ def get_train_setup(
         'learning_rate', 'batch_size', 'weight_decay',
         'num_train_epochs', 'lr_scheduler_type', 'gradient_accumulation_steps'
     ])
+    if bsz is None:
+        bsz_tr, bsz_vl = (d_train_args[name_].get(k, None) for k in ('train_batch_size', 'eval_batch_size'))
+        assert bsz_tr is not None and bsz_vl is not None
+    else:
+        bsz_tr = bsz_vl = bsz
     if torch.cuda.is_available():
-        bsz /= torch.cuda.device_count()  # Distribute among GPUs
-        assert bsz.is_integer()
-        bsz = int(bsz)
+        bsz_tr /= torch.cuda.device_count()  # Distribute among GPUs
+        assert bsz_tr.is_integer()
+        bsz_tr = int(bsz_tr)
     args = dict(
         output_dir=os.path.join(get_output_base(), DIR_PROJ, DIR_MDL, 'gpt2', model_name, now(sep='-')),
         do_train=True,
         do_eval=do_eval,
         evaluation_strategy='steps' if do_eval else 'no',
-        per_device_train_batch_size=bsz,
-        per_device_eval_batch_size=bsz,
+        per_device_train_batch_size=bsz_tr,
+        per_device_eval_batch_size=bsz_vl,
         gradient_accumulation_steps=gas,
         eval_accumulation_steps=16,  # Saves GPU memory
         # Adam's beta1, beta2, epsilon taken from the GPT2 config in
@@ -418,7 +426,25 @@ def compute_metrics(eval_pred: MyEvalPrediction):
     if not hasattr(compute_metrics, 'metric'):
         compute_metrics.metric = load_metric('accuracy')
     # Labels are per-sample already, see `CustomTrainer.prediction_step`
-    return compute_metrics.metric.compute(predictions=eval_pred.predictions, references=eval_pred.label_ids)
+    preds, trues, dids = eval_pred.predictions, eval_pred.label_ids, eval_pred.dataset_ids
+    id2dnm = config('UTCD.dataset_id2name')
+    for did in np.unique(dids):
+        dnm_ = id2dnm[did]
+        # TODO: only evaluation split for now
+        id_label, desc_label = zip(*enumerate(config(f'UTCD.datasets.{dnm_}.labels.test')))  # Label is index
+        msk_dset = (dids == did)
+        preds_, trues_ = preds[msk_dset], trues[msk_dset]
+        df = pd.DataFrame(
+            # note `-1` is not actual label, support of 0 - included for full label specification per sklearn
+            classification_report(
+                trues_, preds_, labels=[-1, *id_label], target_names=['Label not in dataset', *desc_label],
+                output_dict=True
+            )
+        ).transpose()
+        path_dir = os.path.join(PATH_BASE, DIR_PROJ, 'evaluations', MODEL_NAME, now(sep='-'))
+        os.makedirs(path_dir, exist_ok=True)
+        df.to_csv(os.path.join(path_dir, f'{dnm_}.csv'))
+    return compute_metrics.metric.compute(predictions=preds, references=trues)
 
 
 def get_all_setup(
@@ -492,9 +518,11 @@ if __name__ == '__main__':
     nm = 'gpt2-medium'
 
     # n = 1
-    n = 128
+    # n = 128
     # n = 1024
-    # n = None
+    # n = 4500
+    # n = 1024 * 32
+    n = None
 
     tr_args = None
     # tr_args = dict(num_train_epochs=32)
@@ -503,7 +531,7 @@ if __name__ == '__main__':
         nm, dnm, do_eval=False, custom_logging=True, n_sample=n, random_seed=seed, train_args=tr_args
     )
 
-    def profile():
+    def profile_train():
         import cProfile
         import pstats
         profiler = cProfile.Profile()
@@ -512,7 +540,7 @@ if __name__ == '__main__':
         profiler.disable()
         stats = pstats.Stats(profiler).sort_stats('cumtime')
         stats.print_stats()
-    # profile()
+    # profile_train()
 
     def train(resume=False):
         if resume:
@@ -528,9 +556,28 @@ if __name__ == '__main__':
     def evaluate_trained():
         # With the Trainer.API
         checkpoint_path = os.path.join(
+            PATH_BASE, DIR_PROJ, 'trained-models', 'gpt2-nvidia', '2022-03-04 21-33-12', 'checkpoint-55599'
+        )
+        # Override the model
+        trainer.model = ZsGPT2LMHeadModel.from_pretrained(checkpoint_path, is_zs_gpt2=True).to('cuda')  # with caching
+        ic(trainer.evaluate())
+    evaluate_trained()
+
+    def profile_evaluate():
+        checkpoint_path = os.path.join(
             PATH_BASE, DIR_PROJ, 'trained-models', 'gpt2-nvidia', '2022-03-04 21-33-12', 'checkpoint-37066'
         )
         # Override the model
-        trainer.model = ZsGPT2LMHeadModel.from_pretrained(checkpoint_path, is_zs_gpt2=True).to('cuda')
+        trainer.model = ZsGPT2LMHeadModel.from_pretrained(checkpoint_path, is_zs_gpt2=True).to('cuda')  # with caching
+
+        import cProfile
+        import pstats
+        profiler = cProfile.Profile()
+        profiler.enable()
+
         ic(trainer.evaluate())
-    evaluate_trained()
+
+        profiler.disable()
+        stats = pstats.Stats(profiler).sort_stats('cumtime')
+        stats.print_stats()
+    # profile_evaluate()

@@ -1,9 +1,16 @@
+import time
 from typing import Optional
 
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Dataset
 from transformers import GPT2TokenizerFast
 from transformers import TrainerCallback, TrainingArguments, Trainer
-from transformers.trainer_utils import EvalLoopOutput
+from transformers.trainer_utils import EvalLoopOutput, speed_metrics
+from transformers.debug_utils import DebugOption
+from transformers.file_utils import is_torch_tpu_available
+if is_torch_tpu_available():
+    import torch_xla.core.xla_model as xm
+    import torch_xla.debug.metrics as met
+    import torch_xla.distributed.parallel_loader as pl
 
 from zeroshot_encoder.util import *
 from zeroshot_encoder.util import PT_LOSS_PAD, MyEvalPrediction, TrainPlot
@@ -18,7 +25,7 @@ class MyLoggingCallback(TrainerCallback):
     """
     def __init__(
             self, parent_trainer: Trainer, do_eval=True,
-            name='Zero-shot GPT-2 Training', mode='train', interactive=True, save_plot=True
+            name='Zero-shot GPT-2 Training', interactive=True, save_plot=True
     ):
         """
         :param parent_trainer: The parent Trainer
@@ -61,7 +68,7 @@ class MyLoggingCallback(TrainerCallback):
             self.bsz *= self.trainer.args.n_gpu
         seq_max_len = len(dset_tr__[0]['input_ids'])
         n_data, md_sz = len(dset_tr__), md_.config.n_positions
-        self.n_step = max(math.ceil(len(dset_tr__) // self.bsz), 1) * n_ep  # #step/epoch at least 1
+        self.n_step = max(math.ceil(n_data / self.bsz), 1) * n_ep  # #step/epoch at least 1
         self.train_meta = OrderedDict([
             ('#data', n_data), ('model size', md_sz),
             ('learning rate', lr), ('batch shape', (self.bsz, seq_max_len)), ('#epochs', n_ep), ('#steps', self.n_step)
@@ -75,7 +82,6 @@ class MyLoggingCallback(TrainerCallback):
         path_proj = paths_[paths_.index(DIR_PROJ):]
         self.out_dir = os.path.join(PATH_BASE, *path_proj)  # Keep the logging & plotting inside project directory
 
-        self.mode = mode
         self.train_begin, self.train_end = None, None
         self.t_strt, self.t_end = None, None
 
@@ -84,25 +90,22 @@ class MyLoggingCallback(TrainerCallback):
             title=name, train_args=parent_trainer.args, out_dir=self.out_dir, meta=self.train_meta, save_plot=save_plot
         )
 
-    def set_mode(self, mode: str):
-        """
-        :param mode: One of ['train', 'eval']
-        """
-        self.mode = mode
+    def _update_log_handler(self, log_fnm: str):
+        self.logger_fl.removeHandler(self.fl_handler)  # Remove prior `FileHandler`, prep for next potential run
+        self.fl_handler = None
+
+        # Set file write logging
+        os.makedirs(self.out_dir, exist_ok=True)
+        # For only 1 of the processes if distributed training
+        self.fl_handler = logging.FileHandler(os.path.join(self.out_dir, log_fnm))
+        self.fl_handler.setLevel(logging.DEBUG)
+        self.fl_handler.setFormatter(MyFormatter(with_color=False))
+        self.logger_fl.addHandler(self.fl_handler)
 
     def on_train_begin(self, args: TrainingArguments, state, control, **kwargs):
         if self.trainer.is_local_process_zero():  # For distributed training; TODO: support multi machine?
-            self.logger_fl.removeHandler(self.fl_handler)  # Remove prior `FileHandler`, prep for next potential run
-            self.fl_handler = None
-
-            self.log_fnm = self.log_fnm_tpl.format(now(sep="-"))
-            # Set file write logging
-            os.makedirs(self.out_dir, exist_ok=True)
-            # For only 1 of the processes if distributed training
-            self.fl_handler = logging.FileHandler(os.path.join(self.out_dir, f'{self.log_fnm}.log'))
-            self.fl_handler.setLevel(logging.DEBUG)
-            self.fl_handler.setFormatter(MyFormatter(with_color=False))
-            self.logger_fl.addHandler(self.fl_handler)
+            self.log_fnm = self.log_fnm_tpl.format(now(sep='-'))
+            self._update_log_handler(f'train, {self.log_fnm}.log')
 
             self.logger.info(f'Training started with {log_dict(self.train_meta)}')
             self.logger_fl.info(f'Training started with {log_dict(self.train_meta, with_color=False)}')
@@ -112,7 +115,6 @@ class MyLoggingCallback(TrainerCallback):
             self.logger_fl.info(out_args)
             self.t_strt = datetime.datetime.now()
 
-            self.mode = 'train'
             self.train_begin = True
             if self.interactive:
                 self.plot.make_plot()
@@ -131,7 +133,26 @@ class MyLoggingCallback(TrainerCallback):
                 self.plot.finish()
             else:  # If didn't show plot before
                 self.plot.plot_single(self.log_hist)
-        self.mode = 'eval'
+
+    def on_evaluate(self, args: TrainingArguments, state, control, **kwargs):
+        if self.trainer.is_local_process_zero():  # Similarly to `on_train_begin`
+            if self.trainer.mode == 'eval':
+                self.log_fnm = self.log_fnm_tpl.format(now(sep='-'))
+                self._update_log_handler(f'eval, {self.log_fnm}.log')
+
+            dl_vl: DataLoader
+            model, dl_vl = kwargs['model'], kwargs['eval_dataloader']
+            dset_vl: Dataset = dl_vl.dataset
+            n_eval = len(dset_vl)
+            bsz = dl_vl.batch_size
+            seq_max_len = len(dset_vl[0]['input_ids'])
+            md_sz = model.config.n_positions
+            n_bch = max(math.ceil(n_eval / bsz), 1)
+            eval_meta = OrderedDict([
+                ('#data', n_eval), ('model size', md_sz), ('batch shape', (bsz, seq_max_len)), ('#batches', n_bch)
+            ])
+            self.logger.info(f'Ran evaluation with {log_dict(eval_meta)}')
+            self.logger_fl.info(f'Ran evaluation with {log_dict(eval_meta, with_color=False)}')
 
     def on_log(self, args: TrainingArguments, state, control, logs: Dict = None, **kwargs):
         def out_dict2str(d: Dict, return_wo_color: bool = False):
@@ -457,10 +478,61 @@ class CustomTrainer(Trainer):
         return super().train(**kwargs)
 
     def evaluate(self, **kwargs):
-        self.mode = 'eval'
-        from icecream import ic  # TODO: debugging
-        ic(self.args)
+        if not self.is_in_train:
+            self.mode = 'eval'
         return super().evaluate(**kwargs)
+
+    # def evaluate(
+    #         self,
+    #         eval_dataset: Optional[Dataset] = None,
+    #         ignore_keys: Optional[List[str]] = None,
+    #         metric_key_prefix: str = "eval",
+    # ) -> Dict[str, float]:
+    #     # ========================== Begin of added ==========================
+    #     self.mode = 'eval'
+    #     from icecream import ic  # TODO: debugging
+    #     ic(self.args)
+    #     # return super().evaluate(**kwargs)
+    #     # ========================== End of added ==========================
+    #     self._memory_tracker.start()
+    #
+    #     eval_dataloader = self.get_eval_dataloader(eval_dataset)
+    #     start_time = time.time()
+    #
+    #     eval_loop = self.prediction_loop if self.args.use_legacy_prediction_loop else self.evaluation_loop
+    #     output = eval_loop(
+    #         eval_dataloader,
+    #         description="Evaluation",
+    #         # No point gathering the predictions if there are no metrics, otherwise we defer to
+    #         # self.args.prediction_loss_only
+    #         prediction_loss_only=True if self.compute_metrics is None else None,
+    #         ignore_keys=ignore_keys,
+    #         metric_key_prefix=metric_key_prefix,
+    #     )
+    #
+    #     total_batch_size = self.args.eval_batch_size * self.args.world_size
+    #     output.metrics.update(
+    #         speed_metrics(
+    #             metric_key_prefix,
+    #             start_time,
+    #             num_samples=output.num_samples,
+    #             num_steps=math.ceil(output.num_samples / total_batch_size),
+    #         )
+    #     )
+    #
+    #     self.log(output.metrics)
+    #
+    #     if DebugOption.TPU_METRICS_DEBUG in self.args.debug:
+    #         # tpu-comment: Logging debug metrics for PyTorch/XLA (compile, execute times, ops, etc.)
+    #         xm.master_print(met.metrics_report())
+    #
+    #     # ========================== Begin of modified ==========================
+    #     self.control = self.callback_handler.on_evaluate(self.args, self.state, self.control, output_metrics=output.metrics)
+    #     # ========================== End of modified ==========================
+    #
+    #     self._memory_tracker.stop_and_update_metrics(output.metrics)
+    #
+    #     return output.metrics
 
     # def my_evaluate(self):
     #     """ Instead of Trainer API """
@@ -623,10 +695,6 @@ class CustomTrainer(Trainer):
         from transformers.trainer_pt_utils import (
             find_batch_size, nested_concat, nested_numpify, nested_truncate, IterableDatasetShard
         )
-        from transformers.file_utils import is_torch_tpu_available
-        if is_torch_tpu_available():
-            import torch_xla.core.xla_model as xm
-            import torch_xla.distributed.parallel_loader as pl
         # ========================== End of added =========================
         args = self.args
 
@@ -782,7 +850,7 @@ class CustomTrainer(Trainer):
             dataset_ids = nested_numpify(dataset_ids_host)
             all_dataset_ids = (
                 dataset_ids if all_dataset_ids is None
-                else nested_concat(all_labels, all_dataset_ids, padding_index=-100)
+                else nested_concat(dataset_ids, all_dataset_ids, padding_index=-100)
             )
         # ========================== End of added =========================
 
@@ -812,10 +880,8 @@ class CustomTrainer(Trainer):
         # Metrics!
         if self.compute_metrics is not None and all_preds is not None and all_labels is not None:
             # ========================== Begin of modified =========================
-            # metrics = self.compute_metrics(EvalPrediction(predictions=all_preds, label_ids=all_labels))
-            metrics = self.compute_metrics(MyEvalPrediction(
-                predictions=all_preds, label_ids=all_labels, dataset_ids=all_dataset_ids
-            ))
+            mep = MyEvalPrediction(predictions=all_preds, label_ids=all_labels, dataset_ids=all_dataset_ids)
+            metrics = self.compute_metrics(mep)
             # ========================== End of modified =========================
         else:
             metrics = {}
