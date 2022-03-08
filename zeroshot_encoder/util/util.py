@@ -327,12 +327,13 @@ def plot_points(arr, **kwargs):
 
 
 def get_output_base():
-    # For remote machines, save the models somewhere else to save `/home` disk space
+    # For remote machines, save heavy-duty data somewhere else to save `/home` disk space
     hnm = get_hostname()
     if 'clarity' in hnm:  # Clarity lab
         return '/data'
     elif 'arc-ts' in hnm:  # Great Lakes; `profmars0` picked arbitrarily among [`profmars0`, `profmars1`]
-        return os.path.join('/scratch', 'profmars_root', 'profmars0', 'stefanhg')  # Per https://arc.umich.edu/greatlakes/user-guide/
+        # Per https://arc.umich.edu/greatlakes/user-guide/
+        return os.path.join('/scratch', 'profmars_root', 'profmars0', 'stefanhg')
     else:
         return PATH_BASE
 
