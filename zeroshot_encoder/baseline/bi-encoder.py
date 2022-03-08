@@ -4,7 +4,7 @@ import logging
 import json
 import pandas as pd
 from numpy import argmax
-from dataset.load_data import get_all_zero_data, encoder_cls_format
+from zeroshot_encoder.util.load_data import get_data, encoder_cls_format, in_domain_data_path, out_of_domain_data_path
 from os.path import join
 from sentence_transformers import SentenceTransformer, models,losses, evaluation, util
 from torch import nn
@@ -37,12 +37,11 @@ def parse_args():
 
 logger = logging.getLogger(__name__)
 
-data = get_all_zero_data()
-
 if __name__ == "__main__":
     args = parse_args()
 
     if args.command == 'train':
+        data = get_data(in_domain_data_path)
         # get keys from data dict
         datasets = list(data.keys())
         datasets.remove("all")
@@ -83,68 +82,71 @@ if __name__ == "__main__":
         Path(pred_path).mkdir(parents=True, exist_ok=True)
         Path(result_path).mkdir(parents=True, exist_ok=True)
         if args.domain == 'in':
-            # get keys from data dict
-            datasets = list(data.keys())
-            datasets.remove("all")
+            data = get_data(in_domain_data_path)
+        elif args.domain == 'out':
+            data = get_data(out_of_domain_data_path)
+        # get keys from data dict
+        datasets = list(data.keys())
+        datasets.remove("all")
 
-            # load model
-            model = SentenceTransformer(args.model_path)
+        # load model
+        model = SentenceTransformer(args.model_path)
 
-            # label_map = ["false", "true"]
+        # label_map = ["false", "true"]
 
-            # loop through all datasets
-            for dataset in datasets:
-                test = data[dataset]["test"]
-                count = Counter([x[0] for x in test])
-                gold = []
-                examples = []
-                labels = list(dict.fromkeys(x[1] for x in test))
-                label_vectors = model.encode(labels)
+        # loop through all datasets
+        for dataset in datasets:
+            test = data[dataset]["test"]
+            count = Counter([x[0] for x in test])
+            gold = []
+            examples = []
+            labels = list(dict.fromkeys(x[1] for x in test))
+            label_vectors = model.encode(labels)
 
-                # Deal w/multi-label & duplicates
-                duplicates = [k for k,v in count.items() if v > 1]
-                for duplicate in duplicates:
-                    examples.append(duplicate)
-                    
-                    # get labels for duplicate
-                    dup_labels = [x[1] for x in test if x[0] == duplicate]
-                    gold.append([1 if label in dup_labels else 0 for label in labels])
-
-                for x, y in test:
-                    if count[x] > 1:
-                        continue
-                    else:
-                        examples.append(x)
-                        gold.append([1 if y==label else 0 for label in labels])
+            # Deal w/multi-label & duplicates
+            duplicates = [k for k,v in count.items() if v > 1]
+            for duplicate in duplicates:
+                examples.append(duplicate)
                 
-                assert len(examples) == len(gold)
+                # get labels for duplicate
+                dup_labels = [x[1] for x in test if x[0] == duplicate]
+                gold.append([1 if label in dup_labels else 0 for label in labels])
 
-                example_vectors = model.encode(examples)
-                
-                preds = []
-                gold_labels = []
-                correct = 0
-                # loop through each test example
-                print("Evaluating dataset: {}".format(dataset))
-                for index, example in enumerate(tqdm(examples)):
-                    results = [util.cos_sim(example_vectors[index], label_vectors[i]) for i in range(len(labels))]
+            for x, y in test:
+                if count[x] > 1:
+                    continue
+                else:
+                    examples.append(x)
+                    gold.append([1 if y==label else 0 for label in labels])
+            
+            assert len(examples) == len(gold)
 
-                    # compute which pred is higher
-                    pred = labels[argmax(results)]
-                    preds.append(pred)
-                    # load gold labels
-                    g_label = [labels[i] for i, l in enumerate(gold[index]) if l==1]
-                    if pred in g_label:
-                        correct += 1
-                        gold_labels.append(pred)
-                    else:
-                        gold_labels.append(g_label[0])
-                    
+            example_vectors = model.encode(examples)
+            
+            preds = []
+            gold_labels = []
+            correct = 0
+            # loop through each test example
+            print("Evaluating dataset: {}".format(dataset))
+            for index, example in enumerate(tqdm(examples)):
+                results = [util.cos_sim(example_vectors[index], label_vectors[i]) for i in range(len(labels))]
+
+                # compute which pred is higher
+                pred = labels[argmax(results)]
+                preds.append(pred)
+                # load gold labels
+                g_label = [labels[i] for i, l in enumerate(gold[index]) if l==1]
+                if pred in g_label:
+                    correct += 1
+                    gold_labels.append(pred)
+                else:
+                    gold_labels.append(g_label[0])
                 
-                print('{} Dataset Accuracy = {}'.format(dataset, correct/len(examples)))
-                report = classification_report(gold_labels, preds, output_dict=True)
-                json.dump([ [examples[i], pred, gold_labels[i]] for i, pred in enumerate(preds)], open('{}/{}.json'.format(pred_path,dataset), 'w'), indent=4)
-                # plt = sns.heatmap(pd.DataFrame(report).iloc[:-1, :].T, annot=True)
-                # plt.figure.savefig('figures/binary_bert_{}.png'.format(dataset))
-                df = pd.DataFrame(report).transpose()
-                df.to_csv('{}/{}.csv'.format(result_path, dataset))
+            
+            print('{} Dataset Accuracy = {}'.format(dataset, correct/len(examples)))
+            report = classification_report(gold_labels, preds, output_dict=True)
+            json.dump([ [examples[i], pred, gold_labels[i]] for i, pred in enumerate(preds)], open('{}/{}.json'.format(pred_path,dataset), 'w'), indent=4)
+            # plt = sns.heatmap(pd.DataFrame(report).iloc[:-1, :].T, annot=True)
+            # plt.figure.savefig('figures/binary_bert_{}.png'.format(dataset))
+            df = pd.DataFrame(report).transpose()
+            df.to_csv('{}/{}.csv'.format(result_path, dataset))

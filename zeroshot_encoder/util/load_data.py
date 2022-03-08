@@ -1,5 +1,6 @@
 import json
 from unicodedata import category
+import datasets
 import gdown
 import random
 import spacy
@@ -16,8 +17,11 @@ from zipfile import ZipFile
 from sentence_transformers.readers import InputExample
 from sentence_transformers import LoggingHandler, util
 
-g_drive_url = 'https://drive.google.com/uc?id=1qISYYoQNGXtmGWrCsKoK-fBKt8MHXqR7'
-data_path = './dataset'
+in_domain_url = 'https://drive.google.com/uc?id=1V7IzdZ9HQbFUQz9NzBDjmqYBdPd9Yfe3'
+out_of_domain_url = 'https://drive.google.com/uc?id=1nd32_UrFbgoCgH4bDtFFD_YFZhzcts3x'
+dataset_path = './dataset'
+in_domain_data_path = './dataset/in-domain'
+out_of_domain_data_path = './dataset/out-of-domain'
 nlp = spacy.load("en_core_web_md")
 nlp.disable_pipes(['tagger', 'parser', 'attribute_ruler', 'lemmatizer', 'ner'])
 
@@ -30,26 +34,39 @@ category_map = {
     "go_emotion": "sentiment",
     "sgd": "intent",
     "slurp": "intent",
-    "yahoo": "topic"
+    "yahoo": "topic",
+    "amazon_polarity": "sentiment",
+    "arxiv": "topic",
+    "banking77": "intent",
+    "consumer_finance": "topic",
+    "finance_sentiment": "sentiment",
+    "nlu_evaluation": "intent",
+    "patent": "topic",
+    "snips": "intent",
+    "yelp": "sentiment"
 }
 
-def get_all_zero_data():
-    if len(listdir(data_path)) <= 9:
-        download_data()
-    paths = [join(data_path, f) for f in listdir(data_path) if isfile(join(data_path, f)) and f.endswith('.json')]
+def get_data(path):
+    if not os.path.exists(path):
+        download_data(path)
+    paths = [join(path, f) for f in listdir(path) if isfile(join(path, f)) and f.endswith('.json')]
     data = {"all": {"train": [], "test": []}}
     for path in paths:
         dataset_name = basename(path).split('.')[0]
         data[dataset_name] = json.load(open(path))
-        data['all']["train"] += data[dataset_name]["train"]
-        data['all']["test"] += data[dataset_name]["test"]
+        # data['all']["train"] += data[dataset_name]["train"]
+        # data['all']["test"] += data[dataset_name]["test"]
     return data
 
-def download_data():
-    path = '{}/data.zip'.format(data_path)
-    gdown.download(g_drive_url, path, quiet=False)
-    with ZipFile(path, "r") as zip:
-        zip.extractall(data_path)
+def download_data(path, file=None):
+    if path == in_domain_data_path:
+        file = './dataset/in-domain.zip'
+        gdown.download(in_domain_url, file, quiet=False)
+    elif path == out_of_domain_data_path:
+        file = './dataset/out-domain.zip'
+        gdown.download(out_of_domain_url, file, quiet=False)
+    with ZipFile(file, "r") as zip:
+        zip.extractall(dataset_path)
         zip.close()
 
 def get_nli_data():
