@@ -14,7 +14,6 @@ import numpy as np
 import pandas as pd
 import torch
 import datasets
-from matplotlib import rcParams
 import matplotlib.pyplot as plt
 import seaborn as sns
 import colorama
@@ -441,9 +440,9 @@ if __name__ == '__main__':
     def get_utcd():
         process_utcd_dataset(join=True)
         sanity_check('UTCD')
-    get_utcd()
+    # get_utcd()
 
     def get_utcd_ood():
         process_utcd_dataset(ood=True, join=True)
         sanity_check('UTCD-ood')
-    # get_utcd_ood()
+    get_utcd_ood()

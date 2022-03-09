@@ -98,7 +98,10 @@ class ZsGPT2Tokenizer(GPT2TokenizerFast):
         assert len(id_) == 1
         return id_[0]  # Intended for special tokens
 
-    def __call__(self, samples: Dict[str, Union[List, str, int]], dataset_name: str = 'UTCD', mode: str = 'train', **kwargs):
+    def __call__(
+            self, samples: Dict[str, Union[List, str, int]],
+            dataset_name: str = 'UTCD', mode: str = 'train', **kwargs
+    ):
         """
         :param samples: Data sample(s) with keys [`dataset_name`, `label`, `text`]
             Each value an element or a list of elements
@@ -153,8 +156,8 @@ class ZsGPT2Tokenizer(GPT2TokenizerFast):
                 # Crop the text portion, keep question and label intact, i.e., ensure no classification label is cropped
                 ln_t_ = self.max_len_single_sentence - (ln_q + ln_a)
                 assert ln_t_ > 0
-                warn(f'Sample longer than model max sequence length: {ln_total+6} > {self.model_max_length}'
-                     f' - Text portion cropped: {ln_t} > {ln_t_}')
+                warn(f'Sample longer than model max sequence length for dataset {dset_nm}: '
+                     f'{ln_total+6} > {self.model_max_length} - Text portion cropped: {ln_t} > {ln_t_}')
                 ids_text = ids_text[:ln_t_]
             # Number of contex tokens, up until answer token, inclusive
             n_ques, n_text, n_answ = (1 + len(ids_ques) + 1), (1 + len(ids_text) + 1), (1 + len(ids_answ) + 1)
@@ -357,7 +360,7 @@ def get_train_setup(
         'gpt2-medium': dict(
             learning_rate=4e-5,
             train_batch_size=16,
-            eval_batch_size=48,
+            eval_batch_size=40,
             gradient_accumulation_steps=8,  # To fit in memory; Effectively batch size 128 as in paper
             weight_decay=1e-2,
             num_train_epochs=10,
@@ -520,12 +523,12 @@ if __name__ == '__main__':
     # nm = 'gpt2'
     nm = 'gpt2-medium'
 
-    # n = 1
+    n = 1
     # n = 128
     # n = 1024
     # n = 4500
     # n = 1024 * 32
-    n = None
+    # n = None
 
     tr_args = None
     # tr_args = dict(num_train_epochs=32)
@@ -574,11 +577,10 @@ if __name__ == '__main__':
         trainer_.model = ZsGPT2LMHeadModel.from_pretrained(checkpoint_path, is_zs_gpt2=True).to('cuda')  # with caching
         return trainer_
 
-
     def evaluate_trained():
         load_model2trainer(trainer, epoch=3)
         ic(trainer.evaluate())
-    evaluate_trained()
+    # evaluate_trained()
 
     def profile_evaluate():
         load_model2trainer(trainer, epoch=2)
@@ -599,14 +601,20 @@ if __name__ == '__main__':
         load_model2trainer(trainer, epoch=3)
 
         dataset_name = 'UTCD-ood'
-        n_ = 1024
+        # n_ = 1024
+        # n_ = 1024 * 32
+        n_ = None
 
         vl = get_dset(
             dataset_name=dataset_name,
             d_map_func=dict(test=tokenize_func(tkzer, dataset_name=dataset_name, mode='test')), splits='test',
+            # filter_func=lambda sample: sample['dataset_id'] != config('UTCD.dataset_name2id')['arxiv'],
+            # Run on newly-added dset only
+            filter_func=lambda sample: sample['dataset_id'] == config('UTCD.dataset_name2id')['multi_eurlex'],
             remove_columns=['label', 'text'], n_sample=n_
         )[0]
+        # TODO: remove arXiv for too long options
         # gating with `if trainer.is_local_process_zero()`
         # somehow causes `torchrun` to not terminate after 1st compute loss
         ic(trainer.evaluate(eval_dataset=vl))
-    # evaluate_ood()
+    evaluate_ood()

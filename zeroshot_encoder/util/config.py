@@ -102,7 +102,9 @@ config = {
                 path='UTCD-ood/finance_sentiment', aspect='sentiment', eval_labels_same=True, out_of_domain=True
             ),
             yelp=dict(path='UTCD-ood/yelp', aspect='sentiment', eval_labels_same=True, out_of_domain=True),
-            arxiv=dict(path='UTCD-ood/arxiv', aspect='topic', eval_labels_same=True, out_of_domain=True),
+            # Removed for too many options blow up GPT2's 1024 token length
+            # arxiv=dict(path='UTCD-ood/arxiv', aspect='topic', eval_labels_same=True, out_of_domain=True),
+            multi_eurlex=dict(path='UTCD-ood/multi_eurlex', aspect='topic', eval_labels_same=True, out_of_domain=True),
             patent=dict(path='UTCD-ood/patent', aspect='topic', eval_labels_same=True, out_of_domain=True),
             consumer_finance=dict(
                 path='UTCD-ood/consumer_finance', aspect='topic', eval_labels_same=True, out_of_domain=True
@@ -138,7 +140,7 @@ for dnm, d in d_dsets.items():
     if d['eval_labels_same']:  # Sanity check
         assert d_labels['train'] == d_labels['test']
     d.update(dict(labels=d_labels))
-dnms = sorted(d_dsets)  # All datasets share the same dataset <=> id mapping
+dnms = sorted(d_dsets)  # All datasets, in- and out-of-domain, share the same dataset <=> id mapping
 config['UTCD']['dataset_name2id'] = {dnm: i for i, dnm in enumerate(dnms)}
 config['UTCD']['dataset_id2name'] = {i: dnm for i, dnm in enumerate(dnms)}
 
