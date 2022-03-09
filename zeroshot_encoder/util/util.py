@@ -338,7 +338,8 @@ def get_output_base():
         return PATH_BASE
 
 
-def process_utcd_dataset(join=False):
+def process_utcd_dataset(ood=False, join=False):
+    nm_dsets = 'UTCD-ood' if ood else 'UTCD'
     ext = config('UTCD.dataset_ext')
     path_dsets = os.path.join(PATH_BASE, DIR_PROJ, DIR_DSET)
     path_out = os.path.join(get_output_base(), DIR_PROJ, DIR_DSET)
@@ -368,7 +369,7 @@ def process_utcd_dataset(join=False):
                 df_.label.replace(to_replace=lbs.names, value=range(lbs.num_classes), inplace=True)
                 return datasets.Dataset.from_pandas(df_, features=features_)
         return datasets.DatasetDict({split: json2dset(split, dset) for split, dset in dsets_.items()})
-    d_dsets = {dnm: path2dsets(dnm, d) for dnm, d in config('UTCD.datasets').items()}
+    d_dsets = {dnm: path2dsets(dnm, d) for dnm, d in config('UTCD.datasets').items() if d['out_of_domain'] == ood}
     if join:
         dnm2id = config('UTCD.dataset_name2id')
 
@@ -394,7 +395,7 @@ def process_utcd_dataset(join=False):
         tr = dfs2dset(pre_concat(dnm, dsets['train']) for dnm, dsets in d_dsets.items())
         vl = dfs2dset(pre_concat(dnm, dsets['test']) for dnm, dsets in d_dsets.items())
         dsets = datasets.DatasetDict(train=tr, test=vl)
-        dsets.save_to_disk(os.path.join(path_out, 'processed', 'UTCD'))
+        dsets.save_to_disk(os.path.join(path_out, 'processed', nm_dsets))
     else:
         for dnm, dsets in d_dsets.items():
             dsets.save_to_disk(os.path.join(path_out, 'processed', dnm))
@@ -424,10 +425,11 @@ if __name__ == '__main__':
     # ic(fmt_num(124439808))
 
     # process_utcd_dataset()
-    process_utcd_dataset(join=True)
 
-    def sanity_check():
-        path = os.path.join(get_output_base(), DIR_PROJ, DIR_DSET, 'processed', 'UTCD')
+    # map_ag_news()
+
+    def sanity_check(dsets_nm):
+        path = os.path.join(get_output_base(), DIR_PROJ, DIR_DSET, 'processed', dsets_nm)
         ic(path)
         dset = datasets.load_from_disk(path)
         te, vl = dset['train'], dset['test']
@@ -435,6 +437,13 @@ if __name__ == '__main__':
         lbs = vl.features['label']
         ic(lbs)
         ic(vl[60], lbs.int2str(118))
-    sanity_check()
 
-    # map_ag_news()
+    def get_utcd():
+        process_utcd_dataset(join=True)
+        sanity_check('UTCD')
+    get_utcd()
+
+    def get_utcd_ood():
+        process_utcd_dataset(ood=True, join=True)
+        sanity_check('UTCD-ood')
+    # get_utcd_ood()

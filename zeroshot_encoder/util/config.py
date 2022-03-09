@@ -82,15 +82,36 @@ config = {
     'UTCD': dict(
         datasets=dict(
             # in-domain evaluation has the same labels as training
-            clinc_150=dict(path='clinc_150', aspect='intent', eval_labels_same=True),
-            sgd=dict(path='sgd', aspect='intent', eval_labels_same=False),  # has some unique test labels
-            slurp=dict(path='slurp', aspect='intent', eval_labels_same=False),
-            emotion=dict(path='emotion', aspect='sentiment', eval_labels_same=True),
-            go_emotion=dict(path='go_emotion', aspect='sentiment', eval_labels_same=True),
-            sentiment_tweets_2020=dict(path='sentiment_tweets_2020', aspect='sentiment', eval_labels_same=True),
-            ag_news=dict(path='ag_news', aspect='topic', eval_labels_same=True),
-            dbpedia=dict(path='dbpedia', aspect='topic', eval_labels_same=True),
-            yahoo=dict(path='yahoo', aspect='topic', eval_labels_same=True)
+            clinc_150=dict(path='UTCD/clinc_150', aspect='intent', eval_labels_same=True, out_of_domain=False),
+            # has some unique test labels
+            sgd=dict(path='UTCD/sgd', aspect='intent', eval_labels_same=False, out_of_domain=False),
+            slurp=dict(path='UTCD/slurp', aspect='intent', eval_labels_same=False, out_of_domain=False),
+            emotion=dict(path='UTCD/emotion', aspect='sentiment', eval_labels_same=True, out_of_domain=False),
+            go_emotion=dict(path='UTCD/go_emotion', aspect='sentiment', eval_labels_same=True, out_of_domain=False),
+            sentiment_tweets_2020=dict(
+                path='UTCD/sentiment_tweets_2020', aspect='sentiment', eval_labels_same=True, out_of_domain=False
+            ),
+            ag_news=dict(path='UTCD/ag_news', aspect='topic', eval_labels_same=True, out_of_domain=False),
+            dbpedia=dict(path='UTCD/dbpedia', aspect='topic', eval_labels_same=True, out_of_domain=False),
+            yahoo=dict(path='UTCD/yahoo', aspect='topic', eval_labels_same=True, out_of_domain=False),
+            # Out-of-domain datasets: test split intended to evaluation
+            amazon_polarity=dict(
+                path='UTCD-ood/amazon_polarity', aspect='sentiment', eval_labels_same=True, out_of_domain=True
+            ),
+            finance_sentiment=dict(
+                path='UTCD-ood/finance_sentiment', aspect='sentiment', eval_labels_same=True, out_of_domain=True
+            ),
+            yelp=dict(path='UTCD-ood/yelp', aspect='sentiment', eval_labels_same=True, out_of_domain=True),
+            arxiv=dict(path='UTCD-ood/arxiv', aspect='topic', eval_labels_same=True, out_of_domain=True),
+            patent=dict(path='UTCD-ood/patent', aspect='topic', eval_labels_same=True, out_of_domain=True),
+            consumer_finance=dict(
+                path='UTCD-ood/consumer_finance', aspect='topic', eval_labels_same=True, out_of_domain=True
+            ),
+            banking77=dict(path='UTCD-ood/banking77', aspect='intent', eval_labels_same=True, out_of_domain=True),
+            snips=dict(path='UTCD-ood/snips', aspect='intent', eval_labels_same=True, out_of_domain=True),
+            nlu_evaluation=dict(
+                path='UTCD-ood/nlu_evaluation', aspect='intent', eval_labels_same=True, out_of_domain=True
+            )
         ),
         dataset_ext='json'  # all in json
     ),
@@ -117,7 +138,7 @@ for dnm, d in d_dsets.items():
     if d['eval_labels_same']:  # Sanity check
         assert d_labels['train'] == d_labels['test']
     d.update(dict(labels=d_labels))
-dnms = sorted(d_dsets)
+dnms = sorted(d_dsets)  # All datasets share the same dataset <=> id mapping
 config['UTCD']['dataset_name2id'] = {dnm: i for i, dnm in enumerate(dnms)}
 config['UTCD']['dataset_id2name'] = {i: dnm for i, dnm in enumerate(dnms)}
 
