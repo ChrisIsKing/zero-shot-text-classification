@@ -10,6 +10,7 @@ catalogue==2.0.6
 certifi==2021.10.8
 charset-normalizer==2.0.11
 click==8.0.3
+colorama==0.4.4
 conllu==4.4.1
 contextvars==2.4
 cycler==0.11.0
@@ -76,6 +77,7 @@ spacy-legacy==3.0.9
 spacy-loggers==1.0.1
 sqlitedict==1.7.0
 srsly==2.4.2
+sty==1.0.4
 tabulate==0.8.9
 thinc==8.0.13
 threadpoolctl==3.1.0
