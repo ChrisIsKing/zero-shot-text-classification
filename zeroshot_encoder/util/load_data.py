@@ -36,14 +36,14 @@ category_map = {
     "slurp": "intent",
     "yahoo": "topic",
     "amazon_polarity": "sentiment",
-    "arxiv": "topic",
+    "multi_eurlex": "topic",
     "banking77": "intent",
     "consumer_finance": "topic",
     "finance_sentiment": "sentiment",
     "nlu_evaluation": "intent",
     "patent": "topic",
     "snips": "intent",
-    "yelp": "sentiment"
+    "yelp": "sentiment",
 }
 
 def get_data(path):
