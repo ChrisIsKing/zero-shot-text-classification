@@ -103,8 +103,8 @@ if __name__ == "__main__":
                 warmup_steps=warmup_steps,
                 output_path=model_save_path)
     if args.command == 'test':
-        pred_path = join(args.model_path, 'preds')
-        result_path = join(args.model_path, 'results')
+        pred_path = join(args.model_path, 'preds/{}/'.format(args.domain))
+        result_path = join(args.model_path, 'results/{}/'.format(args.domain))
         Path(pred_path).mkdir(parents=True, exist_ok=True)
         Path(result_path).mkdir(parents=True, exist_ok=True)
         if args.domain == 'in':
