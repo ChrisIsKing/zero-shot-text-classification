@@ -1,15 +1,12 @@
-import time
 from typing import Optional
 
 from torch.utils.data import DataLoader, Dataset
 from transformers import GPT2TokenizerFast
 from transformers import TrainerCallback, TrainingArguments, Trainer
-from transformers.trainer_utils import EvalLoopOutput, speed_metrics
-from transformers.debug_utils import DebugOption
+from transformers.trainer_utils import EvalLoopOutput
 from transformers.file_utils import is_torch_tpu_available
 if is_torch_tpu_available():
     import torch_xla.core.xla_model as xm
-    import torch_xla.debug.metrics as met
     import torch_xla.distributed.parallel_loader as pl
 
 from zeroshot_encoder.util import *
@@ -227,7 +224,7 @@ class MyLoggingCallback(TrainerCallback):
             self.logger.info(log_dict(d_stats) if isinstance(d_stats, dict) else d_stats)
             self.logger_fl.info(log_dict(d_stats, with_color=False) if isinstance(d_stats, dict) else d_stats)
 
-        if state.is_local_process_zero:
+        if self.trainer.is_local_process_zero():  # `state.is_local_process_zero` is wrong in DDP eval
             if self.trainer.mode == 'train':  # cos `evaluate` may be called during training
                 step = state.global_step
                 if self.do_eval:
@@ -534,10 +531,6 @@ class CustomTrainer(Trainer):
     #
     #     return output.metrics
 
-    # def my_evaluate(self):
-    #     """ Instead of Trainer API """
-    #     self.mode = 'eval'
-
     def compute_loss(self, model, inputs, return_outputs=False):
         """
         Override `Trainer.compute_loss` for logging accuracy
@@ -666,10 +659,12 @@ class CustomTrainer(Trainer):
             # instead of potentially concatenating the original evaluation matrix of shape (#eval, #model size, #vocab)
             # shape now is (#eval) cos for classification
             d_acc = get_accs(inputs, logits, self.tokenizer, mode=self.mode, compute_cls_acc=self.compute_cls_acc)
+            # For DDP; TODO: What's the proper way to cast?
+            args = dict(dtype=labels.dtype, device=labels.device)
             return (
                 loss,
-                torch.Tensor(d_acc['classification_acc_meta']['ids_pred']),
-                torch.Tensor(d_acc['classification_acc_meta']['ids_true']),
+                torch.tensor(d_acc['classification_acc_meta']['ids_pred'], **args),
+                torch.tensor(d_acc['classification_acc_meta']['ids_true'], **args),
                 inputs['dataset_id'].detach()
             )
         else:
@@ -880,8 +875,11 @@ class CustomTrainer(Trainer):
         # Metrics!
         if self.compute_metrics is not None and all_preds is not None and all_labels is not None:
             # ========================== Begin of modified =========================
-            mep = MyEvalPrediction(predictions=all_preds, label_ids=all_labels, dataset_ids=all_dataset_ids)
-            metrics = self.compute_metrics(mep)
+            if self.is_local_process_zero():
+                mep = MyEvalPrediction(predictions=all_preds, label_ids=all_labels, dataset_ids=all_dataset_ids)
+                metrics = self.compute_metrics(mep)
+            else:
+                metrics = {}  # TODO: HF edge case???? Should compute metrics in main process only
             # ========================== End of modified =========================
         else:
             metrics = {}
