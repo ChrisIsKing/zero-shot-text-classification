@@ -386,6 +386,9 @@ def get_accs(
     :param mode: Determines which split the labels are from, one of [`train`, `eval`]
     :param compute_cls_acc: Whether to compute classification accuracy
     :return: NTP accuracy & sample classification accuracy metadata
+
+    .. note: Classification accuracy based on NTP task during training
+        **assumes** predicted token id at the same location of label id
     """
     preds = logits.argmax(dim=-1)
     labels_ = inputs['labels'].detach()
@@ -430,12 +433,6 @@ def get_accs(
             # By default, the predictions and labels will not agree
             d_lbs_ = dict(label_id_pred=-1, label_id_true=descs.index(desc_true))  # Local label wrt dataset
             desc_pred = tokenizer.decode(preds[i_sample, idxs_answ])
-            # from icecream import ic
-            # lbs__ = labels_[i_sample]
-            # lbs__ = lbs__[lbs__ != PT_LOSS_PAD]
-            # if i_sample == 0:
-            #     ic(tokenizer.decode(lbs__)[:1500])
-            # ic(desc_true, desc_pred)
             if desc_pred in descs:
                 d_lbs_['label_id_pred'] = descs.index(desc_pred)
             return d_lbs_
@@ -447,9 +444,6 @@ def get_accs(
         n_total = len(ids_true)
         assert n_total == len(labels_)  # Number of samples with complete label
         d_ret['classification_acc_meta'] = dict(n_acc=n_acc, n_total=n_total, ids_pred=ids_pred, ids_true=ids_true)
-        # from icecream import ic
-        # ic(d_ret)
-        # exit(1)
     return d_ret
 
 

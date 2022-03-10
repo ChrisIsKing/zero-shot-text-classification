@@ -425,6 +425,9 @@ def get_train_setup(
 
 
 def compute_metrics(eval_pred: MyEvalPrediction):
+    """
+    Will be called on eval data only, **during training**
+    """
     # Intended to work with `CustomTrainer.prediction_step`
     if not hasattr(compute_metrics, 'metric'):
         compute_metrics.metric = load_metric('accuracy')
@@ -440,6 +443,50 @@ def compute_metrics(eval_pred: MyEvalPrediction):
         id_label, desc_label = zip(*enumerate(config(f'UTCD.datasets.{dnm_}.labels.test')))  # Label is index
         msk_dset = (dids == did)
         preds_, trues_ = preds[msk_dset], trues[msk_dset]
+
+        # def filter_labels(dset_nm: str, p: np.array, t: np.array) -> Tuple[np.array, np.array]:
+        #     """
+        #     For multi-label evaluation, filter so that each unique test is evaluated once
+        # 
+        #     Favor the correct prediction, i.e. as long as one label predicted is the true label, regard as correct
+        # 
+        #     :param dset_nm: Dataset name in `UTCD`, or `UTCD-ood`
+        #     :param p: Predicted label for each sample
+        #     :param t: True label for each sample
+        # 
+        #     .. note:: Expects that the labels are exactly that of the original dataset, in that order
+        #     """
+        #     # See `zeroshot_encoder.util.util.py::process_utcd_dataset.py`
+        #     dset = datasets.load_from_disk(os.path.join(get_output_base(), DIR_PROJ, DIR_DSET, 'processed', dset_nm))
+        #     samples = dset['test'][:]  # Grab all data
+        #     txts, lbs = samples['text'], samples['label']
+        #     ic(len(txts), lbs[:10])
+        #     ids_txt = np.array(lst2uniq_ids(txts))  # Group similar labels
+        #     ids_uniq = np.unique(ids_txt)
+        #     if ids_uniq.size == len(txts):  # All single-label classification
+        #         return p, t
+        #     else:
+        #         idx_keep = np.empty_like(ids_uniq)
+        #         for id_ in ids_uniq:  # For each unique text, pick only one of the predictions
+        #             """
+        #             For each unique text, pick an index for the final evaluation
+        #             """
+        #             msk = ids_txt == id_
+        #             idxs = np.where(msk)[0]  # Indices corresponding the same text
+        #             if len(idxs) > 1:
+        #                 ic(id_, idxs)
+        #                 lbs_pred, lbs_true = p[msk], t[msk]
+        #                 for idx_cand, (lb_p, lb_t) in enumerate(zip(lbs_pred, lbs_true)):
+        #                     if lb_p == lb_t:  # Found a matching prediction
+        #                         idxs[idx_cand]
+        #                 idxs[0]  # No matches, just pick one arbitrarily; TODO: this affects the class-predictions
+        #                 ic(lbs_pred, lbs_true)
+        #                 for idx in idxs:
+        #                     ic(txts[idx], lbs[idx])
+        #                     ic(dset.features['label'].int2str(lbs[idx]))
+        #                 exit(1)
+        # preds_, trues_ = filter_labels(dnm_, preds_, trues_)
+
         df = pd.DataFrame(
             # note `-1` is not actual label, support of 0 - included for full label specification per sklearn
             # **note** cos the -1 label, the `macro avg` row is not accurate; included it for getting global accuracy
@@ -608,12 +655,12 @@ if __name__ == '__main__':
         vl = get_dset(
             dataset_name=dataset_name,
             d_map_func=dict(test=tokenize_func(tkzer, dataset_name=dataset_name, mode='test')), splits='test',
-            # filter_func=lambda sample: sample['dataset_id'] != config('UTCD.dataset_name2id')['arxiv'],
             # Run on newly-added dset only
             filter_func=lambda sample: sample['dataset_id'] == config('UTCD.dataset_name2id')['multi_eurlex'],
+            # **Note** no shuffling performed
             remove_columns=['label', 'text'], n_sample=n_
         )[0]
-        # TODO: remove arXiv for too long options
+        # vl = vl.select(range(1024))  # TODO: debugging
         # gating with `if trainer.is_local_process_zero()`
         # somehow causes `torchrun` to not terminate after 1st compute loss
         ic(trainer.evaluate(eval_dataset=vl))

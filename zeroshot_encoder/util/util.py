@@ -52,6 +52,14 @@ def join_its(its: Iterable[Iterable[T]]) -> Iterable[T]:
     return out
 
 
+def lst2uniq_ids(lst: List[T]) -> List[int]:
+    """
+    Each unique element in list assigned an unique id
+    """
+    elm2id = {v: k for k, v in enumerate(OrderedDict.fromkeys(lst))}
+    return [elm2id[e] for e in lst]
+
+
 def get(dic, ks):
     """
     :param dic: Potentially multi-level dictionary
@@ -325,6 +333,18 @@ def plot_points(arr, **kwargs):
     plt.plot(arr[:, 0], arr[:, 1], **kwargs)
 
 
+def get_utcd_info() -> pd.DataFrame:
+    """
+    Metadata about each dataset in UTCD
+    """
+    infos = [
+        dict(dataset_name=dnm, aspect=d_dset['aspect'], out_of_domain=d_dset['out_of_domain'])
+        | {f'{split}-{k}': v for split, d_info in d_dset['splits'].items() for k, v in d_info.items()}
+        for dnm, d_dset in config('UTCD.datasets').items()
+    ]
+    return pd.DataFrame(infos)
+
+
 def get_output_base():
     # For remote machines, save heavy-duty data somewhere else to save `/home` disk space
     hnm = get_hostname()
@@ -445,4 +465,20 @@ if __name__ == '__main__':
     def get_utcd_ood():
         process_utcd_dataset(ood=True, join=True)
         sanity_check('UTCD-ood')
-    get_utcd_ood()
+    # get_utcd_ood()
+
+    process_utcd_dataset(ood=True, join=False)
+
+    def sanity_check_ln_eurlex():
+        path = os.path.join(get_output_base(), DIR_PROJ, DIR_DSET, 'processed', 'multi_eurlex')
+        ic(path)
+        dset = datasets.load_from_disk(path)
+        ic(dset, len(dset))
+    sanity_check_ln_eurlex()
+    # ic(lst2uniq_ids([5, 6, 7, 6, 5, 1]))
+
+    def output_utcd_info():
+        df = get_utcd_info()
+        ic(df)
+        df.to_csv(os.path.join(PATH_BASE, DIR_PROJ, DIR_DSET, 'utcd-info.csv'))
+    output_utcd_info()

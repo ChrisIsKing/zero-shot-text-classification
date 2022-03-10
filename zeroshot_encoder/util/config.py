@@ -1,4 +1,4 @@
-from typing import List, Dict
+from typing import Tuple, List, Dict
 
 import json
 
@@ -82,15 +82,15 @@ config = {
     'UTCD': dict(
         datasets=dict(
             # in-domain evaluation has the same labels as training
-            clinc_150=dict(path='UTCD/clinc_150', aspect='intent', eval_labels_same=True, out_of_domain=False),
-            # has some unique test labels
-            sgd=dict(path='UTCD/sgd', aspect='intent', eval_labels_same=False, out_of_domain=False),
-            slurp=dict(path='UTCD/slurp', aspect='intent', eval_labels_same=False, out_of_domain=False),
             emotion=dict(path='UTCD/emotion', aspect='sentiment', eval_labels_same=True, out_of_domain=False),
             go_emotion=dict(path='UTCD/go_emotion', aspect='sentiment', eval_labels_same=True, out_of_domain=False),
             sentiment_tweets_2020=dict(
                 path='UTCD/sentiment_tweets_2020', aspect='sentiment', eval_labels_same=True, out_of_domain=False
             ),
+            clinc_150=dict(path='UTCD/clinc_150', aspect='intent', eval_labels_same=True, out_of_domain=False),
+            # has some unique test labels
+            sgd=dict(path='UTCD/sgd', aspect='intent', eval_labels_same=False, out_of_domain=False),
+            slurp=dict(path='UTCD/slurp', aspect='intent', eval_labels_same=False, out_of_domain=False),
             ag_news=dict(path='UTCD/ag_news', aspect='topic', eval_labels_same=True, out_of_domain=False),
             dbpedia=dict(path='UTCD/dbpedia', aspect='topic', eval_labels_same=True, out_of_domain=False),
             yahoo=dict(path='UTCD/yahoo', aspect='topic', eval_labels_same=True, out_of_domain=False),
@@ -124,22 +124,32 @@ path_dset = os.path.join(PATH_BASE, DIR_PROJ, DIR_DSET)
 ext = config['UTCD']['dataset_ext']
 
 
-def path2dataset_labels(path: str) -> Dict[str, List[str]]:
-    path = os.path.join(path_dset, f'{path}.{ext}')
+def path2dataset_info(d: Dict) -> Dict:
+    path = os.path.join(path_dset, f'{d["path"]}.{ext}')
     with open(path) as fl:
         dsets: Dict = json.load(fl)
 
-    def samples2lbs(dset: List) -> List[str]:
-        return sorted(set(lb for (txt, lb) in dset))  # Heuristic on how the `json` are stored
-    return {split: samples2lbs(dset) for split, dset in dsets.items()}  # Labels for each split
+    def split2info(dset: List[Tuple[str, str]]) -> Dict:
+        txts, lbs = zip(*dset)  # Heuristic on how the `json` are stored
+        txts_uniq, lbs_uniq = set(txts), set(lbs)
+        return dict(
+            labels=sorted(lbs_uniq),
+            n_label=len(lbs_uniq),
+            n_txt=len(txts_uniq),
+            n_sample=len(dset),
+            multi_label=len(txts_uniq) < len(dset)
+        )
+    d_out = {split: split2info(dset) for split, dset in dsets.items()}  # Labels for each split
+    assert all(split in ['train', 'test'] for split in d_out.keys())
+    if d['eval_labels_same']:
+        assert d_out['train']['labels'] == d_out['test']['labels']
+    return d_out
 
 
-d_dsets = config['UTCD']['datasets']
-for dnm, d in d_dsets.items():
-    d_labels = path2dataset_labels(d['path'])
-    if d['eval_labels_same']:  # Sanity check
-        assert d_labels['train'] == d_labels['test']
-    d.update(dict(labels=d_labels))
+d_dsets: Dict = config['UTCD']['datasets']
+for d_dset in d_dsets.values():
+    d_dset.update(dict(splits=path2dataset_info(d_dset)))
+
 dnms = sorted(d_dsets)  # All datasets, in- and out-of-domain, share the same dataset <=> id mapping
 config['UTCD']['dataset_name2id'] = {dnm: i for i, dnm in enumerate(dnms)}
 config['UTCD']['dataset_id2name'] = {i: dnm for i, dnm in enumerate(dnms)}
