@@ -104,6 +104,11 @@ def config(attr):
     return get(config.config, attr)
 
 
+def get_substr_indices(s: str, s_sub: str) -> List[int]:
+    s_sub = re.escape(s_sub)
+    return [m.start() for m in re.finditer(s_sub, s)]
+
+
 def get_hostname() -> str:
     return os.uname().nodename
 
@@ -299,6 +304,26 @@ class MyFormatter(logging.Formatter):
         return self.formatter[entry.levelno].format(entry)
 
 
+def get_logger(name: str, typ: str = 'stdout', file_path: str = None) -> logging.Logger:
+    """
+    :param name: Name of the logger
+    :param typ: Logger type, one of [`stdout`, `file-write`]
+    :param file_path: File path for file-write logging
+    """
+    assert typ in ['stdout', 'file-write']
+    logger = logging.getLogger(name)
+    logger.setLevel(logging.DEBUG)
+    if typ == 'stdout':
+        handler = logging.StreamHandler(stream=sys.stdout)  # For my own coloring
+    else:
+        os.makedirs(os.path.dirname(file_path), exist_ok=True)
+        handler = logging.FileHandler(file_path)
+    handler.setLevel(logging.DEBUG)
+    handler.setFormatter(MyFormatter(with_color=typ == 'stdout'))
+    logger.addHandler(handler)
+    return logger
+
+
 def fmt_num(n: Union[float, int]):
     """
     Convert number to human-readable format, in e.g. Thousands, Millions
@@ -357,8 +382,19 @@ def get_output_base():
         return PATH_BASE
 
 
-def process_utcd_dataset(ood=False, join=False):
-    nm_dsets = 'UTCD-ood' if ood else 'UTCD'
+def process_utcd_dataset(in_domain=False, join=False, group_labels=False):
+    """
+    :param in_domain: If True, process all the in-domain datasets; otherwise, process all the out-of-domain datasets
+    :param join: If true, all datasets are joined to a single dataset
+    :param group_labels: If true, the datasets are converted to a multi-label format
+
+    .. note::
+        1. The original dataset format is list of (text, label) pairs
+        2. `group_labels` supported only when datasets are not jointed, intended for evaluation
+
+    Save processed datasets to disk
+    """
+    nm_dsets = 'UTCD-ood' if in_domain else 'UTCD'
     ext = config('UTCD.dataset_ext')
     path_dsets = os.path.join(PATH_BASE, DIR_PROJ, DIR_DSET)
     path_out = os.path.join(get_output_base(), DIR_PROJ, DIR_DSET)
@@ -370,25 +406,47 @@ def process_utcd_dataset(ood=False, join=False):
         path = os.path.join(path_dsets, f'{path}.{ext}')
         with open(path) as f:
             dsets_: Dict = json.load(f)
-        d_lbs = config(f'UTCD.datasets.{dnm}.labels')
 
         def json2dset(split: str, dset: List) -> Union[datasets.Dataset, pd.DataFrame]:
             assert all(sample[0] != '' for sample in dset)
-            dset = [dict(text=txt, label=lb) for (txt, lb) in dset]  # Heuristic on how the `json` are stored
-            df_ = pd.DataFrame(dset)
-            if join:  # Leave processing labels til later
-                return df_
+            if group_labels:
+                # Otherwise, process just normally
+                dset = sorted(dset)  # Sort first by text then by label, for `groupby`
+                # Group the label for each unique text
+                lbs_: List[str] = config(f'UTCD.datasets.{dnm}.splits.{split}.labels')
+                # index is label per `lbs_` ordering, same with `datasets.ClassLabel`
+                lb2id = {lb: i for i, lb in enumerate(lbs_)}
+                dset = [  # Map to integer labels
+                    dict(text=k, labels=[lb2id[lb] for txt, lb in v])
+                    for k, v in itertools.groupby(dset, key=lambda pr: pr[0])
+                ]
+                lbs = datasets.Sequence(  # if not multi-label, `Sequence` of single element
+                    datasets.ClassLabel(names=lbs_),
+                    length=-1 if config(f'UTCD.datasets.{dnm}.splits.{split}.multi_label') else 1
+                )
+                # ic(lbs)
+                return datasets.Dataset.from_pandas(
+                    pd.DataFrame(dset),
+                    features=datasets.Features(text=datasets.Value(dtype='string'), labels=lbs)
+                )
             else:
-                # Sort the string labels, enforce deterministic order
-                lbs = sorted(df_.label.unique())
-                assert lbs == d_lbs[split]  # Sanity check
-                lbs = datasets.ClassLabel(names=lbs)
-                features_ = datasets.Features(text=datasets.Value(dtype='string'), label=lbs)
-                # Map to integer labels so that compatible to current training infrastructure in `gpt2.py`
-                df_.label.replace(to_replace=lbs.names, value=range(lbs.num_classes), inplace=True)
-                return datasets.Dataset.from_pandas(df_, features=features_)
+                dset = [dict(text=txt, label=lb) for (txt, lb) in dset]  # Heuristic on how the `json` are stored
+                df_ = pd.DataFrame(dset)
+                if join:  # Leave processing labels til later
+                    return df_
+                else:
+                    # Sort the string labels, enforce deterministic order
+                    lbs = sorted(df_.label.unique())
+                    assert lbs == config(f'UTCD.datasets.{dnm}.splits.{split}.labels')  # Sanity check
+                    lbs = datasets.ClassLabel(names=lbs)
+                    features_ = datasets.Features(text=datasets.Value(dtype='string'), label=lbs)
+                    # Map to integer labels so that compatible to current training infrastructure in `gpt2.py`
+                    df_.label.replace(to_replace=lbs.names, value=range(lbs.num_classes), inplace=True)
+                    return datasets.Dataset.from_pandas(df_, features=features_)
         return datasets.DatasetDict({split: json2dset(split, dset) for split, dset in dsets_.items()})
-    d_dsets = {dnm: path2dsets(dnm, d) for dnm, d in config('UTCD.datasets').items() if d['out_of_domain'] == ood}
+    d_dsets = {
+        dnm: path2dsets(dnm, d) for dnm, d in config('UTCD.datasets').items() if d['out_of_domain'] == (not in_domain)
+    }
     if join:
         dnm2id = config('UTCD.dataset_name2id')
 
@@ -417,7 +475,7 @@ def process_utcd_dataset(ood=False, join=False):
         dsets.save_to_disk(os.path.join(path_out, 'processed', nm_dsets))
     else:
         for dnm, dsets in d_dsets.items():
-            dsets.save_to_disk(os.path.join(path_out, 'processed', dnm))
+            dsets.save_to_disk(os.path.join(path_out, 'processed', f'{dnm}-label-grouped' if group_labels else dnm))
 
 
 def map_ag_news():
@@ -463,22 +521,27 @@ if __name__ == '__main__':
     # get_utcd()
 
     def get_utcd_ood():
-        process_utcd_dataset(ood=True, join=True)
+        process_utcd_dataset(in_domain=True, join=True)
         sanity_check('UTCD-ood')
     # get_utcd_ood()
 
-    process_utcd_dataset(ood=True, join=False)
+    # process_utcd_dataset(in_domain=True, join=False)
+    # process_utcd_dataset(in_domain=True, join=False, group_labels=True)
+    process_utcd_dataset(in_domain=False, join=False, group_labels=True)
 
     def sanity_check_ln_eurlex():
         path = os.path.join(get_output_base(), DIR_PROJ, DIR_DSET, 'processed', 'multi_eurlex')
         ic(path)
         dset = datasets.load_from_disk(path)
         ic(dset, len(dset))
-    sanity_check_ln_eurlex()
+    # sanity_check_ln_eurlex()
     # ic(lst2uniq_ids([5, 6, 7, 6, 5, 1]))
 
     def output_utcd_info():
         df = get_utcd_info()
         ic(df)
         df.to_csv(os.path.join(PATH_BASE, DIR_PROJ, DIR_DSET, 'utcd-info.csv'))
-    output_utcd_info()
+    # output_utcd_info()
+
+    # lg = get_logger('test-lang')
+    # ic(lg, type(lg))
