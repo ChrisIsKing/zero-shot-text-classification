@@ -6,9 +6,7 @@ Implementation of NVIDIA-GPT2 approach.
 from warnings import warn
 from collections import defaultdict
 
-from tqdm import tqdm
 from torch import nn
-from torch.utils.data import DataLoader
 from sklearn.metrics import classification_report
 import transformers
 from transformers import BatchEncoding
@@ -18,7 +16,7 @@ from transformers import GPT2Model, GPT2LMHeadModel  # LMHead for CLM training
 from transformers import Trainer, TrainingArguments, SchedulerType
 from transformers import DataCollatorForLanguageModeling
 from transformers.training_args import OptimizerNames
-from datasets import load_metric, load_dataset
+from datasets import load_metric
 
 from zeroshot_encoder.util import *
 from zeroshot_encoder.preprocess import get_dset
@@ -337,19 +335,7 @@ def tokenize_func(
         :param sample: A batch of data samples
         """
         if 'UTCD' not in dataset_name:
-            # if not hasattr(_tokenize_func, 'dataset_id_cache'):
-            #     _tokenize_func.dataset_id_cache = dict()
-            # if dataset_name not in _tokenize_func.dataset_id_cache:
-            #     split = 'train' if mode == 'train' else 'test'
-            #     k_label = 'labels' if config(f'UTCD.dataset.{dataset_name}.splits.') else 'label'
-            #     _tokenize_func.dataset_id_cache[dataset_name]
-            # ic(sample.keys())
-            # exit(1)
-            # print(dataset_name)
-            # print(type(sample))
-            # print(len(sample['text']))
             sample['dataset_id'] = [config('UTCD.dataset_name2id')[dataset_name]] * len(sample['text'])
-            # exit(1)
         # Otherwise, `dataset_id` already part of input
         return tokenizer_(
             sample, dataset_name=dataset_name, max_length=max_length, mode=mode, for_prediction=for_prediction
@@ -494,25 +480,6 @@ def compute_metrics(eval_pred: MyEvalPrediction):
         compute_metrics.metric = load_metric('accuracy')
     # Labels are per-sample already, see `CustomTrainer.prediction_step`
     preds, trues, dids = eval_pred.predictions, eval_pred.label_ids, eval_pred.dataset_ids
-    # id2dnm = config('UTCD.dataset_id2name')
-    # path_dir = os.path.join(PATH_BASE, DIR_PROJ, 'evaluations', MODEL_NAME, now(sep='-'))
-    # os.makedirs(path_dir, exist_ok=True)
-    #
-    # for did in np.unique(dids):
-    #     dnm_ = id2dnm[did]
-    #     # TODO: only evaluation split for now
-    #     id_label, desc_label = zip(*enumerate(config(f'UTCD.datasets.{dnm_}.labels.test')))  # Label is index
-    #     msk_dset = (dids == did)
-    #     preds_, trues_ = preds[msk_dset], trues[msk_dset]
-    #     df = pd.DataFrame(
-    #         # note `-1` is not actual label, support of 0 - included for full label specification per sklearn
-    #         # **note** cos the -1 label, the `macro avg` row is not accurate; included it for getting global accuracy
-    #         classification_report(
-    #             trues_, preds_, labels=[-1, *id_label], target_names=['Label not in dataset', *desc_label],
-    #             output_dict=True
-    #         )
-    #     ).transpose()
-    #     df.to_csv(os.path.join(path_dir, f'{dnm_}.csv'))
     return compute_metrics.metric.compute(predictions=preds, references=trues)
 
 
@@ -585,19 +552,17 @@ def load_trained(epoch: int = 3) -> ZsGPT2LMHeadModel:
     return ZsGPT2LMHeadModel.from_pretrained(checkpoint_path, is_zs_gpt2=True).to('cuda')  # with caching
 
 
-def evaluate_trained(in_domain: bool = True, batch_size: int = 48):
+def evaluate_trained(in_domain: bool = True, batch_size: int = 48, n_ep: int = 3):
     """
     Run evaluation, on potentially multi-label datasets
     """
-    model = load_trained(epoch=3).to('cuda')
-    ic(ZsGPT2LMHeadModel.__mro__)
-    # To disable warning `Setting `pad_token_id` to `eos_token_id`:50256 for open-end generation.`; TODO
-    model.config.max_length = model.config.n_ctx
-    model.config.pad_token_id = model.config.eos_token_id
+    model = load_trained(epoch=n_ep).to('cuda')
+    conf, model_cnm = model.config, model.__class__.__qualname__
+    # To disable warning `Setting `pad_token_id` to `eos_token_id` for open-end generation.`
+    model_size = conf.max_length = conf.n_ctx
+    conf.pad_token_id = conf.eos_token_id
     model.eval()
-    tkzer = ZsGPT2Tokenizer.from_pretrained('gpt2', use_fast=True, model_max_length=model.config.n_ctx)
-    # tkzer.pad_token_id = tkzer.eos_token_id
-    # data_collator = DataCollatorForLanguageModeling(tokenizer=tkzer, mlm=False)
+    tkzer = ZsGPT2Tokenizer.from_pretrained('gpt2', use_fast=True, model_max_length=model_size)
 
     split = 'test'
     path_dir = os.path.join(PATH_BASE, DIR_PROJ, 'evaluations', MODEL_NAME, now(sep='-'))
@@ -606,176 +571,126 @@ def evaluate_trained(in_domain: bool = True, batch_size: int = 48):
     logger_fl = get_logger(
         f'{logger_name} file-write', typ='file-write', file_path=os.path.join(path_dir, f'{logger_name}.log')
     )
-    ic(logger.handlers, logger_fl.handlers)
-    from transformers.generation_utils import GenerationMixin
-    logger.info(f'Running evaluation {logi("in domain" if in_domain else "out of domain")}... ')
-    logger_fl.info(f'Running evaluation {"in domain" if in_domain else "out of domain"}... ')
 
-    for dnm_, d in config('UTCD.datasets').items():
-        if d['out_of_domain'] == (not in_domain):
-            ic(dnm_)
-            if dnm_ != 'multi_eurlex':  # TODO: debugging
-                continue
-            d_info = config(f'UTCD.datasets.{dnm_}.splits.{split}')
-            is_multi_label = d_info['multi_label']
-            lb2id = defaultdict(lambda: -1)  # If generated invalid descriptive label, will return -1
-            labels = d_info['labels']
-            # predictions and label descriptions all to lower case to be more lenient
-            lb2id.update({lb.lower(): i for i, lb in enumerate(labels)})
-            ic(lb2id)
-            dnm_disk = f'{dnm_}-label-grouped' if is_multi_label else dnm_
-            dset = get_dset(  # Get evaluation set only
-                dataset_name=dnm_disk, splits='test',
-                d_map_func=dict(test=tokenize_func(tkzer, dataset_name=dnm_, mode='test', for_prediction=True)),
-                remove_columns='text', n_sample=None, from_disk=True
-            )[0]
+    dataset_names = [
+        dnm for dnm in config('UTCD.datasets').keys()
+        if (config(f'UTCD.datasets.{dnm}.out_of_domain') == (not in_domain))
+    ]
+    d_model = OrderedDict([('model name', model_cnm), ('trained #epoch', n_ep), ('model size', model_size)])
+    d_eval = OrderedDict([
+        ('max batch size', batch_size),
+        ('datasets', dataset_names)
+    ])
+    domain = 'in domain' if in_domain else 'out of domain'
+    logger.info(f'Running evaluation {logi(domain)} on model {log_dict(d_model)}, with {log_dict(d_eval)}... ')
+    logger_fl.info(f'Running evaluation {domain} on model {log_dict(d_model, with_color=False)}'
+                f', with {log_dict(d_eval, with_color=False)}... ')
 
-            # Hack to order the dataset by length of input ids -
-            # for batched generation, that **doesn't take up padding, this is not supported by HuggingFace**
-            # cnm_lid = 'len_ids'
-            # dset = dset.add_column(cnm_lid, [len(ids) for ids in dset[:]['input_ids']])
-            # ic(dset[0])
-            # ic(dset[1, 3, 5])
-            # dset = dset.sort(column=cnm_lid)
-            # ic(dset[0])
-            # labels_true = dset[:]['labels']
-            # ic(labels_true)
-            # For final metric computation, the correct label will be selected based on prediction
-            trues, preds = np.empty(len(dset), dtype=int), np.empty(len(dset), dtype=int)
-            # ic(trues, preds)
-            len_ids = np.array([len(ids) for ids in dset[:]['input_ids']])
-            # dset = dset.remove_columns(cnm_lid)
-            # ic(dset[:3])
-            # ic(len_ids, len_ids.shape, np.unique(len_ids))
-            uniq_lens = np.unique(len_ids)
-            # from collections import Counter
-            # ic(Counter(len_ids))
-            # dl = DataLoader(dataset=dset, batch_size=48, collate_fn=data_collator)
-            # ic(len(dl))
-            # for step, input_ in tqdm(enumerate(dl)):
-            #     ic(input_.keys())
-            #     ic(input_)
-            #     output = model(**input_)
-            #     ic(output.keys())
-            #     exit(1)
-            # for len_ids, samples in itertools.groupby(dset, key=lambda sample: sample[cnm_lid]):
-            #     ic(len_ids, samples, type(samples))
-            # Batches of likely different sizes
-            ln2idxs = [np.where(len_ids == ln)[0] for ln in uniq_lens]
-            # ic([len(idxs) for idxs in ln2idxs])
-            idxs_batches = sum(
-                (np.split(idxs, range(batch_size, idxs.size, batch_size)) if idxs.size > batch_size else [idxs]
-                 for idxs in ln2idxs),
-                start=[]
-            )
-            n_bch = len(idxs_batches)
-            logger.info(f'Running evaluation on dataset {logi(dnm_disk)} of {logi(len(dset))} unique texts '
-                        f'in {logi(n_bch)} batches... ')
-            logger_fl.info(f'Running evaluation on dataset {dnm_disk} of {len(dset)} unique texts '
-                           f'in {n_bch} batches... ')
-            # ic([len(idxs) for idxs in idxs_batches])
-            # correct_label_ids = set(range(len(labels)))
+    for dnm_ in dataset_names:
+        if dnm_ != 'multi_eurlex':  # TODO: debugging
+            continue
+        d_info = config(f'UTCD.datasets.{dnm_}.splits.{split}')
+        is_multi_label = d_info['multi_label']
+        lb2id = defaultdict(lambda: -1)  # If generated invalid descriptive label, will return -1
+        labels = d_info['labels']
+        # predictions and label descriptions all to lower case to be more lenient
+        lb2id.update({lb.lower(): i for i, lb in enumerate(labels)})
+        dnm_disk = f'{dnm_}-label-grouped' if is_multi_label else dnm_
+        dset = get_dset(  # Get evaluation set only
+            dataset_name=dnm_disk, splits='test',
+            d_map_func=dict(test=tokenize_func(tkzer, dataset_name=dnm_, mode='test', for_prediction=True)),
+            remove_columns='text', n_sample=None, from_disk=True
+        )[0]
 
-            # for idxs in tqdm(idxs_batches, unit='ba'):  # Each batch has input samples of the same token length
-            for step, idxs in enumerate(idxs_batches):  # Each batch has input samples of the same token length
-                # dset_ = dset.select(np.where(len_ids == ln)[0])  # `Dataset.select` works with integer indices only
-                idxs = [int(idx) for idx in idxs]
-                # inputs = data_collator.torch_call([dset[idx] for idx in idxs])  # Use it for padding & Tensor conversion
-                inputs = {  # Don't need to the labels to complicate forward pass
-                    k: torch.tensor(v, device='cuda') for k, v in dset[idxs].items() if k not in ['label', 'labels']
-                }
-                # trues = dset[idxs]['labels' if is_multi_label else 'label']
+        # Batched generation that **doesn't take up padding** is not supported by HuggingFace
+        n_dset = len(dset)
+        trues, preds = np.empty(n_dset, dtype=int), np.empty(n_dset, dtype=int)
+        len_ids = np.array([len(ids) for ids in dset[:]['input_ids']])
+        uniq_lens = np.unique(len_ids)
+        # Batches of likely different batch sizes
+        ln2idxs = [np.where(len_ids == ln)[0] for ln in uniq_lens]
+        idxs_batches = sum(  # Get batches of same length, with max batch size of `batch_size`
+            (np.split(idxs, range(batch_size, idxs.size, batch_size)) if idxs.size > batch_size else [idxs]
+             for idxs in ln2idxs),
+            start=[]
+        )
+        n_bch = len(idxs_batches)
+        logger.info(f'Running evaluation on dataset {logi(dnm_disk)}, with labels {log_dict(lb2id)}, '
+                    f'of {logi(len(dset))} unique texts in {logi(n_bch)} batches... ')
+        logger_fl.info(f'Running evaluation on dataset {dnm_disk}, with labels{lb2id}, '
+                       f'of {len(dset)} unique texts in {n_bch} batches... ')
 
-                # ic(inputs['input_ids'].shape)
-                # ic(inputs.keys())
-                # ic(inputs['input_ids'].device)
-                # ic(model.config)
-                # ic(model.config.max_length)
-                # ic(model.generate)
-                # exit(1)
-                outputs = model.generate(**inputs)  # Greedy decoding
-                # ic(outputs.shape, outputs[:, -15:])
-                # ic(outputs, trues)
-                outputs = tkzer.batch_decode(outputs, skip_special_tokens=False)
-                # ic(outputs)
+        n_computed = 0
+        for step, idxs in enumerate(idxs_batches):  # Each batch has input samples of the same token length
+            idxs = [int(idx) for idx in idxs]  # `Dataset.select` works with `int` indices only
+            inputs = {  # No need to pad; Don't need to the labels to complicate forward pass
+                k: torch.tensor(v, device='cuda') for k, v in dset[idxs].items() if k not in ['label', 'labels']
+            }
+            outputs = model.generate(**inputs)  # Greedy decoding
+            outputs = tkzer.batch_decode(outputs, skip_special_tokens=False)
+            n_computed += len(idxs)
 
-                def set_pred_n_true(generated: str, i_sample: int) -> Tuple[int, int]:
-                    # ic(tkzer.boa_token, tkzer.eos_token, i_sample, lb2id)
-                    idxs_boa = get_substr_indices(s=generated, s_sub=tkzer.boa_token)
-                    # there will be at least one index, as in prompt
-                    answer_with_eos = generated[idxs_boa[0] + len(tkzer.boa_token):]
-                    id_pred = -1
-                    if len(idxs_boa) > 1:
-                        # ic(idxs_boa)
-                        # ic(generated)
-                        # ic(inputs['input_ids'].shape)
-                        # ic(inputs['input_ids'][:, -4:])
-                        # ic(tkzer.boa_token)
-                        # ic(tkzer.boa_token_id)
-                        logger.warning(f'{model.__class__.__qualname__} generated {len(idxs_boa)} boa_token '
-                                       f'instead of {1} with [{answer_with_eos}]')
-                        logger_fl.warning(log_dict(d_log, with_color=False))
+            def set_pred_n_true(generated: str, i_sample: int) -> Tuple[int, int]:
+                idxs_boa = get_substr_indices(s=generated, s_sub=tkzer.boa_token)
+                # there will be at least one index, as in prompt
+                answer_with_eos = generated[idxs_boa[0] + len(tkzer.boa_token):]
+                id_pred = -1
+                if len(idxs_boa) > 1:
+                    logger.warning(f'{logi(model_cnm)} generated {logi(len(idxs_boa))} boa_token '
+                                   f'instead of {logi(1)} with {logi(answer_with_eos)}')
+                    logger_fl.warning(f'{model_cnm} generated {len(idxs_boa)} boa_token '
+                                      f'instead of {1} with {answer_with_eos}')
+                else:
+                    assert len(idxs_boa) == 1
+                    idxs_eot = get_substr_indices(s=answer_with_eos, s_sub=tkzer.eos_token)
+                    if not len(idxs_eot):  # No eos token generated
+                        logger.warning(f'{logi(model_cnm)} didn\'t finish generating answer '
+                                       f'with [{logi(answer_with_eos)}]')
+                        logger_fl.warning(f'{model_cnm} didn\'t finish generating answer with [{answer_with_eos}]')
+                    # GPT2 would generate multiple `eos_token` for the samples in the batch that terminates early
                     else:
-                        assert len(idxs_boa) == 1
-                        idxs_eot = get_substr_indices(s=answer_with_eos, s_sub=tkzer.eos_token)
-                        if not len(idxs_eot):  # No eos token generated
-                            # print(generated, answer_with_eos)
-                            warn(f'{model.__class__.__qualname__} didn\'t finish generating answer '
-                                 f'with [{answer_with_eos}]')
-                        # if not (len(idxs_boa) == 1 and len(idxs_eot) == 3):
-                        #     ic(i_sample, generated)
-                        # assert len(idxs_eot) == 1
-                        # GPT2 would generate multiple `eos_token` for the samples in the batch that terminates early
-                        # assert len(idxs_eot) >= 1
-                        # answer = generated[idxs_boa[0] + len(tkzer.boa_token):idxs_eot[-1]].lower()
-                        else:
-                            answer = answer_with_eos[:idxs_eot[0]].lower()  # Take the 1st one
-                            id_pred = lb2id[answer]
-                            if id_pred == -1:
-                                assert all(lb.lower() != answer.lower() for lb in labels)  # sanity check
-                    # ic(answer)
-                    # ic(answer)
-                    # Sanity check, no trivial mismatch
-                    lbs_true = dset[i_sample]['labels']
-                    # ic(lbs_true)
-                    if id_pred in lbs_true:
-                        id_true = next(lb_id for lb_id in lbs_true if lb_id == id_pred)
-                    else:  # This renders class-level performance inaccurate; TODO?
-                        id_true = lbs_true[0]  # Pick arbitrarily
-                    # ic(id_pred, id_true)
-                    # ic(preds.shape, trues.shape, i_sample)
-                    preds[i_sample], trues[i_sample] = id_pred, id_true
-                    return id_pred, id_true
-                preds_batch, trues_batch = zip(*[
-                    set_pred_n_true(out, i_sample) for out, i_sample in zip(outputs, idxs)
-                ])
-                d_log = dict(
-                    step=f'{step+1:>{len(str(n_bch))}}/{n_bch}',
-                    batch_size=f'{len(idxs):>{len(str(batch_size))}}/{batch_size}',
-                    sequence_length=len(inputs['input_ids'][0]),
-                    n_acc=sum(p == t for p, t in zip(preds_batch, trues_batch)),
-                    ids_pred=list(preds_batch), ids_true=list(trues_batch)
-                )
-                logger.info(log_dict(d_log, with_color=True))
-                logger_fl.info(log_dict(d_log, with_color=False))
-                # ic(answers)
-                # preds = [lb2id[a] for a in answers]
-                # ic(lb2id)
-                # ic(preds)
-            df = pd.DataFrame(
-                # note `-1` is not actual label, support of 0 - included for full label specification per sklearn
-                # **note** cos the -1 label, the `macro avg` row is not accurate;
-                # included it for getting global accuracy
-                classification_report(
-                    trues, preds, labels=[-1, *range(len(labels))], target_names=['Label not in dataset', *labels],
-                    output_dict=True
-                )
-            ).transpose()
-            path = os.path.join(path_dir, f'{dnm_}.csv')
-            df.to_csv(path)
-            logger.info(f'Evaluation on {logi(dnm_disk)} written to CSV at {logi(path)}')
-            logger_fl.info(f'Evaluation on {dnm_disk} written to CSV at {path}')
-            exit(1)
+                        answer = answer_with_eos[:idxs_eot[0]].lower()  # until the 1st eos
+                        id_pred = lb2id[answer]
+                lbs_true = dset[i_sample]['labels']
+                if id_pred in lbs_true:
+                    # predicted label is one of the correct labels, pick that label so that prediction is correct
+                    id_true = next(lb_id for lb_id in lbs_true if lb_id == id_pred)
+                else:
+                    # prediction incorrect, pick a single label arbitrarily
+                    # This renders class-level performance inaccurate; TODO?
+                    id_true = lbs_true[0]
+                preds[i_sample], trues[i_sample] = id_pred, id_true
+                return id_pred, id_true
+            preds_batch, trues_batch = zip(*[
+                set_pred_n_true(out, i_sample) for out, i_sample in zip(outputs, idxs)
+            ])
+            d_log = dict(
+                step=f'{step+1:>{len(str(n_bch))}}/{n_bch}', progress=f'{n_computed:>{len(str(n_dset))}}/{n_dset}',
+                batch_size=f'{len(idxs):>{len(str(batch_size))}}/{batch_size}',
+                sequence_length=len(inputs['input_ids'][0]),
+                n_acc=sum(p == t for p, t in zip(preds_batch, trues_batch)),
+                ids_pred=list(preds_batch), ids_true=list(trues_batch)
+            )
+            logger.info(log_dict(d_log, with_color=True))
+            logger_fl.info(log_dict(d_log, with_color=False))
+
+        def check_labels_filled(lbs):  # sanity check, every index is assigned a label
+            return np.all((-1 <= lbs) & (lbs < len(labels)))
+        assert check_labels_filled(trues) and check_labels_filled(preds)
+        df = pd.DataFrame(
+            # note `-1` is not actual label, support of 0 - included for full label specification per sklearn
+            # **note** cos the -1 label, the `macro avg` row is not accurate;
+            # included it for getting global accuracy
+            classification_report(
+                trues, preds, labels=[-1, *range(len(labels))], target_names=['Label not in dataset', *labels],
+                output_dict=True
+            )
+        ).transpose()
+        path = os.path.join(path_dir, f'{dnm_}.csv')
+        df.to_csv(path)
+        logger.info(f'Evaluation on {logi(dnm_disk)} written to CSV at {logi(path)}')
+        logger_fl.info(f'Evaluation on {dnm_disk} written to CSV at {path}')
+        exit(1)
 
 
 if __name__ == '__main__':
@@ -883,4 +798,4 @@ if __name__ == '__main__':
         evaluate_ood()
     # train()
 
-    evaluate_trained(in_domain=False)
+    evaluate_trained(in_domain=False, batch_size=48)

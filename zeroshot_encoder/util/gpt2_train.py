@@ -482,58 +482,6 @@ class CustomTrainer(Trainer):
             self.mode = 'eval'
         return super().evaluate(**kwargs)
 
-    # def evaluate(
-    #         self,
-    #         eval_dataset: Optional[Dataset] = None,
-    #         ignore_keys: Optional[List[str]] = None,
-    #         metric_key_prefix: str = "eval",
-    # ) -> Dict[str, float]:
-    #     # ========================== Begin of added ==========================
-    #     self.mode = 'eval'
-    #     from icecream import ic  # TODO: debugging
-    #     ic(self.args)
-    #     # return super().evaluate(**kwargs)
-    #     # ========================== End of added ==========================
-    #     self._memory_tracker.start()
-    #
-    #     eval_dataloader = self.get_eval_dataloader(eval_dataset)
-    #     start_time = time.time()
-    #
-    #     eval_loop = self.prediction_loop if self.args.use_legacy_prediction_loop else self.evaluation_loop
-    #     output = eval_loop(
-    #         eval_dataloader,
-    #         description="Evaluation",
-    #         # No point gathering the predictions if there are no metrics, otherwise we defer to
-    #         # self.args.prediction_loss_only
-    #         prediction_loss_only=True if self.compute_metrics is None else None,
-    #         ignore_keys=ignore_keys,
-    #         metric_key_prefix=metric_key_prefix,
-    #     )
-    #
-    #     total_batch_size = self.args.eval_batch_size * self.args.world_size
-    #     output.metrics.update(
-    #         speed_metrics(
-    #             metric_key_prefix,
-    #             start_time,
-    #             num_samples=output.num_samples,
-    #             num_steps=math.ceil(output.num_samples / total_batch_size),
-    #         )
-    #     )
-    #
-    #     self.log(output.metrics)
-    #
-    #     if DebugOption.TPU_METRICS_DEBUG in self.args.debug:
-    #         # tpu-comment: Logging debug metrics for PyTorch/XLA (compile, execute times, ops, etc.)
-    #         xm.master_print(met.metrics_report())
-    #
-    #     # ========================== Begin of modified ==========================
-    #     self.control = self.callback_handler.on_evaluate(self.args, self.state, self.control, output_metrics=output.metrics)
-    #     # ========================== End of modified ==========================
-    #
-    #     self._memory_tracker.stop_and_update_metrics(output.metrics)
-    #
-    #     return output.metrics
-
     def compute_loss(self, model, inputs, return_outputs=False):
         """
         Override `Trainer.compute_loss` for logging accuracy
