@@ -3,9 +3,11 @@ Implementation of NVIDIA-GPT2 approach.
 
 [Zero-shot Text Classification With Generative Language Models](https://arxiv.org/abs/1912.10165)
 """
+from typing import Callable, Any
 from warnings import warn
 from collections import defaultdict
 
+import torch
 from torch import nn
 from sklearn.metrics import classification_report
 import transformers
@@ -15,6 +17,7 @@ from transformers import GPT2TokenizerFast
 from transformers import GPT2Model, GPT2LMHeadModel  # LMHead for CLM training
 from transformers import Trainer, TrainingArguments, SchedulerType
 from transformers import DataCollatorForLanguageModeling
+from transformers.file_utils import ModelOutput
 from transformers.training_args import OptimizerNames
 from datasets import load_metric
 
@@ -297,7 +300,9 @@ class ZsGPT2LMHeadModel(GPT2LMHeadModel):
 
     def forward(self, dataset_id=None, **kwargs):
         # Function override to ignore `dataset_id`, not need in learning; Just need to pass value for evaluation
-        # pprint_gpt2_input(kwargs | dict(dataset_id=dataset_id))
+        d_out = {k: v for k, v in kwargs.items() if k not in ['past_key_values']}
+        # ic('in ZsGPT2LMHeadModel forward', d_out)
+        # pprint_gpt2_input(self.tkzer, d=kwargs | dict(dataset_id=dataset_id))
         # exit(1)
         return super().forward(**kwargs)
 
@@ -324,6 +329,92 @@ class ZsGPT2LMHeadModel(GPT2LMHeadModel):
                 else:
                     warn('Wrong model size, positional not loaded. This is expected in debugging')
             return md_
+
+    @staticmethod
+    def prepare_inputs_for_generation(input_ids, past=None, **kwargs):
+        """
+        The original implementation is fine,
+        cos in the 1st generation forward call, the positional ids are range(n) anyway
+        but modify anyway just to be sure
+        """
+        token_type_ids = kwargs.get("token_type_ids", None)
+        # only last token for inputs_ids if past is defined in kwargs
+        if past:
+            input_ids = input_ids[:, -1].unsqueeze(-1)
+            if token_type_ids is not None:
+                token_type_ids = token_type_ids[:, -1].unsqueeze(-1)
+
+        attention_mask = kwargs.get("attention_mask", None)
+        position_ids = kwargs.get("position_ids", None)
+
+        if attention_mask is not None and position_ids is None:
+            # create position_ids on the fly for batch generation
+            position_ids = attention_mask.long().cumsum(-1) - 1
+            position_ids.masked_fill_(attention_mask == 0, 1)
+            if past:
+                position_ids = position_ids[:, -1].unsqueeze(-1)
+            # ic('in prep inputs, complicate logic')
+        # ========================== Begin of modified ==========================
+        # else:  # Basically, keep the position ids
+        #     position_ids = None
+        # ========================== End of modified ==========================
+        # ic('in prep inputs', position_ids)
+
+        return {
+            "input_ids": input_ids,
+            "past_key_values": past,
+            "use_cache": kwargs.get("use_cache"),
+            "position_ids": position_ids,
+            "attention_mask": attention_mask,
+            "token_type_ids": token_type_ids,
+            # ========================== Begin of added ==========================
+            'dataset_id': kwargs['dataset_id']  # Should definitely exist
+            # ========================== End of added ==========================
+        }
+
+    def _update_model_kwargs_for_generation(
+        self, outputs: ModelOutput, model_kwargs: Dict[str, Any], is_encoder_decoder: bool = False
+    ) -> Dict[str, Any]:
+        # update past
+        if "past_key_values" in outputs:
+            model_kwargs["past"] = outputs.past_key_values
+        elif "mems" in outputs:
+            model_kwargs["past"] = outputs.mems
+        elif "past_buckets_states" in outputs:
+            model_kwargs["past"] = outputs.past_buckets_states
+        else:
+            model_kwargs["past"] = None
+
+        # update token_type_ids with last value
+        if "token_type_ids" in model_kwargs:
+            token_type_ids = model_kwargs["token_type_ids"]
+            model_kwargs["token_type_ids"] = torch.cat([token_type_ids, token_type_ids[:, -1].unsqueeze(-1)], dim=-1)
+
+        # update attention mask
+        if not is_encoder_decoder:
+            if "attention_mask" in model_kwargs:
+                attention_mask = model_kwargs["attention_mask"]
+                model_kwargs["attention_mask"] = torch.cat(
+                    [attention_mask, attention_mask.new_ones((attention_mask.shape[0], 1))], dim=-1
+                )
+
+        # ========================== Begin of added ==========================
+        # update token_type_ids with last value
+        assert 'position_ids' in model_kwargs
+        position_ids = model_kwargs['position_ids']
+        is_1st_call = position_ids[0, 0] == 0  # 1st call to prepping inputs, should start position_ids from 0
+        if is_1st_call:
+            # ic(torch.all(position_ids[:, 0] == 0).item())
+            assert torch.all(position_ids[:, 0] == 0).item()  # Sanity check
+        new_col = position_ids[:, -1]+1  # Increment the last position
+        if is_1st_call:
+            new_col = torch.zeros_like(new_col) + self.config.n_ctx  # Per the paper, generating answer now
+        # model_kwargs['position_ids'] = torch.cat([position_ids, new_col.unsqueeze(-1)], dim=-1)
+        # Integrate with `past_key_values`,
+        # Inspired by `GPT2LMHeadModel.prepare_inputs_for_generation`, looks like keep only the new column
+        model_kwargs['position_ids'] = new_col.unsqueeze(-1)
+        # ========================== Begin of added ==========================
+        return model_kwargs
 
 
 def tokenize_func(
@@ -563,6 +654,7 @@ def evaluate_trained(in_domain: bool = True, batch_size: int = 48, n_ep: int = 3
     conf.pad_token_id = conf.eos_token_id
     model.eval()
     tkzer = ZsGPT2Tokenizer.from_pretrained('gpt2', use_fast=True, model_max_length=model_size)
+    model.tkzer = tkzer  # See ZsGPT2LMHeadModel.forward() sanity check`
 
     split = 'test'
     path_dir = os.path.join(PATH_BASE, DIR_PROJ, 'evaluations', MODEL_NAME, now(sep='-'))
@@ -588,6 +680,8 @@ def evaluate_trained(in_domain: bool = True, batch_size: int = 48, n_ep: int = 3
                    f'with {log_dict(d_eval, with_color=False)}... ')
 
     for dnm_ in dataset_names:
+        if dnm_ != 'emotion':  # TODO; debuggin
+            continue
         d_info = config(f'UTCD.datasets.{dnm_}.splits.{split}')
         is_multi_label = d_info['multi_label']
         lb2id = defaultdict(lambda: -1)  # If generated invalid descriptive label, will return -1
@@ -623,10 +717,14 @@ def evaluate_trained(in_domain: bool = True, batch_size: int = 48, n_ep: int = 3
         for step, idxs in enumerate(idxs_batches):  # Each batch has input samples of the same token length
             idxs = [int(idx) for idx in idxs]  # `Dataset.select` works with `int` indices only
             inputs = {  # No need to pad; Don't need to the labels to complicate forward pass
-                k: torch.tensor(v, device='cuda') for k, v in dset[idxs].items() if k not in ['label', 'labels']
+                k: torch.tensor(v, device='cuda') for k, v in dset[idxs].items()
+                if k not in ['label', 'labels']  # Convert `dataset_id` too so that fits into HuggingFace APIs
             }
+            # ic(inputs)
             outputs = model.generate(**inputs)  # Greedy decoding
-            outputs = tkzer.batch_decode(outputs, skip_special_tokens=False)
+            outputs_str = tkzer.batch_decode(outputs, skip_special_tokens=False)
+            # ic(outputs, outputs_str)
+            # exit(1)
             n_computed += len(idxs)
 
             def set_pred_n_true(generated: str, i_sample: int) -> Tuple[int, int]:
@@ -664,7 +762,7 @@ def evaluate_trained(in_domain: bool = True, batch_size: int = 48, n_ep: int = 3
                 preds[i_sample], trues[i_sample] = id_pred, id_true
                 return id_pred, id_true
             preds_batch, trues_batch = zip(*[
-                set_pred_n_true(out, i_sample) for out, i_sample in zip(outputs, idxs)
+                set_pred_n_true(out, i_sample) for out, i_sample in zip(outputs_str, idxs)
             ])
             d_log = dict(
                 step=f'{step+1:>{len(str(n_bch))}}/{n_bch}', progress=f'{n_computed:>{len(str(n_dset))}}/{n_dset}',
@@ -702,7 +800,7 @@ if __name__ == '__main__':
     seed = config('random-seed')
     transformers.set_seed(seed)
 
-    def train():
+    def training():
         # dnm = 'ag_news'
         dnm = 'UTCD'
 
@@ -725,27 +823,12 @@ if __name__ == '__main__':
         md, tkzer, dset_tr, dset_vl, trainer = get_all_setup(
             nm, dnm, do_eval=False, custom_logging=True, n_sample=n, random_seed=seed, train_args=tr_args
         )
-        # TODO:
-        eval_dataloader = trainer.get_eval_dataloader()
-        # for step, inputs in enumerate(eval_dataloader):
-        #     ic(inputs.keys())
-        #     ic(inputs['input_ids'].device)
-        #     exit(1)
-        trainer.evaluate()
-        exit(1)
 
         def profile_train():
-            import cProfile
-            import pstats
-            profiler = cProfile.Profile()
-            profiler.enable()
-            trainer.train()
-            profiler.disable()
-            stats = pstats.Stats(profiler).sort_stats('cumtime')
-            stats.print_stats()
+            profile_runtime(lambda: trainer.train())
         # profile_train()
 
-        def train(resume=False):
+        def train_(resume=False):
             if resume:
                 checkpoint_path = '/scratch/profmars_root/profmars0/stefanhg/Zero-shot-text-classification/' \
                                   'models/gpt2/gpt2-medium/2022-03-03 00-23-41/checkpoint-18533'
@@ -756,24 +839,14 @@ if __name__ == '__main__':
             # trainer.evaluate()
         # train(resume=True)
 
-        def evaluate_trained():
+        def evaluate():
             trainer.model = load_trained(epoch=3)  # Override the model
             ic(trainer.evaluate())
         # evaluate_trained()
 
         def profile_evaluate():
             trainer.model = load_trained(epoch=2)
-
-            import cProfile
-            import pstats
-            profiler = cProfile.Profile()
-            profiler.enable()
-
-            ic(trainer.evaluate())
-
-            profiler.disable()
-            stats = pstats.Stats(profiler).sort_stats('cumtime')
-            stats.print_stats()
+            profile_runtime(lambda: trainer.evaluate())
         # profile_evaluate()
 
         def evaluate_ood():
@@ -784,19 +857,23 @@ if __name__ == '__main__':
             # n_ = 1024 * 32
             n_ = None
 
-            vl = get_dset(
+            vl = get_dset(  # Obsolete, just training eval, not classification performance eval
                 dataset_name=dataset_name,
                 d_map_func=dict(test=tokenize_func(tkzer, dataset_name=dataset_name, mode='test')), splits='test',
                 # Run on newly-added dset only
                 filter_func=lambda sample: sample['dataset_id'] == config('UTCD.dataset_name2id')['multi_eurlex'],
-                # **Note** no shuffling performed
-                remove_columns=['label', 'text'], n_sample=n_
+                remove_columns=['label', 'text'], n_sample=n_  # **Note** no shuffling performed
             )[0]
-            # vl = vl.select(range(1024))  # TODO: debugging
             # gating with `if trainer.is_local_process_zero()`
             # somehow causes `torchrun` to not terminate after 1st compute loss
             ic(trainer.evaluate(eval_dataset=vl))
         evaluate_ood()
     # train()
 
-    evaluate_trained(in_domain=False, batch_size=48)
+    def evaluating():
+        def profile_evaluation():
+            profile_runtime(lambda: evaluate_trained(in_domain=True, batch_size=48), sleep=2)
+        # profile_evaluation()
+
+        evaluate_trained(in_domain=True, batch_size=48)
+    evaluating()

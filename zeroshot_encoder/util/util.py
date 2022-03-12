@@ -3,10 +3,11 @@ import re
 import sys
 import json
 import math
+import time
 import logging
 import datetime
 import itertools
-from typing import Union, Tuple, List, Dict, Iterable, TypeVar
+from typing import Union, Tuple, List, Dict, Iterable, TypeVar, Callable
 from functools import reduce
 from collections import OrderedDict
 
@@ -116,6 +117,19 @@ def get_hostname() -> str:
 def now(as_str=True, sep=':'):
     d = datetime.datetime.now()
     return d.strftime(f'%Y-%m-%d %H{sep}%M{sep}%S') if as_str else d  # Considering file output path
+
+
+def profile_runtime(callback: Callable, sleep: Union[float, int] = None):
+    import cProfile
+    import pstats
+    profiler = cProfile.Profile()
+    profiler.enable()
+    callback()
+    profiler.disable()
+    stats = pstats.Stats(profiler).sort_stats('cumtime')
+    if sleep != 0:    # Sometimes, the top rows in `print_states` are now shown properly
+        time.sleep(sleep)
+    stats.print_stats()
 
 
 def fmt_dt(secs: Union[int, float, datetime.timedelta]):
