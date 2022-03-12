@@ -7,6 +7,7 @@ import time
 import logging
 import datetime
 import itertools
+import configparser
 from typing import Union, Tuple, List, Dict, Iterable, TypeVar, Callable
 from functools import reduce
 from collections import OrderedDict
@@ -146,6 +147,10 @@ def fmt_dt(secs: Union[int, float, datetime.timedelta]):
         return f'{round(m)}m{fmt_dt(secs-m*60)}'
     else:
         return f'{round(secs)}s'
+
+
+def config_parser2dict(conf: configparser.ConfigParser) -> Dict:
+    return {sec: dict(conf[sec]) for sec in conf.sections()}
 
 
 def log(s, c: str = 'log', c_time='green', as_str=False):

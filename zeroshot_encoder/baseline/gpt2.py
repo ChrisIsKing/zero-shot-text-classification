@@ -406,7 +406,7 @@ class ZsGPT2LMHeadModel(GPT2LMHeadModel):
         # Integrate with `past_key_values`,
         # Inspired by `GPT2LMHeadModel.prepare_inputs_for_generation`, looks like keep only the new column
         model_kwargs['position_ids'] = new_col.unsqueeze(-1)
-        # ========================== Begin of added ==========================
+        # ========================== End of added ==========================
         return model_kwargs
 
 

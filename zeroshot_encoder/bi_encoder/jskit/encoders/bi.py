@@ -4,12 +4,17 @@ import torch
 from typing import List
 from fastapi import HTTPException
 from transformers import BertModel, BertConfig, BertTokenizer
-from utils.evaluate import get_embeddings, get_inference
-from utils.models import BiEncoder
+# ========================== Begin of modified ==========================
+from zeroshot_encoder.bi_encoder.jskit.encoders.utils import CONFIG_PATH
+from zeroshot_encoder.bi_encoder.jskit.encoders.utils.evaluate import get_embeddings, get_inference
+from zeroshot_encoder.bi_encoder.jskit.encoders.utils.models import BiEncoder
+# ========================== End of modified ==========================
 import traceback
 import numpy as np
-from utils.train import train_model
-import jaseci.actions.remote_actions as jra
+# ========================== Begin of modified ==========================
+from zeroshot_encoder.bi_encoder.jskit.encoders.utils.train import train_model
+# import jaseci.actions.remote_actions as jra
+# ========================== End of modified ==========================
 import random
 
 config = configparser.ConfigParser()
@@ -18,11 +23,11 @@ save_restart = False
 output_dir = "log_output"
 DEFAULT_MODEL_NAME = 'pytorch_model.bin'
 DEFAULT_MODEL_PATH = os.path.join(output_dir, 'pytorch_model.bin')
-device = torch.device("cpu")
+# device = torch.device("cpu")
 # uncomment this if you wish to use GPU to train
 # this is commented out because this causes issues with
 # unittest on machines with GPU
-# device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 # funtion to set seed for the module
@@ -33,7 +38,10 @@ def set_seed(seed):
 
 
 # function for config setup
-config.read('utils/config.cfg')
+# ========================== Begin of modified ==========================
+# config.read('utils/config.cfg')
+config.read(CONFIG_PATH)
+# ========================== Begin of modified ==========================
 
 
 def config_setup():
@@ -78,7 +86,9 @@ config_setup()
 # API for getting the cosine similarity
 
 
-@jra.jaseci_action(act_group=['bi_enc'])
+# ========================== Begin of modified ==========================
+# @jra.jaseci_action(act_group=['bi_enc'])
+# ========================== End of modified ==========================
 def cosine_sim(vec_a: list, vec_b: list, meta):
     """
     Caculate the cosine similarity score of two given vectors
@@ -91,7 +101,9 @@ def cosine_sim(vec_a: list, vec_b: list, meta):
     return result.astype(float)
 
 
-@jra.jaseci_action(act_group=['bi_enc'])
+# ========================== Begin of modified ==========================
+# @jra.jaseci_action(act_group=['bi_enc'])
+# ========================== End of modified ==========================
 def infer(contexts: List, candidates: List):
     """
     Take list of context, candidate and return nearest candidate to the context
@@ -105,7 +117,9 @@ def infer(contexts: List, candidates: List):
 
 
 # API for training
-@jra.jaseci_action(act_group=['bi_enc'])
+# ========================== Begin of modified ==========================
+# @jra.jaseci_action(act_group=['bi_enc'])
+# ========================== End of modified ==========================
 def train(contexts: List, candidates: List, labels: List[int]):
     """
     Take list of context, candidate, labels and trains the model
@@ -129,7 +143,9 @@ def train(contexts: List, candidates: List, labels: List[int]):
 
 
 # API for geting Context Embedding
-@jra.jaseci_action(act_group=['bi_enc'], aliases=['encode_context'])
+# ========================== Begin of modified ==========================
+# @jra.jaseci_action(act_group=['bi_enc'], aliases=['encode_context'])
+# ========================== End of modified ==========================
 def get_context_emb(contexts: List):
     """
     Take list of context and returns the embeddings
@@ -143,7 +159,9 @@ def get_context_emb(contexts: List):
 # API for geting Candidates Embedding
 
 
-@jra.jaseci_action(act_group=['bi_enc'], aliases=['encode_candidate'])
+# ========================== Begin of modified ==========================
+# @jra.jaseci_action(act_group=['bi_enc'], aliases=['encode_candidate'])
+# ========================== End of modified ==========================
 def get_candidate_emb(candidates: List):
     """
     Take list of candidates and returns the embeddings
@@ -157,13 +175,17 @@ def get_candidate_emb(candidates: List):
 # API for setting the training and model parameters
 
 
-@jra.jaseci_action(act_group=['bi_enc'])
+# ========================== Begin of modified ==========================
+# @jra.jaseci_action(act_group=['bi_enc'])
+# ========================== End of modified ==========================
 def set_config(training_parameters, model_parameters):
     """
     Update the configuration file with any new incoming parameters
     """
     global config, save_restart
-    config.read('utils/config.cfg')
+    # ========================== Begin of modified ==========================
+    config.read(CONFIG_PATH)
+    # ========================== End of modified ==========================
     if training_parameters:
         config['TRAIN_PARAMETERS'].update(training_parameters)
     if model_parameters:
@@ -176,7 +198,9 @@ def set_config(training_parameters, model_parameters):
     return "Config setup is complete."
 
 
-@jra.jaseci_action(act_group=['bi_enc'])
+# ========================== Begin of modified ==========================
+# @jra.jaseci_action(act_group=['bi_enc'])
+# ========================== End of modified ==========================
 def save_model(model_path: str):
     """
     saves the model to the provided model_path
@@ -220,7 +244,9 @@ def save_model(model_path: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@jra.jaseci_action(act_group=['bi_enc'])
+# ========================== Begin of modified ==========================
+# @jra.jaseci_action(act_group=['bi_enc'])
+# ========================== End of modified ==========================
 def load_model(model_path):
     """
     loads the model from the provided model_path
@@ -268,5 +294,7 @@ def load_model(model_path):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-if __name__ == "__main__":
-    jra.launch_server(port=8000)
+# ========================== Begin of modified ==========================
+# if __name__ == "__main__":
+#     jra.launch_server(port=8000)
+# ========================== End of modified ==========================

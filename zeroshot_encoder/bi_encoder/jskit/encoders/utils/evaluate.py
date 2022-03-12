@@ -1,6 +1,8 @@
 import torch
 from torch.utils.data import DataLoader
-from . import tokenizer as token_util
+# ========================== Begin of modified ==========================
+from zeroshot_encoder.bi_encoder.jskit.encoders.utils import CONFIG_PATH, tokenizer as token_util
+# ========================== End of modified ==========================
 import configparser
 config = configparser.ConfigParser()
 
@@ -11,7 +13,9 @@ max_history, max_contexts_length, max_candidate_length, device = None, \
 # inference parameters setup
 def config_setup():
     global max_history, max_contexts_length, max_candidate_length, device
-    config.read('utils/config.cfg')
+    # ========================== Begin of modified ==========================
+    config.read(CONFIG_PATH)
+    # ========================== End of modified ==========================
     max_history = int(config['TRAIN_PARAMETERS']['MAX_HISTORY'])
     max_contexts_length = int(
         config['TRAIN_PARAMETERS']['MAX_CONTEXTS_LENGTH'])
