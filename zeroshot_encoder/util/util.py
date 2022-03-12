@@ -312,6 +312,7 @@ def get_logger(name: str, typ: str = 'stdout', file_path: str = None) -> logging
     """
     assert typ in ['stdout', 'file-write']
     logger = logging.getLogger(name)
+    logger.handlers = []  # A crude way to remove prior handlers, ensure only 1 handler per logger
     logger.setLevel(logging.DEBUG)
     if typ == 'stdout':
         handler = logging.StreamHandler(stream=sys.stdout)  # For my own coloring
@@ -394,14 +395,17 @@ def process_utcd_dataset(in_domain=False, join=False, group_labels=False):
 
     Save processed datasets to disk
     """
+    logger = get_logger('Process UTCD')
+
     nm_dsets = 'UTCD-ood' if in_domain else 'UTCD'
     ext = config('UTCD.dataset_ext')
     path_dsets = os.path.join(PATH_BASE, DIR_PROJ, DIR_DSET)
-    path_out = os.path.join(get_output_base(), DIR_PROJ, DIR_DSET)
-    ic(path_out)
+    path_out = os.path.join(get_output_base(), DIR_PROJ, DIR_DSET, 'processed')
+    logger.info(f'Processing UTCD datasets with '
+                f'{log_dict(dict(in_domain=in_domain, join=join, group_labels=group_labels))}... ')
 
     def path2dsets(dnm: str, d_dset: Dict) -> Union[datasets.DatasetDict, Dict[str, pd.DataFrame]]:
-        ic(dnm)
+        logger.info(f'Processing dataset {logi(dnm)}... ')
         path = d_dset['path']
         path = os.path.join(path_dsets, f'{path}.{ext}')
         with open(path) as f:
@@ -472,10 +476,11 @@ def process_utcd_dataset(in_domain=False, join=False, group_labels=False):
         tr = dfs2dset(pre_concat(dnm, dsets['train']) for dnm, dsets in d_dsets.items())
         vl = dfs2dset(pre_concat(dnm, dsets['test']) for dnm, dsets in d_dsets.items())
         dsets = datasets.DatasetDict(train=tr, test=vl)
-        dsets.save_to_disk(os.path.join(path_out, 'processed', nm_dsets))
+        dsets.save_to_disk(os.path.join(path_out, nm_dsets))
     else:
         for dnm, dsets in d_dsets.items():
-            dsets.save_to_disk(os.path.join(path_out, 'processed', f'{dnm}-label-grouped' if group_labels else dnm))
+            dsets.save_to_disk(os.path.join(path_out, f'{dnm}-label-grouped' if group_labels else dnm))
+    logger.info(f'Dataset(s) saved to {logi(path_out)}')
 
 
 def map_ag_news():
@@ -525,8 +530,9 @@ if __name__ == '__main__':
         sanity_check('UTCD-ood')
     # get_utcd_ood()
 
-    # process_utcd_dataset(in_domain=True, join=False)
-    # process_utcd_dataset(in_domain=True, join=False, group_labels=True)
+    process_utcd_dataset(in_domain=True, join=False, group_labels=False)
+    process_utcd_dataset(in_domain=False, join=False, group_labels=False)
+    process_utcd_dataset(in_domain=True, join=False, group_labels=True)
     process_utcd_dataset(in_domain=False, join=False, group_labels=True)
 
     def sanity_check_ln_eurlex():

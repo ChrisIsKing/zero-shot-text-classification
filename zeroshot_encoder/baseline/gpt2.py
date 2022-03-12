@@ -566,11 +566,6 @@ def evaluate_trained(in_domain: bool = True, batch_size: int = 48, n_ep: int = 3
 
     split = 'test'
     path_dir = os.path.join(PATH_BASE, DIR_PROJ, 'evaluations', MODEL_NAME, now(sep='-'))
-    logger_name = 'GPT2-NVIDIA Evaluation'
-    logger = get_logger(logger_name, typ='stdout')
-    logger_fl = get_logger(
-        f'{logger_name} file-write', typ='file-write', file_path=os.path.join(path_dir, f'{logger_name}.log')
-    )
 
     dataset_names = [
         dnm for dnm in config('UTCD.datasets').keys()
@@ -582,13 +577,17 @@ def evaluate_trained(in_domain: bool = True, batch_size: int = 48, n_ep: int = 3
         ('datasets', dataset_names)
     ])
     domain = 'in domain' if in_domain else 'out of domain'
+    logger_name = 'GPT2-NVIDIA Evaluation'
+    logger = get_logger(logger_name, typ='stdout')
+    logger_fl = get_logger(
+        f'{logger_name} file-write', typ='file-write',
+        file_path=os.path.join(path_dir, f'{logger_name}, bsz={batch_size}, {domain}.log')
+    )
     logger.info(f'Running evaluation {logi(domain)} on model {log_dict(d_model)}, with {log_dict(d_eval)}... ')
-    logger_fl.info(f'Running evaluation {domain} on model {log_dict(d_model, with_color=False)}'
-                f', with {log_dict(d_eval, with_color=False)}... ')
+    logger_fl.info(f'Running evaluation {domain} on model {log_dict(d_model, with_color=False)}, '
+                   f'with {log_dict(d_eval, with_color=False)}... ')
 
     for dnm_ in dataset_names:
-        if dnm_ != 'multi_eurlex':  # TODO: debugging
-            continue
         d_info = config(f'UTCD.datasets.{dnm_}.splits.{split}')
         is_multi_label = d_info['multi_label']
         lb2id = defaultdict(lambda: -1)  # If generated invalid descriptive label, will return -1
@@ -651,14 +650,17 @@ def evaluate_trained(in_domain: bool = True, batch_size: int = 48, n_ep: int = 3
                     else:
                         answer = answer_with_eos[:idxs_eot[0]].lower()  # until the 1st eos
                         id_pred = lb2id[answer]
-                lbs_true = dset[i_sample]['labels']
-                if id_pred in lbs_true:
-                    # predicted label is one of the correct labels, pick that label so that prediction is correct
-                    id_true = next(lb_id for lb_id in lbs_true if lb_id == id_pred)
+                if is_multi_label:
+                    lbs_true = dset[i_sample]['labels']
+                    if id_pred in lbs_true:
+                        # predicted label is one of the correct labels, pick that label so that prediction is correct
+                        id_true = next(lb_id for lb_id in lbs_true if lb_id == id_pred)
+                    else:
+                        # prediction incorrect, pick a single label arbitrarily
+                        # This renders class-level performance inaccurate; TODO?
+                        id_true = lbs_true[0]
                 else:
-                    # prediction incorrect, pick a single label arbitrarily
-                    # This renders class-level performance inaccurate; TODO?
-                    id_true = lbs_true[0]
+                    id_true = dset[i_sample]['label']
                 preds[i_sample], trues[i_sample] = id_pred, id_true
                 return id_pred, id_true
             preds_batch, trues_batch = zip(*[
@@ -666,8 +668,8 @@ def evaluate_trained(in_domain: bool = True, batch_size: int = 48, n_ep: int = 3
             ])
             d_log = dict(
                 step=f'{step+1:>{len(str(n_bch))}}/{n_bch}', progress=f'{n_computed:>{len(str(n_dset))}}/{n_dset}',
-                batch_size=f'{len(idxs):>{len(str(batch_size))}}/{batch_size}',
                 sequence_length=len(inputs['input_ids'][0]),
+                batch_size=f'{len(idxs):>{len(str(batch_size))}}/{batch_size}',
                 n_acc=sum(p == t for p, t in zip(preds_batch, trues_batch)),
                 ids_pred=list(preds_batch), ids_true=list(trues_batch)
             )
@@ -690,7 +692,6 @@ def evaluate_trained(in_domain: bool = True, batch_size: int = 48, n_ep: int = 3
         df.to_csv(path)
         logger.info(f'Evaluation on {logi(dnm_disk)} written to CSV at {logi(path)}')
         logger_fl.info(f'Evaluation on {dnm_disk} written to CSV at {path}')
-        exit(1)
 
 
 if __name__ == '__main__':
