@@ -3,11 +3,10 @@ Implementation of NVIDIA-GPT2 approach.
 
 [Zero-shot Text Classification With Generative Language Models](https://arxiv.org/abs/1912.10165)
 """
-from typing import Callable, Any
+from typing import Any
 from warnings import warn
 from collections import defaultdict
 
-import torch
 from torch import nn
 from sklearn.metrics import classification_report
 import transformers
@@ -300,8 +299,6 @@ class ZsGPT2LMHeadModel(GPT2LMHeadModel):
 
     def forward(self, dataset_id=None, **kwargs):
         # Function override to ignore `dataset_id`, not need in learning; Just need to pass value for evaluation
-        d_out = {k: v for k, v in kwargs.items() if k not in ['past_key_values']}
-        # ic('in ZsGPT2LMHeadModel forward', d_out)
         # pprint_gpt2_input(self.tkzer, d=kwargs | dict(dataset_id=dataset_id))
         # exit(1)
         return super().forward(**kwargs)
@@ -353,12 +350,10 @@ class ZsGPT2LMHeadModel(GPT2LMHeadModel):
             position_ids.masked_fill_(attention_mask == 0, 1)
             if past:
                 position_ids = position_ids[:, -1].unsqueeze(-1)
-            # ic('in prep inputs, complicate logic')
         # ========================== Begin of modified ==========================
         # else:  # Basically, keep the position ids
         #     position_ids = None
         # ========================== End of modified ==========================
-        # ic('in prep inputs', position_ids)
 
         return {
             "input_ids": input_ids,
@@ -399,12 +394,10 @@ class ZsGPT2LMHeadModel(GPT2LMHeadModel):
                 )
 
         # ========================== Begin of added ==========================
-        # update token_type_ids with last value
         assert 'position_ids' in model_kwargs
         position_ids = model_kwargs['position_ids']
-        is_1st_call = position_ids[0, 0] == 0  # 1st call to prepping inputs, should start position_ids from 0
+        is_1st_call = position_ids[0, 0] == 0  # 1st call to prepping inputs, should start the answer position_ids
         if is_1st_call:
-            # ic(torch.all(position_ids[:, 0] == 0).item())
             assert torch.all(position_ids[:, 0] == 0).item()  # Sanity check
         new_col = position_ids[:, -1]+1  # Increment the last position
         if is_1st_call:
@@ -680,8 +673,6 @@ def evaluate_trained(in_domain: bool = True, batch_size: int = 48, n_ep: int = 3
                    f'with {log_dict(d_eval, with_color=False)}... ')
 
     for dnm_ in dataset_names:
-        if dnm_ != 'emotion':  # TODO; debuggin
-            continue
         d_info = config(f'UTCD.datasets.{dnm_}.splits.{split}')
         is_multi_label = d_info['multi_label']
         lb2id = defaultdict(lambda: -1)  # If generated invalid descriptive label, will return -1
@@ -710,7 +701,7 @@ def evaluate_trained(in_domain: bool = True, batch_size: int = 48, n_ep: int = 3
         n_bch = len(idxs_batches)
         logger.info(f'Running evaluation on dataset {logi(dnm_disk)}, with labels {log_dict(lb2id)}, '
                     f'of {logi(len(dset))} unique texts in {logi(n_bch)} batches... ')
-        logger_fl.info(f'Running evaluation on dataset {dnm_disk}, with labels{lb2id}, '
+        logger_fl.info(f'Running evaluation on dataset {dnm_disk}, with labels {log_dict(lb2id, with_color=False)}, '
                        f'of {len(dset)} unique texts in {n_bch} batches... ')
 
         n_computed = 0
@@ -720,11 +711,8 @@ def evaluate_trained(in_domain: bool = True, batch_size: int = 48, n_ep: int = 3
                 k: torch.tensor(v, device='cuda') for k, v in dset[idxs].items()
                 if k not in ['label', 'labels']  # Convert `dataset_id` too so that fits into HuggingFace APIs
             }
-            # ic(inputs)
             outputs = model.generate(**inputs)  # Greedy decoding
             outputs_str = tkzer.batch_decode(outputs, skip_special_tokens=False)
-            # ic(outputs, outputs_str)
-            # exit(1)
             n_computed += len(idxs)
 
             def set_pred_n_true(generated: str, i_sample: int) -> Tuple[int, int]:
@@ -734,9 +722,9 @@ def evaluate_trained(in_domain: bool = True, batch_size: int = 48, n_ep: int = 3
                 id_pred = -1
                 if len(idxs_boa) > 1:
                     logger.warning(f'{logi(model_cnm)} generated {logi(len(idxs_boa))} boa_token '
-                                   f'instead of {logi(1)} with {logi(answer_with_eos)}')
+                                   f'instead of {logi(1)} with [{logi(answer_with_eos)}]')
                     logger_fl.warning(f'{model_cnm} generated {len(idxs_boa)} boa_token '
-                                      f'instead of {1} with {answer_with_eos}')
+                                      f'instead of {1} with [{answer_with_eos}]')
                 else:
                     assert len(idxs_boa) == 1
                     idxs_eot = get_substr_indices(s=answer_with_eos, s_sub=tkzer.eos_token)
@@ -875,5 +863,5 @@ if __name__ == '__main__':
             profile_runtime(lambda: evaluate_trained(in_domain=True, batch_size=48), sleep=2)
         # profile_evaluation()
 
-        evaluate_trained(in_domain=True, batch_size=48)
+        evaluate_trained(in_domain=False, batch_size=48)
     evaluating()
