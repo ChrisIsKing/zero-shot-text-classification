@@ -8,6 +8,7 @@ import logging
 import datetime
 import itertools
 import configparser
+import concurrent.futures
 from typing import Union, Tuple, List, Dict, Iterable, TypeVar, Callable
 from functools import reduce
 from collections import OrderedDict
@@ -54,6 +55,18 @@ def join_its(its: Iterable[Iterable[T]]) -> Iterable[T]:
     return out
 
 
+def conc_map(fn: Callable[[T], K], it: Iterable[T]) -> Iterable[K]:
+    """
+    Wrapper for `concurrent.futures.map`
+
+    :param fn: A function
+    :param it: A list of elements
+    :return: Iterator of `lst` elements mapped by `fn` with concurrency
+    """
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        return executor.map(fn, it)
+
+
 def lst2uniq_ids(lst: List[T]) -> List[int]:
     """
     Each unique element in list assigned an unique id
@@ -62,7 +75,7 @@ def lst2uniq_ids(lst: List[T]) -> List[int]:
     return [elm2id[e] for e in lst]
 
 
-def get(dic, ks):
+def get(dic: Dict, ks: str):
     """
     :param dic: Potentially multi-level dictionary
     :param ks: Potentially `.`-separated keys

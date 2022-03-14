@@ -8,7 +8,9 @@ import gzip
 import csv
 import os
 import time
-from collections import Counter
+import itertools
+from typing import Tuple, List, Dict
+from collections import Counter, defaultdict
 from tqdm import tqdm
 from numpy import argmax, argmin
 from os import listdir
@@ -177,7 +179,18 @@ def nli_cls_format(arr, name=None, sampling='rand', train=True):
            examples.append(InputExample(texts=[element[0], nli_template(element[1], category=category)], label=1))
     return examples
 
-def encoder_cls_format(arr, name=None, sampling='rand', train=True):
+
+def encoder_cls_format(
+        arr: List[Tuple[str, str]], name=None, sampling='rand', train=True, neg_sample_for_multi=False
+) -> List[InputExample]:
+    """
+    :param arr: List of dataset (text, descriptive label) pairs
+    :param name: Dataset name
+    :param sampling: Sampling approach, one of [`rand`, `vect`]
+    :param train: If true, negative samples are generated
+        Intended for training
+    :param neg_sample_for_multi: If true, negative samples are added for each positive labels for a text
+    """
     examples = []
     if train:
         label_list = list(dict.fromkeys([example[1] for example in arr]))
@@ -191,6 +204,12 @@ def encoder_cls_format(arr, name=None, sampling='rand', train=True):
         
         # count instances
         count = Counter(example_list)
+        has_multi_label = any((c > 1) for c in count.values())
+        if has_multi_label:  # Potentially all valid labels for each text
+            arr_ = sorted(arr)  # map from unique text to all possible labels
+            txt2lbs = {k: set(lb for txt, lb in v) for k, v in itertools.groupby(arr_, key=lambda pair: pair[0])}
+        from icecream import ic
+        ic(has_multi_label, neg_sample_for_multi)
         print('Generating {} examples'.format(name))
         for i, element in enumerate(tqdm(arr)):
             true_label = element[1]
@@ -200,17 +219,26 @@ def encoder_cls_format(arr, name=None, sampling='rand', train=True):
             examples.append(InputExample(texts=[true_label, element[0]], label=float(1)))
 
             # Generate sample based on sampling strategy
-            if sampling == 'rand' and count[element[0]] < 2:
+            if has_multi_label and neg_sample_for_multi:
+                assert sampling == 'rand'  # TODO: vect not supported
                 random.seed(i)
-                random_label = random.sample(other_labels, k=2)
-                examples.append(InputExample(texts=[random_label[0], element[0]], label=float(0)))
-                examples.append(InputExample(texts=[random_label[1], element[0]], label=float(0)))
-            elif sampling == 'vect' and count[element[0]] < 2:
-                text_vector = vects[i]
-                other_label_vectors = [label_vectors[label] for label in other_labels]
-                scores = [text_vector.similarity(vector) for vector in other_label_vectors]
-                examples.append(InputExample(texts=[other_labels[argmax(scores)], element[0]], label=float(0)))
-                examples.append(InputExample(texts=[other_labels[argmin(scores)], element[0]], label=float(0)))
+                txt = element[0]
+                neg_pool = set(label_list) - set(txt2lbs[txt])
+                examples.extend([
+                    InputExample(texts=[neg_label, txt], label=float(0)) for neg_label in random.sample(neg_pool, k=2)
+                ])
+            else:
+                if sampling == 'rand' and count[element[0]] < 2:
+                    random.seed(i)
+                    random_label = random.sample(other_labels, k=2)
+                    examples.append(InputExample(texts=[random_label[0], element[0]], label=float(0)))
+                    examples.append(InputExample(texts=[random_label[1], element[0]], label=float(0)))
+                elif sampling == 'vect' and count[element[0]] < 2:
+                    text_vector = vects[i]
+                    other_label_vectors = [label_vectors[label] for label in other_labels]
+                    scores = [text_vector.similarity(vector) for vector in other_label_vectors]
+                    examples.append(InputExample(texts=[other_labels[argmax(scores)], element[0]], label=float(0)))
+                    examples.append(InputExample(texts=[other_labels[argmin(scores)], element[0]], label=float(0)))
 
     else:
         for element in arr:

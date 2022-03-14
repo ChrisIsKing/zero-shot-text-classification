@@ -4,7 +4,9 @@ import os
 import time
 from tqdm import tqdm
 from transformers.optimization import AdamW, get_linear_schedule_with_warmup
-from zeroshot_encoder.bi_encoder.jskit.encoders.utils import tokenizer as token_util
+# ========================== Begin of modified ==========================
+from zeroshot_encoder.bi_encoder.jskit.encoders.utils import CONFIG_PATH, tokenizer as token_util
+# ========================== End of modified ==========================
 import configparser
 
 config = configparser.ConfigParser()
@@ -23,7 +25,9 @@ def config_setup():
         fp16_opt_level, gpu, gradient_accumulation_steps, num_train_epochs, shared
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     # device = torch.device('cpu')
-    config.read('utils/config.cfg')
+    # ========================== Begin of modified ==========================
+    config.read(CONFIG_PATH)
+    # ========================== End of modified ==========================
     max_contexts_length = int(
         config['TRAIN_PARAMETERS']['MAX_CONTEXTS_LENGTH'])
     max_candidate_length = int(

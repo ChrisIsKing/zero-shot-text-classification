@@ -81,7 +81,9 @@ def config_setup():
     set_seed(seed)
 
 
-config_setup()
+# ========================== Begin of modified ==========================
+# config_setup()  # Will call it myself
+# ========================== End of modified ==========================
 
 # API for getting the cosine similarity
 
@@ -191,7 +193,7 @@ def set_config(training_parameters, model_parameters):
     if model_parameters:
         config['MODEL_PARAMETERS'].update(model_parameters)
         save_restart = True
-    with open("utils/config.cfg", 'w') as configfile:
+    with open(CONFIG_PATH, 'w') as configfile:
         config.write(configfile)
 
     config_setup()
