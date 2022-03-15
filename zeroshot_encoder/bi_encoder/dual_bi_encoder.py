@@ -18,7 +18,6 @@ def get_train_args() -> Dict:
     return dict(  # To override `jskit.encoders.bi` defaults
         output_dir=os.path.join(get_output_base(), DIR_PROJ, DIR_MDL, MODEL_NAME, now(sep='-')),
         train_batch_size=16,  # pe `bi-encoder.py` default
-        # train_batch_size=2,  # TODO: debug
         eval_batch_size=32,
         learning_rate=2e-5,  # not specified by `bi-encoder.py`, go with default `SentenceTransformer`
         num_train_epochs=3,  # per `bi-encoder.py` default
@@ -34,12 +33,12 @@ def run_train(sampling: str = 'rand'):
     logger.info('Training launched... ')
 
     d_dset = get_data(in_domain_data_path)
-    dnms = [dnm for dnm in d_dset.keys() if dnm != 'all'][:1]
+    dnms = [dnm for dnm in d_dset.keys() if dnm != 'all']
     logger.info(f'Gathering datasets: {logi(dnms)}... ')
     dset_tr = sum(
         (encoder_cls_format(d_dset[dnm]["train"], name=dnm, sampling=sampling, neg_sample_for_multi=True)
          for dnm in dnms), start=[]
-    )[:1024*3]
+    )
     # dset_vl = sum((  # looks like `jskit.encoders.bi` doesn't support eval during training
     #     encoder_cls_format(dset["test"], name=dnm, train=False) for dnm, dset in d_dset if dnm != 'all'
     # ), start=[])
@@ -74,10 +73,8 @@ def run_train(sampling: str = 'rand'):
         'output_dir', 'train_batch_size', 'eval_batch_size', 'learning_rate', 'num_train_epochs',
         'weight_decay', 'adam_epsilon', 'warmup_ratio'
     ))
-    n_train_sample = n_tr / 3  # As 3 candidates per text, but only 1 for training
-    assert n_train_sample.is_integer()
-    n_train_sample = int(n_train_sample)
-    n_step = math.ceil(n_train_sample / bsz_tr) * n_ep
+    assert n_tr % 3 == 0
+    n_step = math.ceil(n_tr/3 / bsz_tr) * n_ep  # As 3 candidates per text, but only 1 for training
 
     train_params = dict(
         train_batch_size=bsz_tr, eval_batch_size=bsz_vl, num_train_epochs=n_ep, learning_rate=lr, weight_decay=decay,
