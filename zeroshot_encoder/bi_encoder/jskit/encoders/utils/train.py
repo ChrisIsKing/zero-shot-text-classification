@@ -132,6 +132,9 @@ def train_model(model_train, tokenizer, contexts, candidates, labels, output_dir
         model, optimizer = amp.initialize(
             model, optimizer, opt_level=fp16_opt_level)
     print_freq = 1
+    # ========================== Begin of modified ==========================
+    loss_print_freq = int(1e5)
+    # ========================== End of modified ==========================
     eval_freq = min(len(train_dataloader), 1000)
     print('Print freq:', print_freq, "Eval freq:", eval_freq)
     train_start_time = time.time()
@@ -150,7 +153,11 @@ def train_model(model_train, tokenizer, contexts, candidates, labels, output_dir
                 loss = model(context_token_ids_list_batch,  context_input_masks_list_batch,
                              candidate_token_ids_list_batch, candidate_input_masks_list_batch,
                              labels_batch)
-                print(f"loss is  : {loss}")
+                # ========================== Begin of modified ==========================
+                # print(f"loss is  : {loss}")
+                if step % loss_print_freq == 0:
+                    print(f'epoch {epoch}, step {step}, training loss {loss}')
+                # ========================== End of modified ==========================
                 tr_loss += loss.item()
                 nb_tr_examples += context_token_ids_list_batch.size(0)
                 nb_tr_steps += 1
@@ -174,7 +181,9 @@ def train_model(model_train, tokenizer, contexts, candidates, labels, output_dir
                 if step % print_freq == 0:
                     bar.update(min(print_freq, step))
                     time.sleep(0.02)
-                    print(global_step, tr_loss / nb_tr_steps)
+                    # ========================== Begin of modified ==========================
+                    # print(global_step, tr_loss / nb_tr_steps)
+                    # ========================== End of modified ==========================
                     log_wf.write('%d\t%f\n' %
                                  (global_step, tr_loss / nb_tr_steps))
 

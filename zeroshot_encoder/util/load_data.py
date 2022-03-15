@@ -10,6 +10,7 @@ import os
 import time
 import itertools
 from typing import Tuple, List, Dict
+from warnings import warn
 from collections import Counter, defaultdict
 from tqdm import tqdm
 from numpy import argmax, argmin
@@ -18,6 +19,8 @@ from os.path import isfile, join, basename
 from zipfile import ZipFile
 from sentence_transformers.readers import InputExample
 from sentence_transformers import LoggingHandler, util
+
+from zeroshot_encoder.util import *
 
 in_domain_url = 'https://drive.google.com/uc?id=1V7IzdZ9HQbFUQz9NzBDjmqYBdPd9Yfe3'
 out_of_domain_url = 'https://drive.google.com/uc?id=1nd32_UrFbgoCgH4bDtFFD_YFZhzcts3x'
@@ -180,6 +183,9 @@ def nli_cls_format(arr, name=None, sampling='rand', train=True):
     return examples
 
 
+WARN_NOT_ENOUGH_NEG_LABEL = 'Not Enough Negative Label'
+
+
 def encoder_cls_format(
         arr: List[Tuple[str, str]], name=None, sampling='rand', train=True, neg_sample_for_multi=False
 ) -> List[InputExample]:
@@ -208,8 +214,8 @@ def encoder_cls_format(
         if has_multi_label:  # Potentially all valid labels for each text
             arr_ = sorted(arr)  # map from unique text to all possible labels
             txt2lbs = {k: set(lb for txt, lb in v) for k, v in itertools.groupby(arr_, key=lambda pair: pair[0])}
-        from icecream import ic
-        ic(has_multi_label, neg_sample_for_multi)
+            logger = get_logger('Preprocess multi-label negative sampling')
+            logger.info(f'Generating examples for dataset {logi(name)}, with labels {logi(label_list)}... ')
         print('Generating {} examples'.format(name))
         for i, element in enumerate(tqdm(arr)):
             true_label = element[1]
@@ -223,10 +229,24 @@ def encoder_cls_format(
                 assert sampling == 'rand'  # TODO: vect not supported
                 random.seed(i)
                 txt = element[0]
-                neg_pool = set(label_list) - set(txt2lbs[txt])
-                examples.extend([
-                    InputExample(texts=[neg_label, txt], label=float(0)) for neg_label in random.sample(neg_pool, k=2)
-                ])
+                neg_pool = set(label_list) - txt2lbs[txt]
+
+                def neg_sample2label(lb: str) -> InputExample:
+                    return InputExample(texts=[lb, txt], label=float(0))
+
+                if len(neg_pool) < 2:
+                    # Ensures 2 negative labels are sampled, intended to work with existing Jaseci training code
+                    warn_name = WARN_NOT_ENOUGH_NEG_LABEL
+                    if len(neg_pool) == 0:
+                        warn_name = f'{warn_name}, severe'
+                        neg_label = 'dummy negative label'
+                    else:
+                        neg_label = list(neg_pool)[0]
+                    examples.extend([neg_sample2label(neg_label), neg_sample2label(neg_label)])
+                    logger.warning(f'{log_s(warn_name, c="y", bold=True)}: # negative labels for text less than {2}: '
+                                   f'{log_dict(text=txt, pos_labels=txt2lbs[txt], neg_labels=neg_pool)}')
+                else:
+                    examples.extend([neg_sample2label(neg_label) for neg_label in random.sample(neg_pool, k=2)])
             else:
                 if sampling == 'rand' and count[element[0]] < 2:
                     random.seed(i)

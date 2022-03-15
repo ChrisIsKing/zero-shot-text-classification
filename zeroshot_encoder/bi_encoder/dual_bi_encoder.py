@@ -16,9 +16,9 @@ MD_NM_OUT = 'Dual Bi-encoder'
 def get_train_args() -> Dict:
     # Keep the same as in `zeroshot_encoder.baseline.bi-encoder`
     return dict(  # To override `jskit.encoders.bi` defaults
-        output_dir=os.path.join(get_output_base(), DIR_PROJ, DIR_MDL, 'gpt2', MODEL_NAME, now(sep='-')),
-        # train_batch_size=16,  # pe `bi-encoder.py` default
-        train_batch_size=16,  # TODO: debug
+        output_dir=os.path.join(get_output_base(), DIR_PROJ, DIR_MDL, MODEL_NAME, now(sep='-')),
+        train_batch_size=16,  # pe `bi-encoder.py` default
+        # train_batch_size=2,  # TODO: debug
         eval_batch_size=32,
         learning_rate=2e-5,  # not specified by `bi-encoder.py`, go with default `SentenceTransformer`
         num_train_epochs=3,  # per `bi-encoder.py` default
@@ -39,12 +39,11 @@ def run_train(sampling: str = 'rand'):
     dset_tr = sum(
         (encoder_cls_format(d_dset[dnm]["train"], name=dnm, sampling=sampling, neg_sample_for_multi=True)
          for dnm in dnms), start=[]
-    )
+    )[:1024*3]
     # dset_vl = sum((  # looks like `jskit.encoders.bi` doesn't support eval during training
     #     encoder_cls_format(dset["test"], name=dnm, train=False) for dnm, dset in d_dset if dnm != 'all'
     # ), start=[])
     n_tr = len(dset_tr)
-    # random.shuffle(dset_tr)
 
     def batched_map(edges: Tuple[int, int]) -> Tuple[List, List, List]:  # see zeroshot_encoder.util.load_data`
         cands_tr_, conts_tr_, lbs_tr_ = [], [], []
@@ -58,7 +57,7 @@ def run_train(sampling: str = 'rand'):
     n_cpu = os.cpu_count()
     if n_cpu > 1 and n_tr > 2**12:
         preprocess_batch = round(n_tr / n_cpu / 2)
-        strts = list(range(0, len(dset_tr), preprocess_batch))
+        strts = list(range(0, n_tr, preprocess_batch))
         ends = strts[1:] + [n_tr]  # inclusive begin, exclusive end
         cands_tr, conts_tr, lbs_tr = [], [], []
         for cd, ct, lb in conc_map(batched_map, zip(strts, ends)):
@@ -66,24 +65,25 @@ def run_train(sampling: str = 'rand'):
         assert len(cands_tr) == n_tr
     else:
         cands_tr, conts_tr, lbs_tr = batched_map((0, n_tr))
-    n = 10
-    for c, t, l in zip(cands_tr[:n], conts_tr[:n], lbs_tr[:n]):  # Sanity check
-        ic(c, t, l)
+    # n = 10
+    # for c, t, l in zip(cands_tr[:n], conts_tr[:n], lbs_tr[:n]):  # Sanity check
+    #     ic(c, t, l)
 
     train_args = get_train_args()
     out_dir, bsz_tr, bsz_vl, lr, n_ep, decay, eps, warmup_ratio = (train_args[k] for k in (
         'output_dir', 'train_batch_size', 'eval_batch_size', 'learning_rate', 'num_train_epochs',
         'weight_decay', 'adam_epsilon', 'warmup_ratio'
     ))
-    n_step = math.ceil(len(dset_tr) / bsz_tr) * n_ep
-    ic(n_step)
+    n_train_sample = n_tr / 3  # As 3 candidates per text, but only 1 for training
+    assert n_train_sample.is_integer()
+    n_train_sample = int(n_train_sample)
+    n_step = math.ceil(n_train_sample / bsz_tr) * n_ep
 
     train_params = dict(
         train_batch_size=bsz_tr, eval_batch_size=bsz_vl, num_train_epochs=n_ep, learning_rate=lr, weight_decay=decay,
         warmup_steps=round(n_step*warmup_ratio), adam_epsilon=eps
     )  # to `str` per `configparser` API
     js_bi.set_config(training_parameters={k: str(v) for k, v in train_params.items()}, model_parameters=None)
-    ic(config_parser2dict(js_bi.config))
     tkzer_cnm, model_cnm = js_bi.model.__class__.__qualname__, js_bi.tokenizer.__class__.__qualname__
     shared = get(js_bi.config, 'MODEL_PARAMETERS.shared')
     gas, sz_cand, sz_cont = (js_bi.config['TRAIN_PARAMETERS'][k] for k in (
@@ -96,7 +96,6 @@ def run_train(sampling: str = 'rand'):
     train_args |= dict(n_step=n_step, gradient_accumulation_steps=gas)
     logger.info(f'Starting training on model {log_dict(d_model)} with training args: {log_dict(train_args)}, '
                 f'dataset size: {logi(n_tr)}... ')
-    ic(js_bi.model.device)
     model_ = train_model(
         model_train=js_bi.model,
         tokenizer=js_bi.tokenizer,

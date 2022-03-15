@@ -166,7 +166,7 @@ def config_parser2dict(conf: configparser.ConfigParser) -> Dict:
     return {sec: dict(conf[sec]) for sec in conf.sections()}
 
 
-def log(s, c: str = 'log', c_time='green', as_str=False):
+def log(s, c: str = 'log', c_time='green', as_str=False, bold=False):
     """
     Prints `s` to console with color `c`
     """
@@ -197,14 +197,16 @@ def log(s, c: str = 'log', c_time='green', as_str=False):
         )
     if c in log.d:
         c = log.d[c]
+    if bold:
+        c += colorama.Style.BRIGHT
     if as_str:
         return f'{c}{s}{log.reset}'
     else:
         print(f'{c}{log(now(), c=c_time, as_str=True)}| {s}{log.reset}')
 
 
-def log_s(s, c):
-    return log(s, c=c, as_str=True)
+def log_s(s, c, bold = False):
+    return log(s, c=c, as_str=True, bold=bold)
 
 
 def logi(s):

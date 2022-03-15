@@ -24,8 +24,10 @@ class SelectionDataset(Dataset):
         else:
             for text, cand, lbl in zip(contexts, candidates, labels):
                 if lbl == 1 and len(group['candidates']) > 0:
+                    # ========================== Begin of added ==========================
                     # Sanity check for 2 negative samples, ensures collator `batchify_join_str` works
                     assert len(group['candidates']) == 3
+                    # ========================== End of added ==========================
                     self.data_source.append(group)
                     group = {
                         'context': None,
