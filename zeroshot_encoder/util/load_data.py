@@ -80,7 +80,7 @@ def get_nli_data():
     if not os.path.exists(nli_dataset_path):
         util.http_get('https://sbert.net/datasets/AllNLI.tsv.gz', nli_dataset_path)
 
-    label2int = {"contradiction": 0, "entailment": 1, "neutral": 0}
+    label2int = {"contradiction": 0, "entailment": 1, "neutral": 2}
     train_samples = []
     dev_samples = []
     with gzip.open(nli_dataset_path, 'rt', encoding='utf8') as fIn:
