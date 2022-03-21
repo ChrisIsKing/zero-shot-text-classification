@@ -66,6 +66,12 @@ def train_model(model_train, tokenizer, contexts, candidates, labels, output_dir
         tokenizer=tokenizer,
         max_len=int(max_contexts_length)
     )
+    # `SelectionJoinTransform` modifies the tokenizer by adding a special token
+    #    => the context model embedding size also needs to increase
+    # this modified `tokenizer` will tokenize both context and candidate,
+    #   for now, keep context model embedding unchanged
+    #   => user responsible that the special token added does not appear in
+    model.cont_bert.resize_token_embeddings(len(tokenizer))
     candidate_transform = token_util.SelectionSequentialTransform(
         tokenizer=tokenizer,
         max_len=int(max_candidate_length)
@@ -133,7 +139,7 @@ def train_model(model_train, tokenizer, contexts, candidates, labels, output_dir
             model, optimizer, opt_level=fp16_opt_level)
     print_freq = 1
     # ========================== Begin of modified ==========================
-    loss_print_freq = int(1e5)
+    loss_print_freq = int(1e4)
     # ========================== End of modified ==========================
     eval_freq = min(len(train_dataloader), 1000)
     print('Print freq:', print_freq, "Eval freq:", eval_freq)

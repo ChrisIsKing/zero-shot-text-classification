@@ -54,7 +54,7 @@ if __name__ == "__main__":
         num_epochs = args.epochs
         model_save_path = args.output
 
-        model = CrossEncoder('bert-base-uncased', num_labels=2)
+        model = CrossEncoder('bert-base-uncased', num_labels=3)
 
         train_dataloader = DataLoader(train, shuffle=True, batch_size=train_batch_size)
         warmup_steps = math.ceil(len(train_dataloader) * num_epochs * 0.1) #10% of train data for warm-up

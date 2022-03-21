@@ -34,9 +34,12 @@ def run_train(sampling: str = 'rand'):
 
     d_dset = get_data(in_domain_data_path)
     dnms = [dnm for dnm in d_dset.keys() if dnm != 'all']
+    # dnms = list(reversed(dnms))[:2]  # TODO: debugging
     logger.info(f'Gathering datasets: {logi(dnms)}... ')
     dset_tr = sum(
-        (encoder_cls_format(d_dset[dnm]["train"], name=dnm, sampling=sampling, neg_sample_for_multi=True)
+        (encoder_cls_format(
+            d_dset[dnm]["train"], name=dnm, sampling=sampling, neg_sample_for_multi=True, show_warnings=False
+        )
          for dnm in dnms), start=[]
     )
     # dset_vl = sum((  # looks like `jskit.encoders.bi` doesn't support eval during training

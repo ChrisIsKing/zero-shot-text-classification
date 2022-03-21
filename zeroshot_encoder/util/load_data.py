@@ -20,7 +20,7 @@ from zipfile import ZipFile
 from sentence_transformers.readers import InputExample
 from sentence_transformers import LoggingHandler, util
 
-from zeroshot_encoder.util import *
+from zeroshot_encoder.util import get_logger, logi, log_s, log_dict
 
 in_domain_url = 'https://drive.google.com/uc?id=1V7IzdZ9HQbFUQz9NzBDjmqYBdPd9Yfe3'
 out_of_domain_url = 'https://drive.google.com/uc?id=1nd32_UrFbgoCgH4bDtFFD_YFZhzcts3x'
@@ -187,7 +187,8 @@ WARN_NOT_ENOUGH_NEG_LABEL = 'Not Enough Negative Label'
 
 
 def encoder_cls_format(
-        arr: List[Tuple[str, str]], name=None, sampling='rand', train=True, neg_sample_for_multi=False
+        arr: List[Tuple[str, str]], name=None, sampling='rand', train=True,
+        neg_sample_for_multi=False, show_warnings=True
 ) -> List[InputExample]:
     """
     :param arr: List of dataset (text, descriptive label) pairs
@@ -196,6 +197,7 @@ def encoder_cls_format(
     :param train: If true, negative samples are generated
         Intended for training
     :param neg_sample_for_multi: If true, negative samples are added for each positive labels for a text
+    :param show_warnings: If true, warning for missing negative labels are logged
     """
     examples = []
     if train:
@@ -243,8 +245,9 @@ def encoder_cls_format(
                     else:
                         neg_label = list(neg_pool)[0]
                     examples.extend([neg_sample2label(neg_label), neg_sample2label(neg_label)])
-                    logger.warning(f'{log_s(warn_name, c="y", bold=True)}: # negative labels for text less than {2}: '
-                                   f'{log_dict(text=txt, pos_labels=txt2lbs[txt], neg_labels=neg_pool)}')
+                    if show_warnings:
+                        logger.warning(f'{log_s(warn_name, c="y", bold=True)}: # negative labels for text less '
+                                       f'than {2}: {log_dict(text=txt, pos_labels=txt2lbs[txt], neg_labels=neg_pool)}')
                 else:
                     examples.extend([neg_sample2label(neg_label) for neg_label in random.sample(neg_pool, k=2)])
             else:
