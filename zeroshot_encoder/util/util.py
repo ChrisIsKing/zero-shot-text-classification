@@ -128,9 +128,15 @@ def get_hostname() -> str:
     return os.uname().nodename
 
 
-def now(as_str=True, sep=':'):
+def now(as_str=True, for_path=False) -> Union[datetime.datetime, str]:
+    """
+    # Considering file output path
+    :param as_str: If true, returns string; otherwise, returns datetime object
+    :param for_path: If true, the string returned is formatted as intended for file system path
+    """
     d = datetime.datetime.now()
-    return d.strftime(f'%Y-%m-%d %H{sep}%M{sep}%S') if as_str else d  # Considering file output path
+    fmt = '%Y-%m-%d_%H-%M-%S' if for_path else '%Y-%m-%d %H:%M:%S'
+    return d.strftime(fmt) if as_str else d
 
 
 def profile_runtime(callback: Callable, sleep: Union[float, int] = None):

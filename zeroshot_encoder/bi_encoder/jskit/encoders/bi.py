@@ -272,8 +272,11 @@ def load_model(model_path):
                 model_path, state_dict=cont_bert_state_dict)
             cand_bert = cont_bert
         else:
-            cand_bert_path = os.path.join(model_path, "cand_bert/")
-            cont_bert_path = os.path.join(model_path, "cont_bert/")
+            cand_bert_path = os.path.join(model_path, "cand_bert")
+            cont_bert_path = os.path.join(model_path, "cont_bert")
+            # ========================== Begin of added ==========================
+            tokenizer_path = os.path.join(model_path, 'tokenizer')
+            # ========================== End of added ==========================
             print('Loading parameters from', cand_bert_path)
             cont_bert_state_dict = torch.load(
                 cont_bert_path+"/pytorch_model.bin", map_location="cpu")
@@ -283,8 +286,10 @@ def load_model(model_path):
                 cont_bert_path, state_dict=cont_bert_state_dict)
             cand_bert = BertModel.from_pretrained(
                 cand_bert_path, state_dict=cand_bert_state_dict)
-            tokenizer = BertTokenizer.from_pretrained(os.path.join(
-                cand_bert_path, "vocab.txt"), do_lower_case=True, clean_text=False)
+            # ========================== Begin of modified ==========================
+            tokenizer = BertTokenizer.from_pretrained(
+                tokenizer_path, do_lower_case=True, clean_text=False)
+            # ========================== End of modified ==========================
             bert_config = BertConfig.from_json_file(
                 os.path.join(cand_bert_path, 'config.json'))
         model = BiEncoder(config=bert_config,

@@ -16,7 +16,7 @@ MD_NM_OUT = 'Dual Bi-encoder'
 def get_train_args() -> Dict:
     # Keep the same as in `zeroshot_encoder.baseline.bi-encoder`
     return dict(  # To override `jskit.encoders.bi` defaults
-        output_dir=os.path.join(get_output_base(), DIR_PROJ, DIR_MDL, MODEL_NAME, now(sep='-')),
+        output_dir=os.path.join(get_output_base(), DIR_PROJ, DIR_MDL, MODEL_NAME, now(for_path=True)),
         train_batch_size=16,  # pe `bi-encoder.py` default
         eval_batch_size=32,
         learning_rate=2e-5,  # not specified by `bi-encoder.py`, go with default `SentenceTransformer`
@@ -33,15 +33,14 @@ def run_train(sampling: str = 'rand'):
     logger.info('Training launched... ')
 
     d_dset = get_data(in_domain_data_path)
-    dnms = [dnm for dnm in d_dset.keys() if dnm != 'all']
-    # dnms = list(reversed(dnms))[:2]  # TODO: debugging
+    dnms = [dnm for dnm in d_dset.keys() if dnm != 'all'][6:7]
     logger.info(f'Gathering datasets: {logi(dnms)}... ')
     dset_tr = sum(
         (encoder_cls_format(
             d_dset[dnm]["train"], name=dnm, sampling=sampling, neg_sample_for_multi=True, show_warnings=False
         )
          for dnm in dnms), start=[]
-    )
+    )[:27]  # TODO: debug check saved
     # dset_vl = sum((  # looks like `jskit.encoders.bi` doesn't support eval during training
     #     encoder_cls_format(dset["test"], name=dnm, train=False) for dnm, dset in d_dset if dnm != 'all'
     # ), start=[])
@@ -83,14 +82,18 @@ def run_train(sampling: str = 'rand'):
         train_batch_size=bsz_tr, eval_batch_size=bsz_vl, num_train_epochs=n_ep, learning_rate=lr, weight_decay=decay,
         warmup_steps=round(n_step*warmup_ratio), adam_epsilon=eps
     )  # to `str` per `configparser` API
-    js_bi.set_config(training_parameters={k: str(v) for k, v in train_params.items()}, model_parameters=None)
+    not_shared_str = ''  # for not shared weights, see [ongoing-issue](https://github.com/Jaseci-Labs/jaseci/issues/150)
+    js_bi.set_config(
+        training_parameters={k: str(v) for k, v in train_params.items()},
+        model_parameters=dict(shared=not_shared_str)
+    )
     tkzer_cnm, model_cnm = js_bi.model.__class__.__qualname__, js_bi.tokenizer.__class__.__qualname__
     shared = get(js_bi.config, 'MODEL_PARAMETERS.shared')
     gas, sz_cand, sz_cont = (js_bi.config['TRAIN_PARAMETERS'][k] for k in (
         'gradient_accumulation_steps', 'max_candidate_length', 'max_contexts_length'
     ))
     d_model = OrderedDict([
-        ('model name', model_cnm), ('tokenizer name', tkzer_cnm), ('shared weights', shared == 'True'),
+        ('model name', model_cnm), ('tokenizer name', tkzer_cnm), ('shared weights', shared != not_shared_str),
         ('candidate size', sz_cand), ('context size', sz_cont)
     ])
     train_args |= dict(n_step=n_step, gradient_accumulation_steps=gas)
@@ -104,6 +107,17 @@ def run_train(sampling: str = 'rand'):
         labels=lbs_tr,
         output_dir=out_dir
     )
+
+
+def load_model():
+    path = os.path.join(get_output_base(), DIR_PROJ, DIR_MDL, MODEL_NAME, '2022-03-21_15-29-55')
+    js_bi.load_model(path)
+    return js_bi.model
+
+
+def evaluate_trained():
+    model = load_model()
+    ic(model)
 
 
 if __name__ == '__main__':
@@ -124,3 +138,5 @@ if __name__ == '__main__':
     # import_check()
 
     run_train()
+
+    # evaluate_trained()

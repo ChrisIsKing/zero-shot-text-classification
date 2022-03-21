@@ -66,12 +66,15 @@ def train_model(model_train, tokenizer, contexts, candidates, labels, output_dir
         tokenizer=tokenizer,
         max_len=int(max_contexts_length)
     )
+    # ========================== Begin of added ==========================
     # `SelectionJoinTransform` modifies the tokenizer by adding a special token
     #    => the context model embedding size also needs to increase
     # this modified `tokenizer` will tokenize both context and candidate,
     #   for now, keep context model embedding unchanged
     #   => user responsible that the special token added does not appear in
     model.cont_bert.resize_token_embeddings(len(tokenizer))
+    model.cand_bert.resize_token_embeddings(len(tokenizer))
+    # ========================== End of added ==========================
     candidate_transform = token_util.SelectionSequentialTransform(
         tokenizer=tokenizer,
         max_len=int(max_candidate_length)
@@ -106,9 +109,17 @@ def train_model(model_train, tokenizer, contexts, candidates, labels, output_dir
     if shared:
         state_save_path = os.path.join(output_dir, 'pytorch_model.bin')
     else:
-        state_save_path = os.path.join(bert_dir, 'pytorch_model.bin')
-        state_save_path_1 = os.path.join(
-            resp_bert_dir, 'pytorch_model.bin')
+        # ========================== Begin of modified ==========================
+        # outdated already
+        # state_save_path = os.path.join(bert_dir, 'pytorch_model.bin')
+        # state_save_path_1 = os.path.join(
+        #     resp_bert_dir, 'pytorch_model.bin')
+        cand_bert_path = os.path.join(output_dir, 'cand_bert')
+        cont_bert_path = os.path.join(output_dir, 'cont_bert')
+        tokenizer_path = os.path.join(output_dir, 'tokenizer')
+        os.makedirs(cand_bert_path, exist_ok=True)
+        os.makedirs(cont_bert_path, exist_ok=True)
+        # ========================== End of modified ==========================
 
     state_save_path = os.path.join(output_dir, 'pytorch_model.bin')
     no_decay = ["bias", "LayerNorm.weight"]
@@ -198,8 +209,20 @@ def train_model(model_train, tokenizer, contexts, candidates, labels, output_dir
     if shared is True:
         torch.save(model.state_dict(), state_save_path)
     else:
-        print('[Saving at]', state_save_path)
-        log_wf.write('[Saving at] %s\n' % state_save_path)
-        torch.save(model.resp_bert.state_dict(), state_save_path_1)
-        torch.save(model.bert.state_dict(), state_save_path)
+        # ========================== Begin of modified ==========================
+        # print('[Saving at]', state_save_path)
+        # log_wf.write('[Saving at] %s\n' % state_save_path)
+        # torch.save(model.resp_bert.state_dict(), state_save_path_1)
+        # ic(state_save_path, state_save_path_1)
+        # torch.save(model.bert.state_dict(), state_save_path)
+        # See https://github.com/Jaseci-Labs/jaseci/issues/152
+        print(f'[Saving at] {tokenizer_path}, {cand_bert_path} and {cont_bert_path}')
+        log_wf.write(f'[Saving at] {tokenizer_path}, {cand_bert_path} and {cont_bert_path}\n')
+        # md_fnm = 'pytorch_model.bin'
+        # torch.save(model.cont_bert.state_dict(), os.path.join(cont_bert_path, md_fnm))
+        # torch.save(model.cand_bert.state_dict(), os.path.join(cand_bert_path, md_fnm))
+        tokenizer.save_pretrained(tokenizer_path)
+        model.cont_bert.save_pretrained(cont_bert_path)
+        model.cand_bert.save_pretrained(cand_bert_path)
+        # ========================== End of modified ==========================
     return model
