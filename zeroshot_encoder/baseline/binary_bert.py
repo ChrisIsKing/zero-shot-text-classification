@@ -48,8 +48,8 @@ if __name__ == "__main__":
         train = []
         test = []
         for dataset in datasets:
-            train += binary_cls_format(data[dataset]["train"], name=dataset, sampling=args.sampling)
-            test += binary_cls_format(data[dataset]["test"], train=False)
+            train += binary_cls_format(data[dataset], name=dataset, sampling=args.sampling)
+            test += binary_cls_format(data[dataset], train=False)
 
         train_batch_size = args.batch_size
         num_epochs = args.epochs
@@ -58,7 +58,7 @@ if __name__ == "__main__":
         model = CrossEncoder('bert-base-uncased', num_labels=2)
 
         random.shuffle(train)
-        train_dataloader = DataLoader(train, shuffle=True, batch_size=train_batch_size)
+        train_dataloader = DataLoader(train, shuffle=False, batch_size=train_batch_size)
 
         evaluator = CESoftmaxAccuracyEvaluator.from_input_examples(test, name='UTCD-test')
 
