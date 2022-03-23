@@ -142,6 +142,8 @@ class MyEvalDataset(js_util.tokenizer.EvalDataset):
 class EncoderWrapper:
     """
     For evaluation, a wrapper around jskit::BiEncoder
+
+    reference: `js_util.evaluate.py`
     """
 
     def __init__(self, model: js_util.models.BiEncoder, tokenizer: BertTokenizer):
@@ -173,19 +175,15 @@ class EncoderWrapper:
                 return list(txts), dset.eval_str(ins)
             else:
                 return dset.eval_str(samples)
-        dl = DataLoader(dset, batch_size=batch_size, collate_fn=collate, shuffle=False)
-        # ic(len(dl))
+        dl = DataLoader(dset, batch_size=batch_size, collate_fn=collate, shuffle=False, pin_memory=True)
         if device is None:
             device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
         def callback():
             for inputs in dl:
-                # for i in inputs:
-                #     ic(i.shape)
                 txt, inputs = inputs if return_text else (None, inputs)
                 inputs = tuple(t.to(device) for t in inputs)
                 input_ids, attention_masks = inputs
-                # ic(input_ids.shape, attention_masks.shape)
                 inputs = dict(get_embedding=embed_type, mode='get_embed')
                 if embed_type == 'context':
                     inputs |= dict(context_input_ids=input_ids, context_input_masks=attention_masks)
@@ -206,11 +204,8 @@ def evaluate_trained(domain: str = 'in', candidate_batch_size: int = 256, contex
     d_dset = get_data(in_domain_data_path if domain == 'in' else out_of_domain_data_path)
     dataset_names = [dnm for dnm in d_dset.keys() if dnm != 'all']
 
-    # ic(type(tokenizer))
-    # ic(type(model))
     domain_str = f'{domain} domain'
     output_dir = os.path.join(PATH_BASE, DIR_PROJ, 'evaluations', MODEL_NAME, f'{now(for_path=True)}, {domain_str}')
-
     model_cnm = model.__class__.__qualname__
     d_model = OrderedDict([
         ('model name', model_cnm), ('trained #epoch', 3),
@@ -231,12 +226,6 @@ def evaluate_trained(domain: str = 'in', candidate_batch_size: int = 256, contex
     logger.info(f'Running evaluation {logi(domain_str)} on model {log_dict(d_model)}, with {log_dict(d_eval)}... ')
     logger_fl.info(f'Running evaluation {domain_str} on model {log_dict_nc(d_model)}, with {log_dict_nc(d_eval)}... ')
 
-    # ood = domain == 'out'
-    # dataset_names = [
-    #     dnm for dnm in config('UTCD.datasets').keys()
-    #     if (config(f'UTCD.datasets.{dnm}.out_of_domain') == ood)
-    # ]
-    # for dnm in dataset_names:
     for dnm in dataset_names:
         dset = d_dset[dnm]['test']
 
@@ -244,19 +233,7 @@ def evaluate_trained(domain: str = 'in', candidate_batch_size: int = 256, contex
         txt2lbs = {k: set(lb for txt, lb in v) for k, v in itertools.groupby(_dset, key=lambda pair: pair[0])}
         idx2lb = labels = sorted(set().union(*[v for v in txt2lbs.values()]))
         lb2idx = {lb: i for i, lb in enumerate(labels)}
-        # ic(labels, len(labels))
-        # ic(js_util.evaluate.get_embeddings(model, tokenizer, labels, embed_type='candidate'))
-        # gen = ew(labels, embed_type='candidate')
-        # t = next(gen)
-        # ic(t.shape)
-        # vects = torch.cat([e for e in ew(labels, embed_type='candidate')], dim=1)
-        # ic(vects.shape)
-            # ic(e.shape)
-        # lst = [e for e in ew(labels, embed_type='candidate')]
-        # ic(lst[0].shape, len(lst))
         vects_lb = torch.cat([e for e in ew(labels, embed_type='candidate', batch_size=candidate_batch_size)[1]])
-        # emb_lbs = torch.stack(lst)
-        # ic(emb_lbs.shape)
         lst_preds, lst_labels = [], []
         n, it = ew(list(txt2lbs.keys()), embed_type='candidate', return_text=True, batch_size=context_batch_size)
         logger.info(f'Running evaluation on dataset {logi(dnm)}, with labels {logi(labels)}, '
@@ -264,11 +241,8 @@ def evaluate_trained(domain: str = 'in', candidate_batch_size: int = 256, contex
         logger_fl.info(
             f'Running evaluation on dataset {dnm}, with labels {labels}, '
             f'of {len(txt2lbs)} unique texts in {n} batches... ')
-        # ic(type(it))
         for txts, vects_txt in tqdm(it, total=n):
-            # ic()
             logits = vects_txt @ vects_lb.t()
-            # ic(logits.shape)
             preds = logits.argmax(dim=-1)
 
             def get_true_label(pred, txt):
@@ -282,9 +256,7 @@ def evaluate_trained(domain: str = 'in', candidate_batch_size: int = 256, contex
             )
             lst_preds.append(preds)
             lst_labels.append(lbs)
-            # ic(preds, lbs, len(lst_preds), len(lst_labels))
         preds_all, labels_all = torch.cat(lst_preds).cpu().numpy(), torch.cat(lst_labels).cpu().numpy()
-        # ic(preds_all.shape, labels_all.shape)
         df = pd.DataFrame(
             classification_report(labels_all, preds_all, target_names=labels, output_dict=True)
         ).transpose()
@@ -292,7 +264,6 @@ def evaluate_trained(domain: str = 'in', candidate_batch_size: int = 256, contex
         df.to_csv(path)
         logger.info(f'Evaluation on {logi(dnm)} written to CSV at {logi(path)}')
         logger_fl.info(f'Evaluation on {dnm} written to CSV at {path}')
-        # exit(1)
 
 
 if __name__ == '__main__':
