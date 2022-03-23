@@ -234,6 +234,10 @@ def log_dict(d: Dict = None, with_color=True, **kwargs) -> str:
     return pref + ', '.join(pairs) + post
 
 
+def log_dict_nc(d: Dict = None, **kwargs) -> str:
+    return log_dict(d, with_color=False, **kwargs)
+
+
 def hex2rgb(hx: str) -> Union[Tuple[int], Tuple[float]]:
     # Modified from https://stackoverflow.com/a/62083599/10732321
     if not hasattr(hex2rgb, 'regex'):

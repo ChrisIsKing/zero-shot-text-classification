@@ -21,8 +21,8 @@ def config_setup():
         config['TRAIN_PARAMETERS']['MAX_CONTEXTS_LENGTH'])
     max_candidate_length = int(
         config['TRAIN_PARAMETERS']['MAX_CANDIDATE_LENGTH'])
-    # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    device = torch.device('cpu')
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    # device = torch.device('cpu')
 
 
 config_setup()

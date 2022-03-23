@@ -108,26 +108,31 @@ class EvalDataset(Dataset):
         self.candidate_transform = candidate_transform
         self.data_source = []
         self.mode = mode
-        group = {
-            "text": []
-        }
-        for text in texts:
-            group['text'].append(text)
-            self.data_source.append(group)
+        # ========================== Begin of modified ==========================
+        # group = {
+        #     "text": []
+        # }
+        # for text in texts:
+        #     group['text'].append(text)
+        #     self.data_source.append(group)
+        self.data_source = list(texts)
+        # ========================== End of modified ==========================
 
     def __len__(self):
         return len(self.data_source)
 
     def __getitem__(self, index):
-        group = self.data_source[index]
-        text = group["text"]
+        # ========================== Begin of modified ==========================
+        # group = self.data_source[index]
+        # text = group["text"]
+        text = [self.data_source[index]]  # single text, to fix into the transform code
+        # ========================== End of modified ==========================
         if self.mode == "context":
             transformed_text = self.context_transform(
                 text)  # [token_ids],[masks]
         else:
             transformed_text = self.candidate_transform(
                 text)  # [token_ids],[masks]
-
         return transformed_text
 
     def eval_str(self, batch):
