@@ -1,6 +1,4 @@
 import json
-from unicodedata import category
-import datasets
 import gdown
 import random
 import spacy
@@ -9,17 +7,15 @@ import csv
 import os
 import time
 import itertools
-from typing import Tuple, List, Dict
-from warnings import warn
-from collections import Counter, defaultdict
+from typing import Tuple, List
+from collections import Counter
 from tqdm import tqdm
 from numpy import argmax, argmin
 from os import listdir
 from os.path import isfile, join, basename
 from zipfile import ZipFile
 from sentence_transformers.readers import InputExample
-from sentence_transformers import LoggingHandler, util
-
+from sentence_transformers import util
 from zeroshot_encoder.util import get_logger, logi, log_s, log_dict
 
 in_domain_url = 'https://drive.google.com/uc?id=1V7IzdZ9HQbFUQz9NzBDjmqYBdPd9Yfe3'
@@ -95,7 +91,7 @@ def binary_cls_format(data, name=None, sampling='rand', train=True):
     examples = []
     if train:
         label_list = data['labels']
-        example_list = [x for x,y in data['train'].items()]
+        example_list = [x for x in data['train'].keys()]
 
         if sampling == 'vect':
             label_vectors = {label: nlp(label) for label in label_list}
@@ -118,7 +114,7 @@ def binary_cls_format(data, name=None, sampling='rand', train=True):
                 if len(other_labels) >= 2:
                     random_label = random.sample(other_labels, k=2)
                     examples.append(InputExample(texts=[text, random_label[0]], label=0))
-                    examples.append(InputExample(texts=[random_label[1], random_label[0]], label=0))
+                    examples.append(InputExample(texts=[text, random_label[1]], label=0))
                 elif len(other_labels) > 0:
                     examples.append(InputExample(texts=[text, other_labels[0]], label=0))
 
@@ -129,7 +125,7 @@ def binary_cls_format(data, name=None, sampling='rand', train=True):
                     scores = [text_vector.similarity(vector) for vector in other_label_vectors]
                     examples.append(InputExample(texts=[text, other_labels[argmax(scores)]], label=0))
                     examples.append(InputExample(texts=[text, other_labels[argmin(scores)]], label=0))
-                else:
+                elif len(other_labels) > 0:
                     examples.append(InputExample(texts=[text, other_labels[0]], label=0))
 
     else:
@@ -146,45 +142,51 @@ def nli_template(label, category):
     elif category == 'sentiment':
         return 'This text expresses a {} sentiment'.format(label)
 
-def nli_cls_format(arr, name=None, sampling='rand', train=True):
+def nli_cls_format(data, name=None, sampling='rand', train=True):
     examples = []
-    category = category_map[name]
     if train:
-        label_list = list(dict.fromkeys([example[1] for example in arr]))
-        label_vectors = {label: nlp(label) for label in label_list}
-        example_list = [x[0] for x in arr]
+        label_list = data['labels']
+        example_list = [x for x in data['train'].keys()]
 
         if sampling == 'vect':
+            label_vectors = {label: nlp(label) for label in label_list}
             start = time.time()
             vects = list(nlp.pipe(example_list, n_process=4, batch_size=128))
             print('Time Elapsed {} ms'.format((time.time() - start)*1000))
         
-        # count instances
-        count = Counter(example_list)
         print('Generating {} examples'.format(name))
-        for i, element in enumerate(tqdm(arr)):
-            true_label = nli_template(element[1], category=category)
-            other_labels = [label for label in label_list if label != element[1]]
+        for i, (text, labels) in enumerate(tqdm(data['train'].items())):
+            true_labels = labels
+            other_labels = [label for label in label_list if label not in true_labels]
             
             # Generate label for true example
-            examples.append(InputExample(texts=[element[0], true_label], label=1))
+            for label in true_labels:
+                examples.append(InputExample(texts=[text, nli_template(label, data['aspect'])], label=1))
 
             # Generate sample based on sampling strategy
-            if sampling == 'rand' and count[element[0]] < 2:
+            if sampling == 'rand':
                 random.seed(i)
-                random_label = random.sample(other_labels, k=2)
-                examples.append(InputExample(texts=[element[0], nli_template(random_label[0], category=category)], label=0))
-                examples.append(InputExample(texts=[element[0], nli_template(random_label[1], category=category)], label=0))
-            elif sampling == 'vect' and count[element[0]] < 2:
-                text_vector = vects[i]
-                other_label_vectors = [label_vectors[label] for label in other_labels]
-                scores = [text_vector.similarity(vector) for vector in other_label_vectors]
-                examples.append(InputExample(texts=[element[0], nli_template(other_labels[argmax(scores)], category=category)], label=0))
-                examples.append(InputExample(texts=[element[0], nli_template(other_labels[argmin(scores)], category=category)], label=0))
+                if len(other_labels) >= 2:
+                    random_label = random.sample(other_labels, k=2)
+                    examples.append(InputExample(texts=[text, nli_template(random_label[0], data['aspect'])], label=0))
+                    examples.append(InputExample(texts=[text, nli_template(random_label[1], data['aspect'])], label=0))
+                elif len(other_labels) > 0:
+                    examples.append(InputExample(texts=[text, nli_template(other_labels[0], data['aspect'])], label=0))
+
+            elif sampling == 'vect':
+                if len(other_labels) >= 2:
+                    text_vector = vects[i]
+                    other_label_vectors = [label_vectors[label] for label in other_labels]
+                    scores = [text_vector.similarity(vector) for vector in other_label_vectors]
+                    examples.append(InputExample(texts=[text, nli_template(other_labels[argmax(scores)], data['aspect'])], label=0))
+                    examples.append(InputExample(texts=[text, nli_template(other_labels[argmin(scores)], data['aspect'])], label=0))
+                elif len(other_labels) > 0:
+                    examples.append(InputExample(texts=[text, nli_template(other_labels[0])], label=0))
 
     else:
-        for element in arr:
-           examples.append(InputExample(texts=[element[0], nli_template(element[1], category=category)], label=1))
+        for text, labels in data['test'].items():
+           for label in labels:
+               examples.append(InputExample(texts=[text, nli_template(label, data['aspect'])], label=1))
     return examples
 
 

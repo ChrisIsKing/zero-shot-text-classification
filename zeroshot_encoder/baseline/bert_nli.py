@@ -1,19 +1,16 @@
 import math
 import logging
-import json
 import random
-import seaborn as sns
 import pandas as pd
 from argparse import ArgumentParser
 from tqdm import tqdm
 from pathlib import Path
 from os.path import join
-from collections import Counter
 from sklearn.metrics import classification_report
 from torch.utils.data import DataLoader
 from sentence_transformers.cross_encoder import CrossEncoder
 from sentence_transformers.cross_encoder.evaluation import CESoftmaxAccuracyEvaluator
-from zeroshot_encoder.util.load_data import get_data, nli_cls_format, get_nli_data, nli_template, category_map, in_domain_data_path, out_of_domain_data_path
+from zeroshot_encoder.util.load_data import get_data, binary_cls_format, nli_cls_format, get_nli_data, nli_template, in_domain_data_path, out_of_domain_data_path
 
 random.seed(42)
 
@@ -28,6 +25,7 @@ def parse_args():
     # set train arguments
     train.add_argument('--output', type=str, required=True)
     train.add_argument('--sampling', type=str, choices=['rand', 'vect'], required=True)
+    train.add_argument('--mode', type=str, choices=['vanilla', 'implicit', 'explicit'], default='vanilla')
     train.add_argument('--base_model', type=str, required=True)
     train.add_argument('--batch_size', type=int, default=16)
     train.add_argument('--epochs', type=int, default=3)
@@ -74,21 +72,27 @@ if __name__ == "__main__":
         data = get_data(in_domain_data_path)
         # get keys from data dict
         datasets = list(data.keys())
-        datasets.remove("all")
         train = []
         test = []
         for dataset in datasets:
-            train += nli_cls_format(data[dataset]["train"], name=dataset, sampling=args.sampling)
-            test += nli_cls_format(data[dataset]["test"], name=dataset, train=False)
+            if args.mode == 'vanilla':
+                train += binary_cls_format(data[dataset], name=dataset, sampling=args.sampling)
+                test += binary_cls_format(data[dataset], train=False)
+            elif args.model == 'implicit':
+                train += nli_cls_format(data[dataset], name=dataset, sampling=args.sampling)
+                test += nli_cls_format(data[dataset], name=dataset, train=False)
 
         train_batch_size = args.batch_size
         num_epochs = args.epochs
         model_save_path = join(args.output, args.sampling)
 
         model = CrossEncoder(args.base_model, num_labels=2)
+        # Add end of turn token for sgd
+        model.tokenizer.add_special_tokens({'eot_token': '[eot]'})
+        model.model.resize_token_embeddings(len(model.tokenizer))
 
         random.shuffle(train)
-        train_dataloader = DataLoader(train, shuffle=True, batch_size=train_batch_size)
+        train_dataloader = DataLoader(train, shuffle=False, batch_size=train_batch_size)
 
         evaluator = CESoftmaxAccuracyEvaluator.from_input_examples(test, name='UTCD-test')
 
@@ -113,66 +117,37 @@ if __name__ == "__main__":
             data = get_data(out_of_domain_data_path)
         # get keys from data dict
         datasets = list(data.keys())
-        datasets.remove("all")
 
         # load model
         model = CrossEncoder(args.model_path)
 
         label_map = ["false", "true"]
 
-        # loop through all datasets
         for dataset in datasets:
-            test = data[dataset]["test"]
-            count = Counter([x[0] for x in test])
-            category = category_map[dataset]
-            gold = []
-            examples = []
-            labels = list(dict.fromkeys(x[1] for x in test))
-
-            # Deal w/multi-label & duplicates
-            duplicates = [k for k,v in count.items() if v > 1]
-            for duplicate in duplicates:
-                examples.append(duplicate)
-                
-                # get labels for duplicate
-                dup_labels = [x[1] for x in test if x[0] == duplicate]
-                gold.append([1 if label in dup_labels else 0 for label in labels])
-
-            for x, y in test:
-                if count[x] > 1:
-                    continue
-                else:
-                    examples.append(x)
-                    gold.append([1 if y==label else 0 for label in labels])
-            
-            assert len(examples) == len(gold)
-            
+            examples = data[dataset]["test"]
+            labels = data[dataset]['labels']
             preds = []
-            gold_labels = []
+            gold = []
             correct = 0
             # loop through each test example
             print("Evaluating dataset: {}".format(dataset))
-            for index, example in enumerate(tqdm(examples)):
-                query = [(example, nli_template(label, category)) for label in labels]
+            for index, (text, gold_labels) in enumerate(tqdm(examples.items())):
+                query = [(text, label) for label in labels] if args.mode == 'vanilla' else [(text, nli_template(label, data[dataset]['aspect'])) for label in labels]
                 results = model.predict(query, apply_softmax=True)
 
                 # compute which pred is higher
                 pred = labels[results[:,1].argmax()]
                 preds.append(pred)
-                # load gold labels
-                g_label = [labels[i] for i, l in enumerate(gold[index]) if l==1]
-                if pred in g_label:
+               
+                if pred in gold_labels:
                     correct += 1
-                    gold_labels.append(pred)
+                    gold.append(pred)
                 else:
-                    gold_labels.append(g_label[0])
+                    gold.append(gold_labels[0])
                 
             
             print('{} Dataset Accuracy = {}'.format(dataset, correct/len(examples)))
-            report = classification_report(gold_labels, preds, output_dict=True)
-            json.dump([ [examples[i], pred, gold_labels[i]] for i, pred in enumerate(preds)], open('{}/{}.json'.format(pred_path,dataset), 'w'), indent=4)
-            # plt = sns.heatmap(pd.DataFrame(report).iloc[:-1, :].T, annot=True)
-            # plt.figure.savefig('figures/binary_bert_{}.png'.format(dataset))
+            report = classification_report(gold, preds, output_dict=True)
             df = pd.DataFrame(report).transpose()
             df.to_csv('{}/{}.csv'.format(result_path, dataset))
             

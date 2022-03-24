@@ -1,13 +1,10 @@
 import math
 import logging
-import json
 import random
-import seaborn as sns
 import pandas as pd
 from argparse import ArgumentParser
 from pathlib import Path
 from os.path import join
-from collections import Counter
 from tqdm import tqdm
 from sklearn.metrics import classification_report
 from torch.utils.data import DataLoader
@@ -55,6 +52,9 @@ if __name__ == "__main__":
         model_save_path = join(args.output, args.sampling)
 
         model = CrossEncoder('bert-base-uncased', num_labels=2)
+        # Add end of turn token for sgd
+        model.tokenizer.add_special_tokens({'eot_token': '[eot]'})
+        model.model.resize_token_embeddings(len(model.tokenizer))
 
         random.shuffle(train)
         train_dataloader = DataLoader(train, shuffle=False, batch_size=train_batch_size)
@@ -92,25 +92,6 @@ if __name__ == "__main__":
         for dataset in datasets:
             examples = data[dataset]["test"]
             labels = data[dataset]['labels']
-
-            # # Deal w/multi-label & duplicates
-            # duplicates = [k for k,v in count.items() if v > 1]
-            # for duplicate in duplicates:
-            #     examples.append(duplicate)
-                
-            #     # get labels for duplicate
-            #     dup_labels = [x[1] for x in test if x[0] == duplicate]
-            #     gold.append([1 if label in dup_labels else 0 for label in labels])
-
-            # for x, y in test:
-            #     if count[x] > 1:
-            #         continue
-            #     else:
-            #         examples.append(x)
-            #         gold.append([1 if y==label else 0 for label in labels])
-            
-            # assert len(examples) == len(gold)
-            
             preds = []
             gold = []
             correct = 0
@@ -133,9 +114,6 @@ if __name__ == "__main__":
             
             print('{} Dataset Accuracy = {}'.format(dataset, correct/len(examples)))
             report = classification_report(gold, preds, output_dict=True)
-            # json.dump([[examples[i], pred, gold_labels[i]] for i, pred in enumerate(preds)], open('{}/{}.json'.format(pred_path,dataset), 'w'), indent=4)
-            # plt = sns.heatmap(pd.DataFrame(report).iloc[:-1, :].T, annot=True)
-            # plt.figure.savefig('figures/binary_bert_{}.png'.format(dataset))
             df = pd.DataFrame(report).transpose()
             df.to_csv('{}/{}.csv'.format(result_path, dataset))
             
