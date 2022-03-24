@@ -55,7 +55,7 @@ def get_data(path):
     if not os.path.exists(path):
         download_data(path)
     paths = [join(path, f) for f in listdir(path) if isfile(join(path, f)) and f.endswith('.json')]
-    data = {"all": {"train": [], "test": []}}
+    data = {}
     for path in paths:
         dataset_name = basename(path).split('.')[0]
         data[dataset_name] = json.load(open(path))
