@@ -23,6 +23,7 @@ def parse_args():
     # set train arguments
     train.add_argument('--output', type=str, required=True)
     train.add_argument('--sampling', type=str, choices=['rand', 'vect'], required=True)
+    train.add_argument('--mode', type=str, choices=['vanilla', 'implicit', 'explicit'], default='vanilla')
     train.add_argument('--batch_size', type=int, default=16)
     train.add_argument('--epochs', type=int, default=3)
     
@@ -44,8 +45,9 @@ if __name__ == "__main__":
         train = []
         test = []
         for dataset in datasets:
-            train += binary_cls_format(data[dataset], name=dataset, sampling=args.sampling)
-            test += binary_cls_format(data[dataset], train=False)
+            if args.mode == 'vanilla':
+                train += binary_cls_format(data[dataset], name=dataset, sampling=args.sampling)
+                test += binary_cls_format(data[dataset], train=False)
 
         train_batch_size = args.batch_size
         num_epochs = args.epochs
@@ -53,7 +55,7 @@ if __name__ == "__main__":
 
         model = CrossEncoder('bert-base-uncased', num_labels=2)
         # Add end of turn token for sgd
-        model.tokenizer.add_special_tokens({'eot_token': '[eot]'})
+        model.tokenizer.add_special_tokens({'eos_token': '[eot]'})
         model.model.resize_token_embeddings(len(model.tokenizer))
 
         random.shuffle(train)

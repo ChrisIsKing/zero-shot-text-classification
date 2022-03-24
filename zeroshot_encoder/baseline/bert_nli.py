@@ -88,7 +88,7 @@ if __name__ == "__main__":
 
         model = CrossEncoder(args.base_model, num_labels=2)
         # Add end of turn token for sgd
-        model.tokenizer.add_special_tokens({'eot_token': '[eot]'})
+        model.tokenizer.add_special_tokens({'eos_token': '[eot]'})
         model.model.resize_token_embeddings(len(model.tokenizer))
 
         random.shuffle(train)
