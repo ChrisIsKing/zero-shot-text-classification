@@ -33,7 +33,8 @@ def parse_args():
 
     # set test arguments
     test.add_argument('--model_path', type=str, required=True)
-    test.add_argument('--domain', type=str, choices=['in', 'out'] ,required=True)
+    test.add_argument('--mode', type=str, choices=['vanilla', 'implicit', 'explicit'], default='vanilla')
+    test.add_argument('--domain', type=str, choices=['in', 'out'], required=True)
 
     # sest pre-train arguments
     pre_train.add_argument('--output', type=str, required=True)
@@ -120,6 +121,8 @@ if __name__ == "__main__":
         datasets = list(data.keys())
 
         # load model
+        from icecream import ic
+        ic(args.model_path)
         model = CrossEncoder(args.model_path)
 
         label_map = ["false", "true"]
