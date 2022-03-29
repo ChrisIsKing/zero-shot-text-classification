@@ -76,7 +76,7 @@
     "UTCD": {
         "datasets": {
             "emotion": {
-                "path": "UTCD/emotion",
+                "path": "UTCD/in-domain/emotion",
                 "aspect": "sentiment",
                 "eval_labels_same": true,
                 "out_of_domain": false,
@@ -91,9 +91,10 @@
                             "surprise"
                         ],
                         "n_label": 6,
-                        "n_txt": 15969,
-                        "n_sample": 16000,
-                        "multi_label": true
+                        "n_text": 15969,
+                        "n_pair": 15999,
+                        "multi_label": true,
+                        "n_multi_label": 30
                     },
                     "test": {
                         "labels": [
@@ -105,124 +106,147 @@
                             "surprise"
                         ],
                         "n_label": 6,
-                        "n_txt": 2000,
-                        "n_sample": 2000,
-                        "multi_label": false
+                        "n_text": 2000,
+                        "n_pair": 2000,
+                        "multi_label": false,
+                        "n_multi_label": 0
                     }
-                }
+                },
+                "re-txt_avg_tokens": 19.169736768879737,
+                "bert-txt_avg_tokens": 22.773610106294175,
+                "gpt2-txt_avg_tokens": 20.000278256998165,
+                "re-lb_avg_tokens": 1.0,
+                "bert-lb_avg_tokens": 3.0,
+                "gpt2-lb_avg_tokens": 1.7385410300572255
             },
             "go_emotion": {
-                "path": "UTCD/go_emotion",
+                "path": "UTCD/in-domain/go_emotion",
                 "aspect": "sentiment",
                 "eval_labels_same": true,
                 "out_of_domain": false,
                 "splits": {
                     "train": {
                         "labels": [
-                            "admiration sentiment",
-                            "amusement sentiment",
-                            "anger sentiment",
-                            "annoyance sentiment",
-                            "approval sentiment",
-                            "caring sentiment",
-                            "confusion sentiment",
-                            "curiosity sentiment",
-                            "desire sentiment",
-                            "disappointment sentiment",
-                            "disapproval sentiment",
-                            "disgust sentiment",
-                            "embarrassment sentiment",
-                            "excitement sentiment",
-                            "fear sentiment",
-                            "gratitude sentiment",
-                            "grief sentiment",
-                            "joy sentiment",
-                            "love sentiment",
-                            "nervousness sentiment",
-                            "neutral sentiment",
-                            "optimism sentiment",
-                            "pride sentiment",
-                            "realization sentiment",
-                            "relief sentiment",
-                            "remorse sentiment",
-                            "sadness sentiment",
-                            "surprise sentiment"
+                            "admiration",
+                            "amusement",
+                            "anger",
+                            "annoyance",
+                            "approval",
+                            "caring",
+                            "confusion",
+                            "curiosity",
+                            "desire",
+                            "disappointment",
+                            "disapproval",
+                            "disgust",
+                            "embarrassment",
+                            "excitement",
+                            "fear",
+                            "gratitude",
+                            "grief",
+                            "joy",
+                            "love",
+                            "nervousness",
+                            "neutral",
+                            "optimism",
+                            "pride",
+                            "realization",
+                            "relief",
+                            "remorse",
+                            "sadness",
+                            "surprise"
                         ],
                         "n_label": 28,
-                        "n_txt": 43227,
-                        "n_sample": 51103,
-                        "multi_label": true
+                        "n_text": 43227,
+                        "n_pair": 50966,
+                        "multi_label": true,
+                        "n_multi_label": 7132
                     },
                     "test": {
                         "labels": [
-                            "admiration sentiment",
-                            "amusement sentiment",
-                            "anger sentiment",
-                            "annoyance sentiment",
-                            "approval sentiment",
-                            "caring sentiment",
-                            "confusion sentiment",
-                            "curiosity sentiment",
-                            "desire sentiment",
-                            "disappointment sentiment",
-                            "disapproval sentiment",
-                            "disgust sentiment",
-                            "embarrassment sentiment",
-                            "excitement sentiment",
-                            "fear sentiment",
-                            "gratitude sentiment",
-                            "grief sentiment",
-                            "joy sentiment",
-                            "love sentiment",
-                            "nervousness sentiment",
-                            "neutral sentiment",
-                            "optimism sentiment",
-                            "pride sentiment",
-                            "realization sentiment",
-                            "relief sentiment",
-                            "remorse sentiment",
-                            "sadness sentiment",
-                            "surprise sentiment"
+                            "admiration",
+                            "amusement",
+                            "anger",
+                            "annoyance",
+                            "approval",
+                            "caring",
+                            "confusion",
+                            "curiosity",
+                            "desire",
+                            "disappointment",
+                            "disapproval",
+                            "disgust",
+                            "embarrassment",
+                            "excitement",
+                            "fear",
+                            "gratitude",
+                            "grief",
+                            "joy",
+                            "love",
+                            "nervousness",
+                            "neutral",
+                            "optimism",
+                            "pride",
+                            "realization",
+                            "relief",
+                            "remorse",
+                            "sadness",
+                            "surprise"
                         ],
                         "n_label": 28,
-                        "n_txt": 5421,
-                        "n_sample": 6329,
-                        "multi_label": true
+                        "n_text": 5421,
+                        "n_pair": 6324,
+                        "multi_label": true,
+                        "n_multi_label": 838
                     }
-                }
+                },
+                "re-txt_avg_tokens": 13.351977470810722,
+                "bert-txt_avg_tokens": 20.1944170366716,
+                "gpt2-txt_avg_tokens": 16.94573260976813,
+                "re-lb_avg_tokens": 1.0,
+                "bert-lb_avg_tokens": 3.0648455227788443,
+                "gpt2-lb_avg_tokens": 1.967551056030721
             },
             "sentiment_tweets_2020": {
-                "path": "UTCD/sentiment_tweets_2020",
+                "path": "UTCD/in-domain/sentiment_tweets_2020",
                 "aspect": "sentiment",
                 "eval_labels_same": true,
                 "out_of_domain": false,
                 "splits": {
                     "train": {
                         "labels": [
-                            "negative sentiment",
-                            "neutral sentiment",
-                            "positive sentiment"
+                            "negative",
+                            "neutral",
+                            "positive"
                         ],
                         "n_label": 3,
-                        "n_txt": 45586,
-                        "n_sample": 45615,
-                        "multi_label": true
+                        "n_text": 45586,
+                        "n_pair": 45589,
+                        "multi_label": true,
+                        "n_multi_label": 3
                     },
                     "test": {
                         "labels": [
-                            "negative sentiment",
-                            "neutral sentiment",
-                            "positive sentiment"
+                            "negative",
+                            "neutral",
+                            "positive"
                         ],
                         "n_label": 3,
-                        "n_txt": 12284,
-                        "n_sample": 12284,
-                        "multi_label": false
+                        "n_text": 12284,
+                        "n_pair": 12284,
+                        "multi_label": false,
+                        "n_multi_label": 0
                     }
-                }
+                },
+                "re-txt_avg_tokens": 18.91060998790392,
+                "bert-txt_avg_tokens": 30.66431657162606,
+                "gpt2-txt_avg_tokens": 26.351667530672195,
+                "re-lb_avg_tokens": 1.0,
+                "bert-lb_avg_tokens": 3.0,
+                "gpt2-lb_avg_tokens": 1.0
             },
             "clinc_150": {
-                "path": "UTCD/clinc_150",
+                "path": "UTCD/in-domain/clinc_150",
                 "aspect": "intent",
                 "eval_labels_same": true,
                 "out_of_domain": false,
@@ -381,9 +405,10 @@
                             "yes"
                         ],
                         "n_label": 150,
-                        "n_txt": 15000,
-                        "n_sample": 15000,
-                        "multi_label": false
+                        "n_text": 15000,
+                        "n_pair": 15000,
+                        "multi_label": false,
+                        "n_multi_label": 0
                     },
                     "test": {
                         "labels": [
@@ -539,21 +564,27 @@
                             "yes"
                         ],
                         "n_label": 150,
-                        "n_txt": 4500,
-                        "n_sample": 4500,
-                        "multi_label": false
+                        "n_text": 4500,
+                        "n_pair": 4500,
+                        "multi_label": false,
+                        "n_multi_label": 0
                     }
-                }
+                },
+                "re-txt_avg_tokens": 8.451641025641026,
+                "bert-txt_avg_tokens": 11.499794871794872,
+                "gpt2-txt_avg_tokens": 9.075589743589743,
+                "re-lb_avg_tokens": 1.9933333333333334,
+                "bert-lb_avg_tokens": 4.206666666666667,
+                "gpt2-lb_avg_tokens": 2.433333333333333
             },
             "sgd": {
-                "path": "UTCD/sgd",
+                "path": "UTCD/in-domain/sgd",
                 "aspect": "intent",
                 "eval_labels_same": false,
                 "out_of_domain": false,
                 "splits": {
                     "train": {
                         "labels": [
-                            "Add Event",
                             "Book Appointment",
                             "Book House",
                             "Buy Bus Ticket",
@@ -583,23 +614,21 @@
                             "Reserve One way Flight",
                             "Reserve Restaurant",
                             "Reserve Round trip Flights",
-                            "Schedule Visit",
                             "Search Hotel",
                             "Search House",
                             "Search One way Flight",
                             "Search Round trip Flights",
                             "Transfer Money"
                         ],
-                        "n_label": 36,
-                        "n_txt": 114251,
-                        "n_sample": 153011,
-                        "multi_label": true
+                        "n_label": 34,
+                        "n_text": 16142,
+                        "n_pair": 16142,
+                        "multi_label": false,
+                        "n_multi_label": 0
                     },
                     "test": {
                         "labels": [
                             "Add Alarm",
-                            "Book Appointment",
-                            "Book House",
                             "Buy Bus Ticket",
                             "Buy Event Tickets",
                             "Buy Movie Tickets",
@@ -614,33 +643,34 @@
                             "Get Alarms",
                             "Get Cars Available",
                             "Get Ride",
-                            "Get Times For Movie",
-                            "Get Train Tickets",
                             "Get Weather",
                             "Lookup Music",
                             "Make Payment",
-                            "Play Media",
                             "Play Movie",
                             "Request Payment",
-                            "Reserve Car",
-                            "Reserve Hotel",
                             "Reserve Restaurant",
                             "Schedule Visit",
                             "Search Hotel",
                             "Search House",
                             "Search One way Flight",
-                            "Search Round trip Flights",
-                            "Share Location"
+                            "Search Round trip Flights"
                         ],
-                        "n_label": 34,
-                        "n_txt": 32692,
-                        "n_sample": 39386,
-                        "multi_label": true
+                        "n_label": 26,
+                        "n_text": 4201,
+                        "n_pair": 4201,
+                        "multi_label": false,
+                        "n_multi_label": 0
                     }
-                }
+                },
+                "re-txt_avg_tokens": 226.98967703878483,
+                "bert-txt_avg_tokens": 337.6333382490291,
+                "gpt2-txt_avg_tokens": 331.08071572531094,
+                "re-lb_avg_tokens": 2.404168510052598,
+                "bert-lb_avg_tokens": 5.232709039964607,
+                "gpt2-lb_avg_tokens": 2.700290026053188
             },
             "slurp": {
-                "path": "UTCD/slurp",
+                "path": "UTCD/in-domain/slurp",
                 "aspect": "intent",
                 "eval_labels_same": false,
                 "out_of_domain": false,
@@ -682,8 +712,8 @@
                             "hue light dim",
                             "hue light off",
                             "hue light up",
-                            "i ot coffee",
                             "iot cleaning",
+                            "iot coffee",
                             "iot hue light change",
                             "iot hue light dim",
                             "iot hue light off",
@@ -740,9 +770,10 @@
                             "wemo plug on"
                         ],
                         "n_label": 91,
-                        "n_txt": 11502,
-                        "n_sample": 11514,
-                        "multi_label": true
+                        "n_text": 11502,
+                        "n_pair": 11503,
+                        "multi_label": true,
+                        "n_multi_label": 1
                     },
                     "test": {
                         "labels": [
@@ -772,8 +803,8 @@
                             "hue light dim",
                             "hue light off",
                             "hue light up",
-                            "i ot coffee",
                             "iot cleaning",
+                            "iot coffee",
                             "iot hue light change",
                             "iot hue light dim",
                             "iot hue light off",
@@ -823,14 +854,21 @@
                             "wemo off"
                         ],
                         "n_label": 75,
-                        "n_txt": 2592,
-                        "n_sample": 2593,
-                        "multi_label": true
+                        "n_text": 2592,
+                        "n_pair": 2592,
+                        "multi_label": false,
+                        "n_multi_label": 0
                     }
-                }
+                },
+                "re-txt_avg_tokens": 6.932311621966794,
+                "bert-txt_avg_tokens": 9.88250319284802,
+                "gpt2-txt_avg_tokens": 7.519369944657301,
+                "re-lb_avg_tokens": 2.2376019865200427,
+                "bert-lb_avg_tokens": 4.951472153245832,
+                "gpt2-lb_avg_tokens": 2.6293721177722595
             },
             "ag_news": {
-                "path": "UTCD/ag_news",
+                "path": "UTCD/in-domain/ag_news",
                 "aspect": "topic",
                 "eval_labels_same": true,
                 "out_of_domain": false,
@@ -843,9 +881,10 @@
                             "World News"
                         ],
                         "n_label": 4,
-                        "n_txt": 120000,
-                        "n_sample": 120000,
-                        "multi_label": false
+                        "n_text": 120000,
+                        "n_pair": 120000,
+                        "multi_label": false,
+                        "n_multi_label": 0
                     },
                     "test": {
                         "labels": [
@@ -855,14 +894,21 @@
                             "World News"
                         ],
                         "n_label": 4,
-                        "n_txt": 7600,
-                        "n_sample": 7600,
-                        "multi_label": false
+                        "n_text": 7600,
+                        "n_pair": 7600,
+                        "multi_label": false,
+                        "n_multi_label": 0
                     }
-                }
+                },
+                "re-txt_avg_tokens": 39.64653605015674,
+                "bert-txt_avg_tokens": 57.16152821316614,
+                "gpt2-txt_avg_tokens": 52.08076018808777,
+                "re-lb_avg_tokens": 1.5,
+                "bert-lb_avg_tokens": 3.75,
+                "gpt2-lb_avg_tokens": 1.75
             },
             "dbpedia": {
-                "path": "UTCD/dbpedia",
+                "path": "UTCD/in-domain/dbpedia",
                 "aspect": "topic",
                 "eval_labels_same": true,
                 "out_of_domain": false,
@@ -885,9 +931,10 @@
                             "Written Work"
                         ],
                         "n_label": 14,
-                        "n_txt": 559879,
-                        "n_sample": 560000,
-                        "multi_label": true
+                        "n_text": 559879,
+                        "n_pair": 559879,
+                        "multi_label": false,
+                        "n_multi_label": 0
                     },
                     "test": {
                         "labels": [
@@ -907,14 +954,21 @@
                             "Written Work"
                         ],
                         "n_label": 14,
-                        "n_txt": 70000,
-                        "n_sample": 70000,
-                        "multi_label": false
+                        "n_text": 70000,
+                        "n_pair": 70000,
+                        "multi_label": false,
+                        "n_multi_label": 0
                     }
-                }
+                },
+                "re-txt_avg_tokens": 47.514625824960035,
+                "bert-txt_avg_tokens": 66.15378350445086,
+                "gpt2-txt_avg_tokens": 65.47365763900686,
+                "re-lb_avg_tokens": 1.4284902338385626,
+                "bert-lb_avg_tokens": 3.5713716443951933,
+                "gpt2-lb_avg_tokens": 1.9285561195086676
             },
             "yahoo": {
-                "path": "UTCD/yahoo",
+                "path": "UTCD/in-domain/yahoo",
                 "aspect": "topic",
                 "eval_labels_same": true,
                 "out_of_domain": false,
@@ -933,9 +987,10 @@
                             "Sports"
                         ],
                         "n_label": 10,
-                        "n_txt": 1365398,
-                        "n_sample": 1400000,
-                        "multi_label": true
+                        "n_text": 1365398,
+                        "n_pair": 1374775,
+                        "multi_label": true,
+                        "n_multi_label": 7059
                     },
                     "test": {
                         "labels": [
@@ -951,685 +1006,42 @@
                             "Sports"
                         ],
                         "n_label": 10,
-                        "n_txt": 59767,
-                        "n_sample": 60000,
-                        "multi_label": true
+                        "n_text": 59767,
+                        "n_pair": 59867,
+                        "multi_label": true,
+                        "n_multi_label": 73
                     }
-                }
-            },
-            "amazon_polarity": {
-                "path": "UTCD-ood/amazon_polarity",
-                "aspect": "sentiment",
-                "eval_labels_same": true,
-                "out_of_domain": true,
-                "splits": {
-                    "train": {
-                        "labels": [
-                            "negative sentiment",
-                            "positive sentiment"
-                        ],
-                        "n_label": 2,
-                        "n_txt": 3594783,
-                        "n_sample": 3600000,
-                        "multi_label": true
-                    },
-                    "test": {
-                        "labels": [
-                            "negative sentiment",
-                            "positive sentiment"
-                        ],
-                        "n_label": 2,
-                        "n_txt": 399917,
-                        "n_sample": 400000,
-                        "multi_label": true
-                    }
-                }
-            },
-            "finance_sentiment": {
-                "path": "UTCD-ood/finance_sentiment",
-                "aspect": "sentiment",
-                "eval_labels_same": true,
-                "out_of_domain": true,
-                "splits": {
-                    "train": {
-                        "labels": [
-                            "negative sentiment",
-                            "neutral sentiment",
-                            "positive sentiment"
-                        ],
-                        "n_label": 3,
-                        "n_txt": 1808,
-                        "n_sample": 1810,
-                        "multi_label": true
-                    },
-                    "test": {
-                        "labels": [
-                            "negative sentiment",
-                            "neutral sentiment",
-                            "positive sentiment"
-                        ],
-                        "n_label": 3,
-                        "n_txt": 453,
-                        "n_sample": 454,
-                        "multi_label": true
-                    }
-                }
-            },
-            "yelp": {
-                "path": "UTCD-ood/yelp",
-                "aspect": "sentiment",
-                "eval_labels_same": true,
-                "out_of_domain": true,
-                "splits": {
-                    "train": {
-                        "labels": [
-                            "negative sentiment",
-                            "neutral sentiment",
-                            "positive sentiment"
-                        ],
-                        "n_label": 3,
-                        "n_txt": 650000,
-                        "n_sample": 650000,
-                        "multi_label": false
-                    },
-                    "test": {
-                        "labels": [
-                            "negative sentiment",
-                            "neutral sentiment",
-                            "positive sentiment"
-                        ],
-                        "n_label": 3,
-                        "n_txt": 50000,
-                        "n_sample": 50000,
-                        "multi_label": false
-                    }
-                }
-            },
-            "multi_eurlex": {
-                "path": "UTCD-ood/multi_eurlex",
-                "aspect": "topic",
-                "eval_labels_same": true,
-                "out_of_domain": true,
-                "splits": {
-                    "train": {
-                        "labels": [
-                            "EUROPEAN UNION",
-                            "agri-foodstuffs",
-                            "agriculture, forestry and fisheries",
-                            "business and competition",
-                            "economics",
-                            "education and communications",
-                            "employment and working conditions",
-                            "energy",
-                            "environment",
-                            "finance",
-                            "geography",
-                            "industry",
-                            "international organisations",
-                            "international relations",
-                            "law",
-                            "politics",
-                            "production, technology and research",
-                            "science",
-                            "social questions",
-                            "trade",
-                            "transport"
-                        ],
-                        "n_label": 21,
-                        "n_txt": 54986,
-                        "n_sample": 177739,
-                        "multi_label": true
-                    },
-                    "test": {
-                        "labels": [
-                            "EUROPEAN UNION",
-                            "agri-foodstuffs",
-                            "agriculture, forestry and fisheries",
-                            "business and competition",
-                            "economics",
-                            "education and communications",
-                            "employment and working conditions",
-                            "energy",
-                            "environment",
-                            "finance",
-                            "geography",
-                            "industry",
-                            "international organisations",
-                            "international relations",
-                            "law",
-                            "politics",
-                            "production, technology and research",
-                            "science",
-                            "social questions",
-                            "trade",
-                            "transport"
-                        ],
-                        "n_label": 21,
-                        "n_txt": 5000,
-                        "n_sample": 17969,
-                        "multi_label": true
-                    }
-                }
-            },
-            "patent": {
-                "path": "UTCD-ood/patent",
-                "aspect": "topic",
-                "eval_labels_same": true,
-                "out_of_domain": true,
-                "splits": {
-                    "train": {
-                        "labels": [
-                            "Chemistry; Metallurgy",
-                            "Electricity",
-                            "Fixed Constructions",
-                            "General tagging of new or cross-sectional technology",
-                            "Human Necessities",
-                            "Mechanical Engineering; Lightning; Heating; Weapons; Blasting",
-                            "Performing Operations; Transporting",
-                            "Physics",
-                            "Textiles; Paper"
-                        ],
-                        "n_label": 9,
-                        "n_txt": 24950,
-                        "n_sample": 25000,
-                        "multi_label": true
-                    },
-                    "test": {
-                        "labels": [
-                            "Chemistry; Metallurgy",
-                            "Electricity",
-                            "Fixed Constructions",
-                            "General tagging of new or cross-sectional technology",
-                            "Human Necessities",
-                            "Mechanical Engineering; Lightning; Heating; Weapons; Blasting",
-                            "Performing Operations; Transporting",
-                            "Physics",
-                            "Textiles; Paper"
-                        ],
-                        "n_label": 9,
-                        "n_txt": 4997,
-                        "n_sample": 5000,
-                        "multi_label": true
-                    }
-                }
-            },
-            "consumer_finance": {
-                "path": "UTCD-ood/consumer_finance",
-                "aspect": "topic",
-                "eval_labels_same": true,
-                "out_of_domain": true,
-                "splits": {
-                    "train": {
-                        "labels": [
-                            "Bank account or service",
-                            "Checking or savings account",
-                            "Consumer Loan",
-                            "Credit card",
-                            "Credit card or prepaid card",
-                            "Credit reporting",
-                            "Credit reporting, credit repair services, or other personal consumer reports",
-                            "Debt collection",
-                            "Money transfer, virtual currency, or money service",
-                            "Money transfers",
-                            "Mortgage",
-                            "Other financial service",
-                            "Payday loan",
-                            "Payday loan, title loan, or personal loan",
-                            "Prepaid card",
-                            "Student loan",
-                            "Vehicle loan or lease",
-                            "Virtual currency"
-                        ],
-                        "n_label": 18,
-                        "n_txt": 626004,
-                        "n_sample": 626489,
-                        "multi_label": true
-                    },
-                    "test": {
-                        "labels": [
-                            "Bank account or service",
-                            "Checking or savings account",
-                            "Consumer Loan",
-                            "Credit card",
-                            "Credit card or prepaid card",
-                            "Credit reporting",
-                            "Credit reporting, credit repair services, or other personal consumer reports",
-                            "Debt collection",
-                            "Money transfer, virtual currency, or money service",
-                            "Money transfers",
-                            "Mortgage",
-                            "Other financial service",
-                            "Payday loan",
-                            "Payday loan, title loan, or personal loan",
-                            "Prepaid card",
-                            "Student loan",
-                            "Vehicle loan or lease",
-                            "Virtual currency"
-                        ],
-                        "n_label": 18,
-                        "n_txt": 156602,
-                        "n_sample": 156635,
-                        "multi_label": true
-                    }
-                }
-            },
-            "banking77": {
-                "path": "UTCD-ood/banking77",
-                "aspect": "intent",
-                "eval_labels_same": true,
-                "out_of_domain": true,
-                "splits": {
-                    "train": {
-                        "labels": [
-                            "Refund not showing up",
-                            "activate my card",
-                            "age limit",
-                            "apple pay or google pay",
-                            "atm support",
-                            "automatic top up",
-                            "balance not updated after bank transfer",
-                            "balance not updated after cheque or cash deposit",
-                            "beneficiary not allowed",
-                            "cancel transfer",
-                            "card about to expire",
-                            "card acceptance",
-                            "card arrival",
-                            "card delivery estimate",
-                            "card linking",
-                            "card not working",
-                            "card payment fee charged",
-                            "card payment not recognised",
-                            "card payment wrong exchange rate",
-                            "card swallowed",
-                            "cash withdrawal charge",
-                            "cash withdrawal not recognised",
-                            "change pin",
-                            "compromised card",
-                            "contactless not working",
-                            "country support",
-                            "declined card payment",
-                            "declined cash withdrawal",
-                            "declined transfer",
-                            "direct debit payment not recognised",
-                            "disposable card limits",
-                            "edit personal details",
-                            "exchange charge",
-                            "exchange rate",
-                            "exchange via app",
-                            "extra charge on statement",
-                            "failed transfer",
-                            "fiat currency support",
-                            "get disposable virtual card",
-                            "get physical card",
-                            "getting spare card",
-                            "getting virtual card",
-                            "lost or stolen card",
-                            "lost or stolen phone",
-                            "order physical card",
-                            "passcode forgotten",
-                            "pending card payment",
-                            "pending cash withdrawal",
-                            "pending top up",
-                            "pending transfer",
-                            "pin blocked",
-                            "receiving money",
-                            "request refund",
-                            "reverted card payment?",
-                            "supported cards and currencies",
-                            "terminate account",
-                            "top up by bank transfer charge",
-                            "top up by card charge",
-                            "top up by cash or cheque",
-                            "top up failed",
-                            "top up limits",
-                            "top up reverted",
-                            "topping up by card",
-                            "transaction charged twice",
-                            "transfer fee charged",
-                            "transfer into account",
-                            "transfer not received by recipient",
-                            "transfer timing",
-                            "unable to verify identity",
-                            "verify my identity",
-                            "verify source of funds",
-                            "verify top up",
-                            "virtual card not working",
-                            "visa or mastercard",
-                            "why verify identity",
-                            "wrong amount of cash received",
-                            "wrong exchange rate for cash withdrawal"
-                        ],
-                        "n_label": 77,
-                        "n_txt": 10003,
-                        "n_sample": 10003,
-                        "multi_label": false
-                    },
-                    "test": {
-                        "labels": [
-                            "Refund not showing up",
-                            "activate my card",
-                            "age limit",
-                            "apple pay or google pay",
-                            "atm support",
-                            "automatic top up",
-                            "balance not updated after bank transfer",
-                            "balance not updated after cheque or cash deposit",
-                            "beneficiary not allowed",
-                            "cancel transfer",
-                            "card about to expire",
-                            "card acceptance",
-                            "card arrival",
-                            "card delivery estimate",
-                            "card linking",
-                            "card not working",
-                            "card payment fee charged",
-                            "card payment not recognised",
-                            "card payment wrong exchange rate",
-                            "card swallowed",
-                            "cash withdrawal charge",
-                            "cash withdrawal not recognised",
-                            "change pin",
-                            "compromised card",
-                            "contactless not working",
-                            "country support",
-                            "declined card payment",
-                            "declined cash withdrawal",
-                            "declined transfer",
-                            "direct debit payment not recognised",
-                            "disposable card limits",
-                            "edit personal details",
-                            "exchange charge",
-                            "exchange rate",
-                            "exchange via app",
-                            "extra charge on statement",
-                            "failed transfer",
-                            "fiat currency support",
-                            "get disposable virtual card",
-                            "get physical card",
-                            "getting spare card",
-                            "getting virtual card",
-                            "lost or stolen card",
-                            "lost or stolen phone",
-                            "order physical card",
-                            "passcode forgotten",
-                            "pending card payment",
-                            "pending cash withdrawal",
-                            "pending top up",
-                            "pending transfer",
-                            "pin blocked",
-                            "receiving money",
-                            "request refund",
-                            "reverted card payment?",
-                            "supported cards and currencies",
-                            "terminate account",
-                            "top up by bank transfer charge",
-                            "top up by card charge",
-                            "top up by cash or cheque",
-                            "top up failed",
-                            "top up limits",
-                            "top up reverted",
-                            "topping up by card",
-                            "transaction charged twice",
-                            "transfer fee charged",
-                            "transfer into account",
-                            "transfer not received by recipient",
-                            "transfer timing",
-                            "unable to verify identity",
-                            "verify my identity",
-                            "verify source of funds",
-                            "verify top up",
-                            "virtual card not working",
-                            "visa or mastercard",
-                            "why verify identity",
-                            "wrong amount of cash received",
-                            "wrong exchange rate for cash withdrawal"
-                        ],
-                        "n_label": 77,
-                        "n_txt": 3080,
-                        "n_sample": 3080,
-                        "multi_label": false
-                    }
-                }
-            },
-            "snips": {
-                "path": "UTCD-ood/snips",
-                "aspect": "intent",
-                "eval_labels_same": true,
-                "out_of_domain": true,
-                "splits": {
-                    "train": {
-                        "labels": [
-                            "Add To Playlist",
-                            "Book Restaurant",
-                            "Get Weather",
-                            "Play Music",
-                            "Rate Book",
-                            "Search Creative Work",
-                            "Search Screening Event"
-                        ],
-                        "n_label": 7,
-                        "n_txt": 13615,
-                        "n_sample": 13784,
-                        "multi_label": true
-                    },
-                    "test": {
-                        "labels": [
-                            "Add To Playlist",
-                            "Book Restaurant",
-                            "Get Weather",
-                            "Play Music",
-                            "Rate Book",
-                            "Search Creative Work",
-                            "Search Screening Event"
-                        ],
-                        "n_label": 7,
-                        "n_txt": 697,
-                        "n_sample": 700,
-                        "multi_label": true
-                    }
-                }
-            },
-            "nlu_evaluation": {
-                "path": "UTCD-ood/nlu_evaluation",
-                "aspect": "intent",
-                "eval_labels_same": true,
-                "out_of_domain": true,
-                "splits": {
-                    "train": {
-                        "labels": [
-                            "alarm query",
-                            "alarm remove",
-                            "alarm set",
-                            "audio volume down",
-                            "audio volume mute",
-                            "audio volume other",
-                            "audio volume up",
-                            "calendar query",
-                            "calendar remove",
-                            "calendar set",
-                            "cooking query",
-                            "cooking recipe",
-                            "datetime convert",
-                            "datetime query",
-                            "email addcontact",
-                            "email query",
-                            "email querycontact",
-                            "email sendemail",
-                            "general affirm",
-                            "general commandstop",
-                            "general confirm",
-                            "general dontcare",
-                            "general explain",
-                            "general greet",
-                            "general joke",
-                            "general negate",
-                            "general praise",
-                            "general quirky",
-                            "general repeat",
-                            "iot cleaning",
-                            "iot coffee",
-                            "iot hue lightchange",
-                            "iot hue lightdim",
-                            "iot hue lightoff",
-                            "iot hue lighton",
-                            "iot hue lightup",
-                            "iot wemo off",
-                            "iot wemo on",
-                            "lists createoradd",
-                            "lists query",
-                            "lists remove",
-                            "music dislikeness",
-                            "music likeness",
-                            "music query",
-                            "music settings",
-                            "news query",
-                            "play audiobook",
-                            "play game",
-                            "play music",
-                            "play podcasts",
-                            "play radio",
-                            "qa currency",
-                            "qa definition",
-                            "qa factoid",
-                            "qa maths",
-                            "qa stock",
-                            "recommendation events",
-                            "recommendation locations",
-                            "recommendation movies",
-                            "social post",
-                            "social query",
-                            "takeaway order",
-                            "takeaway query",
-                            "transport query",
-                            "transport taxi",
-                            "transport ticket",
-                            "transport traffic",
-                            "weather query"
-                        ],
-                        "n_label": 68,
-                        "n_txt": 20524,
-                        "n_sample": 20549,
-                        "multi_label": true
-                    },
-                    "test": {
-                        "labels": [
-                            "alarm query",
-                            "alarm remove",
-                            "alarm set",
-                            "audio volume down",
-                            "audio volume mute",
-                            "audio volume other",
-                            "audio volume up",
-                            "calendar query",
-                            "calendar remove",
-                            "calendar set",
-                            "cooking query",
-                            "cooking recipe",
-                            "datetime convert",
-                            "datetime query",
-                            "email addcontact",
-                            "email query",
-                            "email querycontact",
-                            "email sendemail",
-                            "general affirm",
-                            "general commandstop",
-                            "general confirm",
-                            "general dontcare",
-                            "general explain",
-                            "general greet",
-                            "general joke",
-                            "general negate",
-                            "general praise",
-                            "general quirky",
-                            "general repeat",
-                            "iot cleaning",
-                            "iot coffee",
-                            "iot hue lightchange",
-                            "iot hue lightdim",
-                            "iot hue lightoff",
-                            "iot hue lighton",
-                            "iot hue lightup",
-                            "iot wemo off",
-                            "iot wemo on",
-                            "lists createoradd",
-                            "lists query",
-                            "lists remove",
-                            "music dislikeness",
-                            "music likeness",
-                            "music query",
-                            "music settings",
-                            "news query",
-                            "play audiobook",
-                            "play game",
-                            "play music",
-                            "play podcasts",
-                            "play radio",
-                            "qa currency",
-                            "qa definition",
-                            "qa factoid",
-                            "qa maths",
-                            "qa stock",
-                            "recommendation events",
-                            "recommendation locations",
-                            "recommendation movies",
-                            "social post",
-                            "social query",
-                            "takeaway order",
-                            "takeaway query",
-                            "transport query",
-                            "transport taxi",
-                            "transport ticket",
-                            "transport traffic",
-                            "weather query"
-                        ],
-                        "n_label": 68,
-                        "n_txt": 5165,
-                        "n_sample": 5166,
-                        "multi_label": true
-                    }
-                }
+                },
+                "re-txt_avg_tokens": 11.046990348485965,
+                "bert-txt_avg_tokens": 17.002040465489962,
+                "gpt2-txt_avg_tokens": 13.989866436517877,
+                "re-lb_avg_tokens": 1.7997632858929267,
+                "bert-lb_avg_tokens": 4.7987714008094,
+                "gpt2-lb_avg_tokens": 2.9990227527146147
             }
         },
         "dataset_ext": "json",
         "dataset_name2id": {
             "ag_news": 0,
-            "amazon_polarity": 1,
-            "banking77": 2,
-            "clinc_150": 3,
-            "consumer_finance": 4,
-            "dbpedia": 5,
-            "emotion": 6,
-            "finance_sentiment": 7,
-            "go_emotion": 8,
-            "multi_eurlex": 9,
-            "nlu_evaluation": 10,
-            "patent": 11,
-            "sentiment_tweets_2020": 12,
-            "sgd": 13,
-            "slurp": 14,
-            "snips": 15,
-            "yahoo": 16,
-            "yelp": 17
+            "clinc_150": 1,
+            "dbpedia": 2,
+            "emotion": 3,
+            "go_emotion": 4,
+            "sentiment_tweets_2020": 5,
+            "sgd": 6,
+            "slurp": 7,
+            "yahoo": 8
         },
         "dataset_id2name": {
             "0": "ag_news",
-            "1": "amazon_polarity",
-            "2": "banking77",
-            "3": "clinc_150",
-            "4": "consumer_finance",
-            "5": "dbpedia",
-            "6": "emotion",
-            "7": "finance_sentiment",
-            "8": "go_emotion",
-            "9": "multi_eurlex",
-            "10": "nlu_evaluation",
-            "11": "patent",
-            "12": "sentiment_tweets_2020",
-            "13": "sgd",
-            "14": "slurp",
-            "15": "snips",
-            "16": "yahoo",
-            "17": "yelp"
+            "1": "clinc_150",
+            "2": "dbpedia",
+            "3": "emotion",
+            "4": "go_emotion",
+            "5": "sentiment_tweets_2020",
+            "6": "sgd",
+            "7": "slurp",
+            "8": "yahoo"
         }
     },
     "random-seed": 77
