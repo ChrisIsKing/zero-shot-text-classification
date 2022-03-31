@@ -18,9 +18,10 @@ from transformers import Trainer, TrainingArguments, SchedulerType
 from transformers import DataCollatorForLanguageModeling
 from transformers.file_utils import ModelOutput
 from transformers.training_args import OptimizerNames
-from datasets import load_metric
+import datasets
 
 from zeroshot_encoder.util import *
+import zeroshot_encoder.util.utcd as utcd_util
 from zeroshot_encoder.preprocess import get_dset
 
 
@@ -60,9 +61,8 @@ class ZsGPT2Tokenizer(GPT2TokenizerFast):
             dataset_name, split = key
             key = f'{dataset_name}-{split}'
             if key not in self:
-                dset = datasets.load_from_disk(
-                    os.path.join(get_output_base(), DIR_PROJ, DIR_DSET, 'processed', dataset_name)
-                )[split]
+                path = os.path.join(utcd_util.get_output_base(), DIR_PROJ, DIR_DSET, 'processed', dataset_name)
+                dset = datasets.load_from_disk(path)[split]
                 # See `zeroshot_encoder.util.util.py::process_utcd_dataset`
                 is_multi_label = 'labels' in dset.features.keys()
                 feats = dset.features['labels' if is_multi_label else 'label']
@@ -88,7 +88,7 @@ class ZsGPT2Tokenizer(GPT2TokenizerFast):
         self.templates = config('baselines.gpt2-nvidia.templates')
         # Mapping from dataset name to label for non-UTCD cases
         self.cache: Dict[str, Dict] = ZsGPT2Tokenizer.Cache(self)
-        self.cache_bm = None
+        self.cache_utcd = None
 
         self.boq_token, self.bot_token, self.boa_token = (  # begin of (question, text, answer) tokens
             ZsGPT2Tokenizer.SPEC_TOKS[k] for k in ('pref_ques', 'pref_text', 'pref_answ')
@@ -136,17 +136,19 @@ class ZsGPT2Tokenizer(GPT2TokenizerFast):
         ln = len(samples['text'])
         idxs_tpl = np.random.randint(len(self.templates), size=ln)
 
-        def call_single(i, dataset_id: int, text: str, label: int):
+        def call_single(i, dataset_id: int, text: str, labels: List[int]):
             dset_nm: str = config('UTCD.dataset_id2name')[dataset_id]
             if 'UTCD' in dataset_name:
                 split = 'train' if mode == 'train' else 'test'
                 descs = config(f'UTCD.datasets.{dset_nm}.splits.{split}.labels')  # Descriptive labels
                 n_cls = len(descs)
                 # `label` is shared across all datasets, map to local label within dataset
-                if self.cache_bm is None:
-                    self.cache_bm = datasets.load_from_disk(
-                        os.path.join(get_output_base(), DIR_PROJ, DIR_DSET, 'processed', dataset_name)
-                    )[split].features['label']  # TODO: assume `train` split
+                if self.cache_utcd is None:
+                    path = os.path.join(utcd_util.get_output_base(), DIR_PROJ, DIR_DSET, 'processed', dataset_name)
+                    self.cache_utcd = datasets.load_from_disk(path)[split].features['label']
+                    from icecream import ic
+                    ic(self.cache_utcd)
+                    exit(1)
                 # The ordering indicates int<=>str label mapping, i.e., index is int label,
                 # see `process_utcd_dataset`
 
@@ -155,8 +157,8 @@ class ZsGPT2Tokenizer(GPT2TokenizerFast):
                     Map from local dataset label ordinal, in range(n_cls) to the descriptor
                     """
                     return descs[lb]
-                answer = self.cache_bm.int2str(label)
-            else:
+                answer = self.cache_utcd.int2str(labels)
+            else:  # TODO: didn't refactor this yet
                 self.cache: ZsGPT2Tokenizer.Cache
                 n_cls, label2description = (self.cache[dset_nm, mode][k] for k in ('n_classes', 'label2description'))
 
@@ -165,7 +167,7 @@ class ZsGPT2Tokenizer(GPT2TokenizerFast):
                 if for_prediction:
                     answer = ''  # indexing wouldn't work cos multi label; Will not be used anyway, see below
                 else:
-                    answer = label2description[label]
+                    answer = label2description[labels]
 
             idx_lbs = np.arange(n_cls)
             np.random.shuffle(idx_lbs)
@@ -512,7 +514,7 @@ def get_train_setup(
         assert bsz_tr.is_integer()
         bsz_tr = int(bsz_tr)
     args = dict(
-        output_dir=os.path.join(get_output_base(), DIR_PROJ, DIR_MDL, 'gpt2', model_name, now(sep='-')),
+        output_dir=os.path.join(utcd_util.get_output_base(), DIR_PROJ, DIR_MDL, 'gpt2', model_name, now(for_path=True)),
         do_train=True,
         do_eval=do_eval,
         evaluation_strategy='steps' if do_eval else 'no',
@@ -561,7 +563,7 @@ def compute_metrics(eval_pred: MyEvalPrediction):
     """
     # Intended to work with `CustomTrainer.prediction_step`
     if not hasattr(compute_metrics, 'metric'):
-        compute_metrics.metric = load_metric('accuracy')
+        compute_metrics.metric = datasets.load_metric('accuracy')
     # Labels are per-sample already, see `CustomTrainer.prediction_step`
     preds, trues, dids = eval_pred.predictions, eval_pred.label_ids, eval_pred.dataset_ids
     return compute_metrics.metric.compute(predictions=preds, references=trues)
@@ -650,7 +652,7 @@ def evaluate_trained(in_domain: bool = True, batch_size: int = 48, n_ep: int = 3
     model.tkzer = tkzer  # See ZsGPT2LMHeadModel.forward() sanity check`
 
     split = 'test'
-    path_dir = os.path.join(PATH_BASE, DIR_PROJ, 'evaluations', MODEL_NAME, now(sep='-'))
+    path_dir = os.path.join(PATH_BASE, DIR_PROJ, 'evaluations', MODEL_NAME, now(for_path=True))
 
     dataset_names = [
         dnm for dnm in config('UTCD.datasets').keys()
