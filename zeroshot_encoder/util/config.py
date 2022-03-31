@@ -1,4 +1,3 @@
-import os
 from collections import Counter
 
 from scipy.stats import norm
@@ -86,43 +85,42 @@ config = {
         datasets=dict(
             # in-domain evaluation has the same labels as training
             emotion=dict(
-                path='UTCD/in-domain/emotion', aspect='sentiment', eval_labels_same=True, out_of_domain=False),
+                path='UTCD/in-domain/emotion', aspect='sentiment', eval_labels_same=True, domain='in'),
             go_emotion=dict(
-                path='UTCD/in-domain/go_emotion', aspect='sentiment', eval_labels_same=True, out_of_domain=False),
+                path='UTCD/in-domain/go_emotion', aspect='sentiment', eval_labels_same=True, domain='in'),
             sentiment_tweets_2020=dict(
-                path='UTCD/in-domain/sentiment_tweets_2020', aspect='sentiment',
-                eval_labels_same=True, out_of_domain=False
+                path='UTCD/in-domain/sentiment_tweets_2020', aspect='sentiment', eval_labels_same=True, domain='in'
             ),
             clinc_150=dict(
-                path='UTCD/in-domain/clinc_150', aspect='intent', eval_labels_same=True, out_of_domain=False),
+                path='UTCD/in-domain/clinc_150', aspect='intent', eval_labels_same=True, domain='in'),
             # `eval_labels_same` := has some unique test labels
-            sgd=dict(path='UTCD/in-domain/sgd', aspect='intent', eval_labels_same=False, out_of_domain=False),
-            slurp=dict(path='UTCD/in-domain/slurp', aspect='intent', eval_labels_same=False, out_of_domain=False),
-            ag_news=dict(path='UTCD/in-domain/ag_news', aspect='topic', eval_labels_same=True, out_of_domain=False),
-            dbpedia=dict(path='UTCD/in-domain/dbpedia', aspect='topic', eval_labels_same=True, out_of_domain=False),
-            yahoo=dict(path='UTCD/in-domain/yahoo', aspect='topic', eval_labels_same=True, out_of_domain=False),
+            sgd=dict(path='UTCD/in-domain/sgd', aspect='intent', eval_labels_same=False, domain='in'),
+            slurp=dict(path='UTCD/in-domain/slurp', aspect='intent', eval_labels_same=False, domain='in'),
+            ag_news=dict(path='UTCD/in-domain/ag_news', aspect='topic', eval_labels_same=True, domain='in'),
+            dbpedia=dict(path='UTCD/in-domain/dbpedia', aspect='topic', eval_labels_same=True, domain='in'),
+            yahoo=dict(path='UTCD/in-domain/yahoo', aspect='topic', eval_labels_same=True, domain='in'),
             # Out-of-domain datasets: test split intended to evaluation
             # TODO: until new multi-label format supported
-            # amazon_polarity=dict(
-            #     path='UTCD-ood/amazon_polarity', aspect='sentiment', eval_labels_same=True, out_of_domain=True
-            # ),
-            # finance_sentiment=dict(
-            #     path='UTCD-ood/finance_sentiment', aspect='sentiment', eval_labels_same=True, out_of_domain=True
-            # ),
-            # yelp=dict(path='UTCD-ood/yelp', aspect='sentiment', eval_labels_same=True, out_of_domain=True),
-            # # Removed for too many options blow up GPT2's 1024 token length; TODO: remove, keep now cos plotting
-            # arxiv=dict(path='UTCD-ood/arxiv', aspect='topic', eval_labels_same=True, out_of_domain=True),
-            # multi_eurlex=dict(
-            #   path='UTCD-ood/multi_eurlex', aspect='topic', eval_labels_same=True, out_of_domain=True),
-            # patent=dict(path='UTCD-ood/patent', aspect='topic', eval_labels_same=True, out_of_domain=True),
-            # consumer_finance=dict(
-            #     path='UTCD-ood/consumer_finance', aspect='topic', eval_labels_same=True, out_of_domain=True
-            # ),
-            # banking77=dict(path='UTCD-ood/banking77', aspect='intent', eval_labels_same=True, out_of_domain=True),
-            # snips=dict(path='UTCD-ood/snips', aspect='intent', eval_labels_same=True, out_of_domain=True),
-            # nlu_evaluation=dict(
-            #     path='UTCD-ood/nlu_evaluation', aspect='intent', eval_labels_same=True, out_of_domain=True
-            # )
+            amazon_polarity=dict(
+                path='UTCD-ood/amazon_polarity', aspect='sentiment', eval_labels_same=True, domain='out'
+            ),
+            finance_sentiment=dict(
+                path='UTCD-ood/finance_sentiment', aspect='sentiment', eval_labels_same=True, domain='out'
+            ),
+            yelp=dict(path='UTCD-ood/yelp', aspect='sentiment', eval_labels_same=True, domain='out'),
+            # Removed for too many options blow up GPT2's 1024 token length; TODO: remove, keep now cos plotting
+            arxiv=dict(path='UTCD-ood/arxiv', aspect='topic', eval_labels_same=True, domain='out'),
+            multi_eurlex=dict(
+              path='UTCD-ood/multi_eurlex', aspect='topic', eval_labels_same=True, domain='out'),
+            patent=dict(path='UTCD-ood/patent', aspect='topic', eval_labels_same=True, domain='out'),
+            consumer_finance=dict(
+                path='UTCD-ood/consumer_finance', aspect='topic', eval_labels_same=True, domain='out'
+            ),
+            banking77=dict(path='UTCD-ood/banking77', aspect='intent', eval_labels_same=True, domain='out'),
+            snips=dict(path='UTCD-ood/snips', aspect='intent', eval_labels_same=True, domain='out'),
+            nlu_evaluation=dict(
+                path='UTCD-ood/nlu_evaluation', aspect='intent', eval_labels_same=True, domain='out'
+            )
         ),
         dataset_ext='json'  # all in json
     ),
@@ -245,10 +243,10 @@ def extract_utcd_meta() -> Dict:
     d_n_toks = dict()
     for dnm, d_dset in d_dsets.items():
         logger.info(f'Processing {logi(dnm)}... ')
-        d_meta, d_avg_tok, d_n_toks[dnm] = path2dataset_info(d_dset)
-        d_dset['splits'] = d_meta
-        d_dset.update(d_avg_tok)
-
+        if d_dset['domain'] == 'in':
+            d_meta, d_avg_tok, d_n_toks[dnm] = path2dataset_info(d_dset)
+            d_dset['splits'] = d_meta
+            d_dset.update(d_avg_tok)
     dnms = sorted(d_dsets)  # All datasets, in- and out-of-domain, share the same dataset <=> id mapping
     config['UTCD']['dataset_name2id'] = {dnm: i for i, dnm in enumerate(dnms)}
     config['UTCD']['dataset_id2name'] = {i: dnm for i, dnm in enumerate(dnms)}

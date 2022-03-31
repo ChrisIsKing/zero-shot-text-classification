@@ -167,7 +167,7 @@ if __name__ == '__main__':
     def get_utcd_in():
         process_utcd_dataset(join=True)
         sanity_check('UTCD-in')
-    # get_utcd_in()
+    get_utcd_in()
 
     def get_utcd_ood():
         process_utcd_dataset(in_domain=True, join=True)
@@ -190,5 +190,3 @@ if __name__ == '__main__':
         ic(df)
         df.to_csv(os.path.join(PATH_BASE, DIR_PROJ, DIR_DSET, 'utcd-info.csv'), float_format='%.3f')
     # output_utcd_info()
-
-    # get_utcd_from_gdrive(domain='in')

@@ -79,7 +79,7 @@
                 "path": "UTCD/in-domain/emotion",
                 "aspect": "sentiment",
                 "eval_labels_same": true,
-                "out_of_domain": false,
+                "domain": "in",
                 "splits": {
                     "train": {
                         "labels": [
@@ -123,7 +123,7 @@
                 "path": "UTCD/in-domain/go_emotion",
                 "aspect": "sentiment",
                 "eval_labels_same": true,
-                "out_of_domain": false,
+                "domain": "in",
                 "splits": {
                     "train": {
                         "labels": [
@@ -211,7 +211,7 @@
                 "path": "UTCD/in-domain/sentiment_tweets_2020",
                 "aspect": "sentiment",
                 "eval_labels_same": true,
-                "out_of_domain": false,
+                "domain": "in",
                 "splits": {
                     "train": {
                         "labels": [
@@ -249,7 +249,7 @@
                 "path": "UTCD/in-domain/clinc_150",
                 "aspect": "intent",
                 "eval_labels_same": true,
-                "out_of_domain": false,
+                "domain": "in",
                 "splits": {
                     "train": {
                         "labels": [
@@ -581,7 +581,7 @@
                 "path": "UTCD/in-domain/sgd",
                 "aspect": "intent",
                 "eval_labels_same": false,
-                "out_of_domain": false,
+                "domain": "in",
                 "splits": {
                     "train": {
                         "labels": [
@@ -673,7 +673,7 @@
                 "path": "UTCD/in-domain/slurp",
                 "aspect": "intent",
                 "eval_labels_same": false,
-                "out_of_domain": false,
+                "domain": "in",
                 "splits": {
                     "train": {
                         "labels": [
@@ -871,7 +871,7 @@
                 "path": "UTCD/in-domain/ag_news",
                 "aspect": "topic",
                 "eval_labels_same": true,
-                "out_of_domain": false,
+                "domain": "in",
                 "splits": {
                     "train": {
                         "labels": [
@@ -911,7 +911,7 @@
                 "path": "UTCD/in-domain/dbpedia",
                 "aspect": "topic",
                 "eval_labels_same": true,
-                "out_of_domain": false,
+                "domain": "in",
                 "splits": {
                     "train": {
                         "labels": [
@@ -971,7 +971,7 @@
                 "path": "UTCD/in-domain/yahoo",
                 "aspect": "topic",
                 "eval_labels_same": true,
-                "out_of_domain": false,
+                "domain": "in",
                 "splits": {
                     "train": {
                         "labels": [
@@ -1018,30 +1018,110 @@
                 "re-lb_avg_tokens": 1.7997632858929267,
                 "bert-lb_avg_tokens": 4.7987714008094,
                 "gpt2-lb_avg_tokens": 2.9990227527146147
+            },
+            "amazon_polarity": {
+                "path": "UTCD-ood/amazon_polarity",
+                "aspect": "sentiment",
+                "eval_labels_same": true,
+                "domain": "out"
+            },
+            "finance_sentiment": {
+                "path": "UTCD-ood/finance_sentiment",
+                "aspect": "sentiment",
+                "eval_labels_same": true,
+                "domain": "out"
+            },
+            "yelp": {
+                "path": "UTCD-ood/yelp",
+                "aspect": "sentiment",
+                "eval_labels_same": true,
+                "domain": "out"
+            },
+            "arxiv": {
+                "path": "UTCD-ood/arxiv",
+                "aspect": "topic",
+                "eval_labels_same": true,
+                "domain": "out"
+            },
+            "multi_eurlex": {
+                "path": "UTCD-ood/multi_eurlex",
+                "aspect": "topic",
+                "eval_labels_same": true,
+                "domain": "out"
+            },
+            "patent": {
+                "path": "UTCD-ood/patent",
+                "aspect": "topic",
+                "eval_labels_same": true,
+                "domain": "out"
+            },
+            "consumer_finance": {
+                "path": "UTCD-ood/consumer_finance",
+                "aspect": "topic",
+                "eval_labels_same": true,
+                "domain": "out"
+            },
+            "banking77": {
+                "path": "UTCD-ood/banking77",
+                "aspect": "intent",
+                "eval_labels_same": true,
+                "domain": "out"
+            },
+            "snips": {
+                "path": "UTCD-ood/snips",
+                "aspect": "intent",
+                "eval_labels_same": true,
+                "domain": "out"
+            },
+            "nlu_evaluation": {
+                "path": "UTCD-ood/nlu_evaluation",
+                "aspect": "intent",
+                "eval_labels_same": true,
+                "domain": "out"
             }
         },
         "dataset_ext": "json",
         "dataset_name2id": {
             "ag_news": 0,
-            "clinc_150": 1,
-            "dbpedia": 2,
-            "emotion": 3,
-            "go_emotion": 4,
-            "sentiment_tweets_2020": 5,
-            "sgd": 6,
-            "slurp": 7,
-            "yahoo": 8
+            "amazon_polarity": 1,
+            "arxiv": 2,
+            "banking77": 3,
+            "clinc_150": 4,
+            "consumer_finance": 5,
+            "dbpedia": 6,
+            "emotion": 7,
+            "finance_sentiment": 8,
+            "go_emotion": 9,
+            "multi_eurlex": 10,
+            "nlu_evaluation": 11,
+            "patent": 12,
+            "sentiment_tweets_2020": 13,
+            "sgd": 14,
+            "slurp": 15,
+            "snips": 16,
+            "yahoo": 17,
+            "yelp": 18
         },
         "dataset_id2name": {
             "0": "ag_news",
-            "1": "clinc_150",
-            "2": "dbpedia",
-            "3": "emotion",
-            "4": "go_emotion",
-            "5": "sentiment_tweets_2020",
-            "6": "sgd",
-            "7": "slurp",
-            "8": "yahoo"
+            "1": "amazon_polarity",
+            "2": "arxiv",
+            "3": "banking77",
+            "4": "clinc_150",
+            "5": "consumer_finance",
+            "6": "dbpedia",
+            "7": "emotion",
+            "8": "finance_sentiment",
+            "9": "go_emotion",
+            "10": "multi_eurlex",
+            "11": "nlu_evaluation",
+            "12": "patent",
+            "13": "sentiment_tweets_2020",
+            "14": "sgd",
+            "15": "slurp",
+            "16": "snips",
+            "17": "yahoo",
+            "18": "yelp"
         }
     },
     "random-seed": 77
