@@ -19,20 +19,15 @@ def get_output_base():
 
 def get_utcd_from_gdrive(domain: str = 'in'):
     assert domain in ['in', 'out']
-    path_ext = os.path.join(PATH_BASE, DIR_PROJ, DIR_DSET)
-    path = os.path.join(path_ext, 'UTCD')
+    path = os.path.join(PATH_BASE, DIR_PROJ, DIR_DSET, 'UTCD')
     os.makedirs(path, exist_ok=True)
     if domain == 'in':
-        # url = 'https://drive.google.com/file/d/1V7IzdZ9HQbFUQz9NzBDjmqYBdPd9Yfe3/view?usp=sharing'
         url = 'https://drive.google.com/uc?id=1V7IzdZ9HQbFUQz9NzBDjmqYBdPd9Yfe3'
         fnm = os.path.join(path, 'in-domain')
     else:
-        # url = 'https://drive.google.com/file/d/1nd32_UrFbgoCgH4bDtFFD_YFZhzcts3x/view?usp=sharing'
         url = 'https://drive.google.com/uc?id=1nd32_UrFbgoCgH4bDtFFD_YFZhzcts3x'
         fnm = os.path.join(path, 'out-of-domain')
     fnm = f'{fnm}.zip'
-    from icecream import ic
-    ic(fnm, path, path_ext)
     gdown.download(url=url, output=fnm, quiet=False)
     with ZipFile(fnm, 'r') as zip_:
         zip_.extractall(path)
@@ -196,4 +191,4 @@ if __name__ == '__main__':
         df.to_csv(os.path.join(PATH_BASE, DIR_PROJ, DIR_DSET, 'utcd-info.csv'), float_format='%.3f')
     # output_utcd_info()
 
-    get_utcd_from_gdrive(domain='in')
+    # get_utcd_from_gdrive(domain='in')

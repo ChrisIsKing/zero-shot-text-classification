@@ -36,6 +36,7 @@ class ZsGPT2Tokenizer(GPT2TokenizerFast):
         ('pref_ques', '<|question|>'),  # Word embeddings
         ('pref_text', '<|text|>'),
         ('pref_answ', '<|answer|>'),
+        ('sep_answ', '<|answer_sep|>'),  # Separation between answers if multiple answers
         ('type_ques', '[QUES]'),  # Type embeddings
         ('type_text', '[TEXT]'),
         ('type_answ', '[ANSW]')
@@ -145,10 +146,8 @@ class ZsGPT2Tokenizer(GPT2TokenizerFast):
                 # `label` is shared across all datasets, map to local label within dataset
                 if self.cache_utcd is None:
                     path = os.path.join(utcd_util.get_output_base(), DIR_PROJ, DIR_DSET, 'processed', dataset_name)
-                    self.cache_utcd = datasets.load_from_disk(path)[split].features['label']
-                    from icecream import ic
-                    ic(self.cache_utcd)
-                    exit(1)
+                    # cos `Sequential`
+                    self.cache_utcd = datasets.load_from_disk(path)[split].features['labels'].feature
                 # The ordering indicates int<=>str label mapping, i.e., index is int label,
                 # see `process_utcd_dataset`
 
@@ -157,7 +156,7 @@ class ZsGPT2Tokenizer(GPT2TokenizerFast):
                     Map from local dataset label ordinal, in range(n_cls) to the descriptor
                     """
                     return descs[lb]
-                answer = self.cache_utcd.int2str(labels)
+                answers = [self.cache_utcd.int2str(lb) for lb in labels]
             else:  # TODO: didn't refactor this yet
                 self.cache: ZsGPT2Tokenizer.Cache
                 n_cls, label2description = (self.cache[dset_nm, mode][k] for k in ('n_classes', 'label2description'))
@@ -608,7 +607,7 @@ def get_all_setup(
 
     dset_tr_, dset_vl_ = get_dset(
         dataset_name=dataset_name,
-        d_map_func=dict(train=tr_map_func, test=vl_map_func), remove_columns=['label', 'text'],
+        d_map_func=dict(train=tr_map_func, test=vl_map_func), remove_columns=['text', 'labels'],
         n_sample=n_sample, random_seed=random_seed,
         fast='debug' not in model_name
     )
@@ -827,6 +826,7 @@ if __name__ == '__main__':
                 trainer.train()
             trainer.save_model(os.path.join(trainer.args.output_dir))
             # trainer.evaluate()
+        # train_(resume=False)
         # train(resume=True)
 
         def evaluate():
@@ -857,8 +857,8 @@ if __name__ == '__main__':
             # gating with `if trainer.is_local_process_zero()`
             # somehow causes `torchrun` to not terminate after 1st compute loss
             ic(trainer.evaluate(eval_dataset=vl))
-        evaluate_ood()
-    # train()
+        # evaluate_ood()
+    # training()
 
     def evaluating():
         def profile_evaluation():
@@ -866,4 +866,16 @@ if __name__ == '__main__':
         # profile_evaluation()
 
         evaluate_trained(in_domain=False, batch_size=48)
-    evaluating()
+    # evaluating()
+
+    def new_training():
+        dnm = 'UTCD-in'
+        nm = 'gpt2-medium'
+        n = 128
+
+        train_args = dict(num_train_epochs=3)
+        md, tkzer, dset_tr, dset_vl, trainer = get_all_setup(
+            nm, dnm, do_eval=False, custom_logging=True, n_sample=n, random_seed=seed, train_args=train_args
+        )
+        trainer.train()
+    new_training()
