@@ -2,6 +2,7 @@ from time import sleep
 from typing import Optional
 
 from torch.utils.data import DataLoader, Dataset
+from torch.utils.tensorboard import SummaryWriter
 from transformers import GPT2TokenizerFast
 from transformers import TrainerCallback, Trainer
 from transformers.trainer_utils import EvalLoopOutput
@@ -23,30 +24,13 @@ class MyLoggingCallback(TrainerCallback):
     """
     def __init__(
             self, parent_trainer: Trainer, do_eval=True,
-            name='Zero-shot GPT-2 Training', interactive=True, save_plot=True
+            name='Zero-shot GPT-2 Training'
     ):
         """
         :param parent_trainer: The parent Trainer
         :param name: Logger name
         """
-        self.logger = logging.getLogger(name)
-        self.logger.setLevel(logging.DEBUG)
-        had_handler = False
-        hd_attr_nm = 'name_for_my_logging'  # Use a name that's unlikely to have collisions
-        for hd in self.logger.handlers:  # Set console output logging
-            if hasattr(hd, hd_attr_nm) and getattr(hd, hd_attr_nm) == name:
-                had_handler = True
-        if not had_handler:
-            handler = logging.StreamHandler(stream=sys.stdout)  # For my own coloring
-            handler.setLevel(logging.DEBUG)
-            handler.setFormatter(MyFormatter(with_color=True))
-            # For ipython compatibility, potentially update it instead of adding new handler
-            setattr(handler, hd_attr_nm, name)
-            self.logger.addHandler(handler)
-        self.logger_fl = logging.getLogger('trainer-file-write')  # Write out to file
-        self.logger_fl.setLevel(logging.DEBUG)
-        self.fl_handler = None
-
+        self.name = name
         self.out_dict = None
         self.out_dict_tr = None
         self.is_compute_loss_on_train = True
@@ -56,6 +40,8 @@ class MyLoggingCallback(TrainerCallback):
 
         self.trainer = parent_trainer
         self.do_eval = do_eval
+        if do_eval:
+            raise NotImplementedError('TODO: implement eval logging')
         args, dset_tr__, dset_vl_, md_, tokzer = (
             getattr(parent_trainer, k) for k in ['args', 'train_dataset', 'eval_dataset', 'model', 'tokenizer']
         )
@@ -72,39 +58,25 @@ class MyLoggingCallback(TrainerCallback):
             ('learning rate', lr), ('batch shape', (self.bsz, seq_max_len)), ('#epochs', n_ep), ('#steps', self.n_step)
         ])
         self.called_val_init = False
-        self.log_hist: List[Dict] = []
 
-        self.log_fnm_tpl = f'{name}, n={n_data}, l={md_sz}, a={lr}, bsz={self.bsz}, n_ep={n_ep}, {{}}'
-        self.log_fnm = None  # Current logging file name template & file instance during training
+        self.save_time = now(for_path=True)
+        self.logger, self.logger_fl, self.tb_writer = None, None, None
+        self.log_fnm = f'{name}, n={n_data}, l={md_sz}, a={lr}, bsz={self.bsz}, n_ep={n_ep}, {self.save_time}'
         paths_ = self.trainer.args.output_dir.split(os.sep)
         path_proj = paths_[paths_.index(DIR_PROJ):]
-        self.out_dir = os.path.join(PATH_BASE, *path_proj)  # Keep the logging & plotting inside project directory
+        # Keep the logging & plotting inside project directory, not potentially in `scratch`
+        self.output_dir = os.path.join(PATH_BASE, *path_proj)
 
         self.train_begin, self.train_end = None, None
         self.t_strt, self.t_end = None, None
 
-        self.interactive = interactive
-        # self.plot = TrainPlot(
-        #     title=name, train_args=parent_trainer.args, out_dir=self.out_dir, meta=self.train_meta, save_plot=save_plot
-        # )
-
-    def _update_log_handler(self, log_fnm: str):
-        self.logger_fl.removeHandler(self.fl_handler)  # Remove prior `FileHandler`, prep for next potential run
-        self.fl_handler = None
-
-        # Set file write logging
-        os.makedirs(self.out_dir, exist_ok=True)
-        # For only 1 of the processes if distributed training
-        self.fl_handler = logging.FileHandler(os.path.join(self.out_dir, log_fnm))
-        self.fl_handler.setLevel(logging.DEBUG)
-        self.fl_handler.setFormatter(MyFormatter(with_color=False))
-        self.logger_fl.addHandler(self.fl_handler)
-
     def on_train_begin(self, args: TrainingArguments, state, control, **kwargs):
         if self.trainer.is_local_process_zero():  # For distributed training; TODO: support multi machine?
-            self.log_fnm = self.log_fnm_tpl.format(now(for_path=True))
-            self._update_log_handler(f'train, {self.log_fnm}.log')
-
+            self.logger: logging.Logger = get_logger(self.name)
+            self.logger_fl = get_logger(
+                name=self.name, typ='file-write', file_path=os.path.join(self.output_dir, f'{self.log_fnm}.log')
+            )
+            self.tb_writer = SummaryWriter(os.path.join(self.output_dir, f'tb - {self.log_fnm}'))
             conf = self.trainer.model.config.to_dict()
             args = self.trainer.args.to_dict()
             sleep(2)  # otherwise, logging messages missing
@@ -116,8 +88,6 @@ class MyLoggingCallback(TrainerCallback):
             self.t_strt = datetime.datetime.now()
 
             self.train_begin = True
-            # if self.interactive:
-            #     self.plot.make_plot()
 
     def on_train_end(self, args: TrainingArguments, state, control, **kwargs):
         if self.train_begin:
@@ -129,17 +99,8 @@ class MyLoggingCallback(TrainerCallback):
             self.logger.info(f'Training completed in {logi(t)} ')
             self.logger_fl.info(f'Training completed in {t} ')
 
-            # if self.interactive:
-            #     self.plot.finish()
-            # else:  # If didn't show plot before
-            #     self.plot.plot_single(self.log_hist)
-
     def on_evaluate(self, args: TrainingArguments, state, control, **kwargs):
         if self.trainer.is_local_process_zero():  # Similarly to `on_train_begin`
-            if self.trainer.mode == 'eval':
-                self.log_fnm = self.log_fnm_tpl.format(now(for_path=True))
-                self._update_log_handler(f'eval, {self.log_fnm}.log')
-
             dl_vl: DataLoader
             model, dl_vl = kwargs['model'], kwargs['eval_dataloader']
             dset_vl: Dataset = dl_vl.dataset
@@ -156,13 +117,17 @@ class MyLoggingCallback(TrainerCallback):
 
     def on_log(self, args: TrainingArguments, state, control, logs: Dict = None, **kwargs):
         def log_update(d_out):
+            from icecream import ic
+            # ic(d_out, self.train_begin)
+            if self.train_begin:
+                d_out_ = {k: v for k, v in d_out.items() if not any(k_ in k for k_ in ['epoch', 'step'])}
+                self.tb_writer.add_scalars(main_tag='Train', tag_scalar_dict=d_out_, global_step=d_out['step'])
+                ic(d_out_)
+            d_out = pretty_log_dict(d_out, ref=self.train_meta, prefix='train')
             self.logger.info(log_dict(d_out))
             self.logger_fl.info(log_dict_nc(d_out))
-            self.log_hist.append(d_out)
-            # if self.interactive:
-            #     self.plot.update(self.log_hist)
 
-        def acc_stats2dict(out_dict: Dict, prefix: str) -> Dict:
+        def acc_stats2dict(out_dict: Dict) -> Dict:
             """
             Convert `acc_meta`, `classification_acc_meta` dict to stats for logging
             """
@@ -171,19 +136,19 @@ class MyLoggingCallback(TrainerCallback):
                 k: sum(d[k] for d in out_dict[self.k_cls]) for k in out_dict[self.k_cls][0].keys()
                 if k in ['n_acc', 'n_total']
             }
-            return {
-                f'{prefix}_ntp_acc': stats_acc['n_acc'] / stats_acc['n_total'],
-                f'{prefix}_cls_acc': (
-                    (stats_acc_cls['n_acc']/stats_acc_cls['n_total']) if stats_acc_cls['n_total'] != 0 else 0
-                )
-            }
+            del out_dict[self.k_acc]
+            del out_dict[self.k_cls]
+            return dict(
+                ntp_acc=stats_acc['n_acc'] / stats_acc['n_total'],
+                cls_acc=(stats_acc_cls['n_acc']/stats_acc_cls['n_total']) if stats_acc_cls['n_total'] != 0 else 0
+            )
 
         def set_eval_cls_acc():  # TODO: support gradient accumulation
             stats_cls_acc: List[Dict] = self.out_dict.pop(self.k_cls_eval)
             stats_cls_acc: Dict = {k: sum(d[k] for d in stats_cls_acc) for k in stats_cls_acc[0]}
             self.out_dict = {
                 **self.out_dict,
-                **acc_stats2dict(stats_cls_acc, prefix='eval')
+                **acc_stats2dict(stats_cls_acc)
             }
 
         def log_default(d_stats: Dict):
@@ -204,7 +169,7 @@ class MyLoggingCallback(TrainerCallback):
                                 tr_acc, tr_loss, n_ep = (logs[k] for k in ('acc', 'loss', 'epoch'))
                                 self.out_dict: Dict[str, Union[str, int, float, List]] = {
                                     **dict(step=step, epoch=0, train_acc=tr_acc, train_loss=tr_loss,),
-                                    **acc_stats2dict(logs[self.k_cls], prefix='train')
+                                    **acc_stats2dict(logs[self.k_cls])
                                 }
 
                                 # Prep for Trainer internal evaluation call
@@ -238,7 +203,7 @@ class MyLoggingCallback(TrainerCallback):
                                     # Now is the 1st call, after logging for last batch completes
                                     self.out_dict = {
                                         **dict(step=step, train_acc=acc, train_loss=loss),
-                                        **acc_stats2dict(logs[self.k_cls], prefix='train')
+                                        **acc_stats2dict(logs[self.k_cls])
                                     }
                             else:  # On eval set, keep track like above
                                 if self.k_cls_eval not in self.out_dict:
@@ -298,15 +263,11 @@ class MyLoggingCallback(TrainerCallback):
                                 self.out_dict_tr[self.k_cls].append(logs[self.k_cls])
                     elif 'loss' in logs:  # The Trainer default training loss logging
                         # Take the averaging by parent `Trainer` for granted
-                        self.out_dict_tr.update(acc_stats2dict(self.out_dict_tr, prefix='train'))
-                        del self.out_dict_tr[self.k_acc]
-                        del self.out_dict_tr[self.k_cls]
-                        self.out_dict_tr['learning_rate'] = logs['learning_rate']
-                        self.out_dict_tr['train_loss'] = logs['loss']
+                        self.out_dict_tr.update(acc_stats2dict(self.out_dict_tr))
+                        self.out_dict_tr['lr'], self.out_dict_tr['loss'] = logs['learning_rate'], logs['loss']
                         self.out_dict_tr['epoch'] = state.epoch
                         if 'step' in self.out_dict_tr:  # 1-indexed
                             self.out_dict_tr['step'] += 1
-                        self.out_dict_tr = pretty_log_dict(self.out_dict_tr, ref=self.train_meta)
                         log_update(self.out_dict_tr)
                         self.out_dict_tr = None  # Rest for next global step
                     elif any('runtime' in k for k in logs.keys()):
@@ -317,10 +278,6 @@ class MyLoggingCallback(TrainerCallback):
             else:
                 assert self.trainer.mode == 'eval'
                 log_default(logs)
-                # if 'src' not in logs:  # Skip custom compute_loss logging
-                #     log_default(logs)
-        # if state.is_local_process_zero:
-        #     self.logger.info(log_dict(logs) if isinstance(logs, dict) else logs)
 
 
 class ColoredPrinterCallback(TrainerCallback):
@@ -452,7 +409,7 @@ class CustomTrainer(Trainer):
         self.compute_cls_acc = compute_cls_acc
 
         self.tokenizer = tokenizer  # TODO: generalize to more tokenizers?
-        self.mode: str = None
+        self.mode = None
 
         self.post_init()
         # Sanity check for distributed training
@@ -465,7 +422,7 @@ class CustomTrainer(Trainer):
         ]
 
         if self.custom_logging:
-            self.add_callback(MyLoggingCallback(self, do_eval=self.args.do_eval, interactive=False))
+            self.add_callback(MyLoggingCallback(self, do_eval=self.args.do_eval))
         else:
             self.add_callback(ColoredPrinterCallback())
 

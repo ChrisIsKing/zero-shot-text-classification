@@ -421,11 +421,11 @@ def get_logger(name: str, typ: str = 'stdout', file_path: str = None) -> logging
     :param file_path: File path for file-write logging
     """
     assert typ in ['stdout', 'file-write']
-    logger = logging.getLogger(name)
+    logger = logging.getLogger(f'{name} file write' if typ == 'file-write' else name)
     logger.handlers = []  # A crude way to remove prior handlers, ensure only 1 handler per logger
     logger.setLevel(logging.DEBUG)
     if typ == 'stdout':
-        handler = logging.StreamHandler(stream=sys.stdout)  # For my own coloring
+        handler = logging.StreamHandler(stream=sys.stdout)  # stdout for my own coloring
     else:
         os.makedirs(os.path.dirname(file_path), exist_ok=True)
         handler = logging.FileHandler(file_path)

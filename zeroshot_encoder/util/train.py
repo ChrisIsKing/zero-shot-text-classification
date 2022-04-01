@@ -43,8 +43,14 @@ def _pretty_single(key: str, val, ref: Dict = None):
         return val
 
 
-def pretty_log_dict(d_log: Dict, ref: Dict = None):
-    return {k: _pretty_single(k, v, ref=ref) for k, v in d_log.items()}
+def prefix_key(key: str, prefix: str = ''):
+    if prefix:
+        prefix = f'{prefix}/'
+    return f'{prefix}{key}' if (prefix and not any(k_ in key for k_ in ['epoch', 'step'])) else key
+
+
+def pretty_log_dict(d_log: Dict, ref: Dict = None, prefix: str = ''):
+    return {prefix_key(k, prefix=prefix): _pretty_single(k, v, ref=ref) for k, v in d_log.items()}
 
 
 class TrainPlot:
