@@ -7,6 +7,7 @@ from typing import Any
 from warnings import warn
 from collections import defaultdict
 
+import pandas as pd
 from torch import nn
 from sklearn.metrics import classification_report
 import transformers
@@ -23,7 +24,7 @@ import datasets
 from zeroshot_encoder.util import *
 from zeroshot_encoder.util.train import MyEvalPrediction
 import zeroshot_encoder.util.utcd as utcd_util
-from zeroshot_encoder.preprocess import get_dset
+from zeroshot_encoder.preprocess import get_dataset
 
 
 MODEL_NAME = 'gpt2-nvidia'
@@ -119,17 +120,23 @@ class ZsGPT2Tokenizer(GPT2TokenizerFast):
 
     def __call__(
             self, samples: Dict[str, Union[List, str, int]],
-            dataset_name: str = 'UTCD', mode: str = 'train', for_prediction: bool = False,
+            dataset_name: str = 'UTCD', split: str = 'train', mode: str = False,
             **kwargs
     ):
         """
         :param samples: Data sample(s) with keys [`dataset_name`, `label`, `text`]
             Each value an element or a list of elements
-        :param for_prediction: If true, the answer part is not tokenized,
-            the text portion is truncated such that the label with largest # of ids may be generated;
-            the batch is not padded
-                i.e. Intended for prediction, see `evaluate_trained`
+        :param split: One of [`train`, `test`]
+            Shouldn't matter for UTCD datasets, see `process_utcd_dataset`
+        :param mode: one of [`train`, `inference`, `stats`],
+            If `inference`, the answer part is not tokenized
+                the text portion is truncated such that the label with largest # of ids may be generated;
+                the batch is not padded
+                    i.e. Intended for prediction, see `evaluate_trained`
+            If `stats`, the entire sample is tokenized without truncation
         """
+        modes = ['train', 'inference', 'stats']
+        assert mode in modes, f'Unexpected mode: Expect one of {logi(modes)}, got {logi(mode)}'
         max_length = kwargs.get('max_length', None)
         is_batched = isinstance(samples['text'], (tuple, list))
         if max_length is None:
@@ -142,13 +149,12 @@ class ZsGPT2Tokenizer(GPT2TokenizerFast):
         def call_single(i, dataset_id: int, text: str, labels: List[int]):
             dset_nm: str = config('UTCD.dataset_id2name')[dataset_id]
             if 'UTCD' in dataset_name:
-                split = 'train' if mode == 'train' else 'test'
                 descs = config(f'UTCD.datasets.{dset_nm}.splits.{split}.labels')  # Descriptive labels
                 n_cls = len(descs)
                 # `label` is shared across all datasets, map to local label within dataset
                 if self.cache_utcd is None:
                     path = os.path.join(utcd_util.get_output_base(), DIR_PROJ, DIR_DSET, 'processed', dataset_name)
-                    # cos `Sequential`
+                    # cos `Sequential`; each split, the label is the same
                     self.cache_utcd = datasets.load_from_disk(path)[split].features['labels'].feature
                 # The ordering indicates int<=>str label mapping, i.e., index is int label,
                 # see `process_utcd_dataset`
@@ -162,11 +168,11 @@ class ZsGPT2Tokenizer(GPT2TokenizerFast):
             else:  # TODO: didn't refactor this yet
                 raise NotImplementedError('Tokenization for non-UTCD datasets is not implemented yet')
                 self.cache: ZsGPT2Tokenizer.Cache
-                n_cls, label2description = (self.cache[dset_nm, mode][k] for k in ('n_classes', 'label2description'))
+                n_cls, label2description = (self.cache[dset_nm, split][k] for k in ('n_classes', 'label2description'))
 
                 def lb_int2desc(lb: int) -> str:
                     return label2description[lb]
-                if for_prediction:
+                if mode:
                     answers = ''  # indexing wouldn't work cos multi label; Will not be used anyway, see below
                 else:
                     answers = label2description[labels]
@@ -186,11 +192,11 @@ class ZsGPT2Tokenizer(GPT2TokenizerFast):
             # exit(1)
             ln_q, ln_t, ln_a = len(ids_ques), len(ids_text), len(ids_answ)
 
-            if for_prediction:
+            if mode == 'inference':
                 # TODO
                 raise NotImplementedError('Not implemented, how much tokens to reserve during inference?')
                 ln_cont = (1+ln_q+1) + (1+ln_t+1) + 1  # for `pref_answ`
-                max_label_id_length = self.cache[dset_nm, mode]['max_label_id_length']
+                max_label_id_length = self.cache[dset_nm, split]['max_label_id_length']
                 # The maximum number of tokens that could fit for context/prompt
                 room = self.model_max_length-1 - max_label_id_length  # Also needs to generate `EOS`
                 if ln_cont > room:
@@ -200,7 +206,7 @@ class ZsGPT2Tokenizer(GPT2TokenizerFast):
                     warn(f'Sample without answer longer than model max sequence length and dataset {dset_nm} labels: '
                          f'{ln_cont} > {self.model_max_length} - Text portion cropped: {ln_t} > {ln_t_} for inference')
                     ids_text = ids_text[:ln_t_]
-            else:
+            elif mode == 'train':
                 ln_ids = ln_q + ln_t + ln_a
                 if ln_ids > self.max_len_single_sentence:
                     # Crop the text portion, keep question and label intact,
@@ -210,6 +216,7 @@ class ZsGPT2Tokenizer(GPT2TokenizerFast):
                     warn(f'Sample with answer longer than model max sequence length for dataset {dset_nm}: '
                          f'{ln_ids+6} > {self.model_max_length} - Text portion cropped: {ln_t} > {ln_t_} for training')
                     ids_text = ids_text[:ln_t_]
+            # else, `stats`, no truncation
             # Number of contex tokens, up until answer token, inclusive
             n_ques, n_text, n_answ = (1+len(ids_ques)+1), (1+len(ids_text)+1), (1+len(ids_answ)+1)
             n_cont = n_ques + n_text + 1
@@ -221,7 +228,7 @@ class ZsGPT2Tokenizer(GPT2TokenizerFast):
             tids = [self.enc_spec(self.question_type_token)] * n_ques + \
                    [self.enc_spec(self.text_type_token)] * n_text + \
                    [self.enc_spec(self.answer_type_token)] * n_answ
-            if for_prediction:
+            if mode:
                 ids, tids = ids[:-(n_answ-1)], tids[:-(n_answ-1)]
                 assert len(ids) == (n_ques+n_text+1)  # sanity check
             msks = [1] * len(ids)  # Encode ids are attended for CLM
@@ -234,19 +241,24 @@ class ZsGPT2Tokenizer(GPT2TokenizerFast):
                 """
                 Pad to max_length, truncate if necessary
                 """
-                if name == 'attention_mask':
-                    int_pad = 0  # Ignore in attention
-                elif name == 'position_ids':
-                    # Arbitrary, since will be ignored, but needs to be within `n_token` for embedding mapping
-                    int_pad = 0
+                if mode == 'stats':  # no padding
+                    return ints
                 else:
-                    # `input_id`s set to `pad_token` will be ignored by `DataCollatorForLanguageModeling`
-                    int_pad = self.enc_spec(self.pad_token)
-                return ints[:max_length] if len(ints) > max_length else (ints + [int_pad] * (max_length - len(ints)))
-            out = {k: (ints if for_prediction else pad(ints, k)) for k, ints in ((
+                    if name == 'attention_mask':
+                        int_pad = 0  # Ignore in attention
+                    elif name == 'position_ids':
+                        # Arbitrary, since will be ignored, but needs to be within `n_token` for embedding mapping
+                        int_pad = 0
+                    else:
+                        # `input_id`s set to `pad_token` will be ignored by `DataCollatorForLanguageModeling`
+                        int_pad = self.enc_spec(self.pad_token)
+                    return ints[:max_length] if len(ints) > max_length else (ints + [int_pad] * (max_length - len(ints)))
+            out = {k: (ints if mode else pad(ints, k)) for k, ints in ((
                 ('input_ids', ids), ('attention_mask', msks), ('token_type_ids', tids), ('position_ids', pids)
             ))}
             out['dataset_id'] = dataset_id  # For computing zero-shot classification accuracy
+            if mode == 'stats':  # the number of tokens for just the text part
+                out['ids_text'] = ids_text
             return out
         # See `zeroshot_encoder.util.util.py::process_utcd_dataset`
         k_label = 'label' if 'label' in samples else 'labels'
@@ -424,8 +436,8 @@ class ZsGPT2LMHeadModel(GPT2LMHeadModel):
 
 
 def tokenize_func(
-        tokenizer_: ZsGPT2Tokenizer, dataset_name='ag_news', max_length=None,
-        mode: str = 'train', for_prediction: bool = False
+        tokenizer: ZsGPT2Tokenizer, dataset_name='ag_news', max_length=None,
+        split: str = 'train', mode: str = 'train'
 ):
     def _tokenize_func(sample: Dict[str, List]):
         """
@@ -434,9 +446,7 @@ def tokenize_func(
         if 'UTCD' not in dataset_name:
             sample['dataset_id'] = [config('UTCD.dataset_name2id')[dataset_name]] * len(sample['text'])
         # Otherwise, `dataset_id` already part of input
-        return tokenizer_(
-            sample, dataset_name=dataset_name, max_length=max_length, mode=mode, for_prediction=for_prediction
-        )
+        return tokenizer(sample, dataset_name=dataset_name, max_length=max_length, split=split, mode=mode)
     return _tokenize_func
 
 
@@ -611,14 +621,14 @@ def get_all_setup(
         # save_gpu_mem = True  # Gradient checkpointing still needed - otherwise doesn't fit in 44G GPU
         model_, tokenizer_, data_collator_ = get_model_n_tokenizer(model_name, save_gpu_memory=save_gpu_mem)
         train_args_ = get_train_setup(model_name, do_eval=do_eval, train_args=train_args, save_gpu_memory=save_gpu_mem)
-        tr_map_func = tokenize_func(tokenizer_, dataset_name=dataset_name, mode='train')
-        vl_map_func = tokenize_func(tokenizer_, dataset_name=dataset_name, mode='test')
+        tr_map_func = tokenize_func(tokenizer_, dataset_name=dataset_name, split='train')
+        vl_map_func = tokenize_func(tokenizer_, dataset_name=dataset_name, split='test')
 
     if dataset_args is None:
         dataset_args = dict()
-    dset_tr_, dset_vl_ = get_dset(
+    dset_tr_, dset_vl_ = get_dataset(
         dataset_name=dataset_name,
-        d_map_func=dict(train=tr_map_func, test=vl_map_func), remove_columns=['text', 'labels'],
+        map_func=dict(train=tr_map_func, test=vl_map_func), remove_columns=['text', 'labels'],
         n_sample=n_sample, random_seed=random_seed,
         fast='debug' not in model_name, **dataset_args
     )
@@ -631,6 +641,72 @@ def get_all_setup(
         **trainer_args
     )
     return model_, tokenizer_, dset_tr_, dset_vl_, trainer_
+
+
+def plot_dataset_token_length_stats(domain: str = 'in'):
+    domains = ['in', 'out']
+    assert domain in domains, f'Domain error: expect one of {domains}, got {domain}'
+    tokenizer = get_model_n_tokenizer('gpt2-medium')[1]
+    # `split` shouldn't matter
+    func = tokenize_func(tokenizer=tokenizer, dataset_name=f'UTCD-{domain}', split='train', mode='stats')
+    did2nm = config('UTCD.dataset_id2name')
+
+    def map_func(examples):
+        tokenized = func(examples)
+        # txt = examples['text']
+        # for i, t in enumerate(txt):
+        #     ic(t, tokenized['ids_text'][i])
+        # ic(examples, dict(
+        #     n_token=[len(ids) for ids in tokenized['input_ids']],
+        #     n_token_text=[len(ids) for ids in tokenized['ids_text']],
+        #     dataset_id=tokenized['dataset_id']
+        # ))
+        # exit(1)
+        return dict(
+            n_token=[len(ids) for ids in tokenized['input_ids']],
+            n_token_text=[len(ids) for ids in tokenized['ids_text']],
+            dataset_name=[did2nm[i] for i in tokenized['dataset_id']]
+        )
+        # for ids__ in ids_:
+        #     ic(len(ids__))
+        # ic(type(ids_), len(ids_))
+        # exit(1)
+    dset_tr, dset_vl = get_dataset(
+        dataset_name=f'UTCD-{domain}',
+        map_func=map_func, remove_columns=['text', 'labels'],
+        # filter_func=lambda sample: len(sample['labels']) > 1,  # TODO: debugging
+        n_sample=1024*16,
+        random_seed=77,
+        fast=True
+    )
+    # discard training set for out-of-domain
+    dset = datasets.concatenate_datasets([dset_tr, dset_vl]) if domain == 'in' else dset_tr
+    # ic(dset_tr, dset_tr[:20])
+    df = pd.DataFrame(dset[:])
+    ic(df)
+
+    fig, axes = plt.subplots(2, 2, figsize=(16, 9))
+    # args_bar = dict(discrete=True, kde=True)
+    args_bar = dict(kde=True)
+    args_cum = dict(cumulative=True, fill=False, common_norm=False, stat='density', element='step', )
+    for i_row, i_col in itertools.product(range(2), range(2)):
+        ax = axes[i_row, i_col]
+        legend = i_row == 1 and i_col == 0
+        args = dict(palette='husl', legend=legend, common_norm=False, ax=ax, stat='density')
+        # lgd = ax.legend()
+        # ic(list(lgd.get_texts()))
+        # ic(lgd.get_title())
+        args |= args_bar if i_col == 0 else args_cum
+        sns.histplot(data=df, x='n_token' if i_row == 0 else 'n_token_text', hue='dataset_name', **args)
+        ax.set(xlabel='#token' if i_row == 0 else '#token for text', ylabel=None)
+    # lgd.get_texts()[0].set_text('make it short')
+    title = f'GPT2 token length distribution for {domain}-domain'
+    plt.suptitle(title)
+    fig.supylabel('density')
+
+    output_dir = os.path.join(PATH_BASE, DIR_PROJ, 'plot')
+    os.makedirs(output_dir, exist_ok=True)
+    plt.savefig(os.path.join(output_dir, f'{title}, {now(for_path=True)}.png'), dpi=300)
 
 
 def load_trained(epoch: int = 3) -> ZsGPT2LMHeadModel:
@@ -692,9 +768,9 @@ def evaluate_trained(in_domain: bool = True, batch_size: int = 48, n_ep: int = 3
         # predictions and label descriptions all to lower case to be more lenient
         lb2id.update({lb.lower(): i for i, lb in enumerate(labels)})
         dnm_disk = f'{dnm_}-label-grouped' if is_multi_label else dnm_
-        dset = get_dset(  # Get evaluation set only
+        dset = get_dataset(  # Get evaluation set only
             dataset_name=dnm_disk, splits='test',
-            d_map_func=dict(test=tokenize_func(tkzer, dataset_name=dnm_, mode='test', for_prediction=True)),
+            map_func=dict(test=tokenize_func(tkzer, dataset_name=dnm_, split='test', for_prediction=True)),
             remove_columns='text', n_sample=None, from_disk=True
         )[0]
 
@@ -884,4 +960,7 @@ if __name__ == '__main__':
             train_args=train_args, dataset_args=dataset_args
         )
         trainer.train()
-    new_training()
+    # new_training()
+
+    plot_dataset_token_length_stats(domain='in')
+

@@ -326,11 +326,10 @@ def plot_utcd_n_toks(d_n_toks: Dict, save=True):
         else:
             xticks = ax.get_xticks()
             ax.set_xticks(list(range(math.floor(xticks.min()), math.ceil(xticks.max()) + 1)))
-    title = 'Histogram of #tokens per sequence'
+    title = 'Tokenization length distribution across datasets'
     plt.suptitle(title)
-    plt.suptitle('Tokenization length distribution across datasets')
     fig.supxlabel('#token')
-    fig.supylabel('density')
+    fig.supylabel('Density')
     if save:
         output_dir = os.path.join(PATH_BASE, DIR_PROJ, 'chore', 'plot')
         os.makedirs(output_dir, exist_ok=True)

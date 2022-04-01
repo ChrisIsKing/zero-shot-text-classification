@@ -117,12 +117,13 @@ class MyLoggingCallback(TrainerCallback):
 
     def on_log(self, args: TrainingArguments, state, control, logs: Dict = None, **kwargs):
         def log_update(d_out):
-            from icecream import ic
-            # ic(d_out, self.train_begin)
             if self.train_begin:
                 d_out_ = {k: v for k, v in d_out.items() if not any(k_ in k for k_ in ['epoch', 'step'])}
-                self.tb_writer.add_scalars(main_tag='Train', tag_scalar_dict=d_out_, global_step=d_out['step'])
-                ic(d_out_)
+                step__ = d_out['step']
+                for k, v in d_out_.items():
+                    self.tb_writer.add_scalar(f'Train/{k}', v, step__)
+                    # This creates plots not under the same plot
+                # self.tb_writer.add_scalar(main_tag='Train', tag_scalar_dict=d_out_, global_step=d_out['step'])
             d_out = pretty_log_dict(d_out, ref=self.train_meta, prefix='train')
             self.logger.info(log_dict(d_out))
             self.logger_fl.info(log_dict_nc(d_out))
