@@ -1,11 +1,50 @@
-from typing import NamedTuple
+import os
+from typing import NamedTuple, Dict, Tuple, List, Union
 
+import numpy as np
+import pandas as pd
 from transformers import TrainingArguments
+import matplotlib.pyplot as plt
+import seaborn as sns
 
-from zeroshot_encoder.util import *
+from zeroshot_encoder.util import LN_KWARGS, now
 
 
 PT_LOSS_PAD = -100  # Pytorch indicator value for ignoring loss, used in huggingface for padding tokens
+
+
+def _pretty_single(key: str, val, ref: Dict = None):
+    if key in ['step', 'epoch']:
+        k = next(iter(k for k in ref.keys() if key in k))
+        lim = ref[k]
+        assert isinstance(val, (int, float))
+        len_lim = len(str(lim))
+        if isinstance(val, int):
+            s_val = f'{val:>{len_lim}}'
+        else:
+            fmt = f'%{len_lim+4}.3f'
+            s_val = fmt % val
+        return f'{s_val}/{lim}'  # Pad integer
+    elif 'loss' in key:
+        return f'{round(val, 4):7.4f}'
+    elif any(k in key for k in ('acc', 'recall', 'auc')):
+        def _single(v):
+            return f'{round(v * 100, 2):6.2f}' if v is not None else '-'
+
+        if isinstance(val, list):
+            return [_single(v) for v in val]
+        elif isinstance(val, dict):
+            return {k: _single(v) for k, v in val.items()}
+        else:
+            return _single(val)
+    elif 'learning_rate' in key or 'lr' in key:
+        return f'{round(val, 7):.3e}'
+    else:
+        return val
+
+
+def pretty_log_dict(d_log: Dict, ref: Dict = None):
+    return {k: _pretty_single(k, v, ref=ref) for k, v in d_log.items()}
 
 
 class TrainPlot:
@@ -38,7 +77,7 @@ class TrainPlot:
         self.title_plot = rf'{title}, $n={n_data}$, #position = ${md_sz}$ ' \
                           + rf'$\alpha = {lr}$, batch shape=${bsz}$, #epochs=${n_ep}$, #steps=${n_step}$'
         self.title_save = f'{title}, n={n_data}, l={md_sz}, a={lr}, bsz={bsz}, ' \
-                          f'n_ep={n_ep}, n_stp={n_step}, {now(sep="-")}'
+                          f'n_ep={n_ep}, n_stp={n_step}, {now(for_path=True)}'
 
     def make_plot(self):
         fig, self.axes = plt.subplots(3, 1, figsize=(16, 9))

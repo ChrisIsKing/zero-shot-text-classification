@@ -21,6 +21,7 @@ from transformers.training_args import OptimizerNames
 import datasets
 
 from zeroshot_encoder.util import *
+from zeroshot_encoder.util.train import MyEvalPrediction
 import zeroshot_encoder.util.utcd as utcd_util
 from zeroshot_encoder.preprocess import get_dset
 
@@ -94,6 +95,7 @@ class ZsGPT2Tokenizer(GPT2TokenizerFast):
         self.boq_token, self.bot_token, self.boa_token = (  # begin of (question, text, answer) tokens
             ZsGPT2Tokenizer.SPEC_TOKS[k] for k in ('pref_ques', 'pref_text', 'pref_answ')
         )  # Special tokens
+        self.ques_sep_token = ZsGPT2Tokenizer.SPEC_TOKS['sep_answ']
         self.question_type_token, self.text_type_token, self.answer_type_token = (
             ZsGPT2Tokenizer.SPEC_TOKS[k] for k in ('type_ques', 'type_text', 'type_answ')
         )  # Type tokens
@@ -158,15 +160,16 @@ class ZsGPT2Tokenizer(GPT2TokenizerFast):
                     return descs[lb]
                 answers = [self.cache_utcd.int2str(lb) for lb in labels]
             else:  # TODO: didn't refactor this yet
+                raise NotImplementedError('Tokenization for non-UTCD datasets is not implemented yet')
                 self.cache: ZsGPT2Tokenizer.Cache
                 n_cls, label2description = (self.cache[dset_nm, mode][k] for k in ('n_classes', 'label2description'))
 
                 def lb_int2desc(lb: int) -> str:
                     return label2description[lb]
                 if for_prediction:
-                    answer = ''  # indexing wouldn't work cos multi label; Will not be used anyway, see below
+                    answers = ''  # indexing wouldn't work cos multi label; Will not be used anyway, see below
                 else:
-                    answer = label2description[labels]
+                    answers = label2description[labels]
 
             idx_lbs = np.arange(n_cls)
             np.random.shuffle(idx_lbs)
@@ -175,10 +178,17 @@ class ZsGPT2Tokenizer(GPT2TokenizerFast):
 
             ids_ques = self._call_paren(question, **kwargs)
             ids_text = self._call_paren(text, **kwargs)
-            ids_answ = self._call_paren(answer, **kwargs)
+            id_sep = self.enc_spec(self.ques_sep_token)
+            ids_answ = [self._call_paren(a, **kwargs) for a in answers]
+            # ic(ids_answ)
+            ids_answ = sum(join_it(ids_answ, [id_sep]), start=[])
+            # ic(ids_answ)
+            # exit(1)
             ln_q, ln_t, ln_a = len(ids_ques), len(ids_text), len(ids_answ)
 
             if for_prediction:
+                # TODO
+                raise NotImplementedError('Not implemented, how much tokens to reserve during inference?')
                 ln_cont = (1+ln_q+1) + (1+ln_t+1) + 1  # for `pref_answ`
                 max_label_id_length = self.cache[dset_nm, mode]['max_label_id_length']
                 # The maximum number of tokens that could fit for context/prompt
@@ -300,8 +310,10 @@ class ZsGPT2LMHeadModel(GPT2LMHeadModel):
 
     def forward(self, dataset_id=None, **kwargs):
         # Function override to ignore `dataset_id`, not need in learning; Just need to pass value for evaluation
-        # pprint_gpt2_input(self.tkzer, d=kwargs | dict(dataset_id=dataset_id))
-        # exit(1)
+        # ic(kwargs['input_ids'], self.tokenizer.encode(self.tokenizer.ques_sep_token)[0])
+        # if torch.any(kwargs['input_ids'] == self.tokenizer.encode(self.tokenizer.ques_sep_token)[0]):
+        #     pprint_gpt2_input(self.tokenizer, d=kwargs | dict(dataset_id=dataset_id))
+        #     exit(1)
         return super().forward(**kwargs)
 
     @classmethod
@@ -455,6 +467,7 @@ def get_model_n_tokenizer(model_name='gpt2', save_gpu_memory: bool = True) -> Tu
         pretrained_model_name, use_fast=True, model_max_length=model_max_length
     )
     model_.resize_token_embeddings(len(tokenizer_))
+    model_.tokenizer = tokenizer_
 
     return model_, tokenizer_, DataCollatorForLanguageModeling(tokenizer=tokenizer_, mlm=False)
 
@@ -491,9 +504,9 @@ def get_train_setup(
         ),
         'gpt2-medium': dict(
             learning_rate=4e-5,
-            train_batch_size=16,
-            eval_batch_size=40,
-            gradient_accumulation_steps=8,  # To fit in memory; Effectively batch size 128 as in paper
+            train_batch_size=128,
+            eval_batch_size=64,
+            gradient_accumulation_steps=1,
             weight_decay=1e-2,
             num_train_epochs=10,
             lr_scheduler_type=SchedulerType.COSINE,
@@ -508,10 +521,6 @@ def get_train_setup(
         assert bsz_tr is not None and bsz_vl is not None
     else:
         bsz_tr = bsz_vl = bsz
-    if torch.cuda.is_available():
-        bsz_tr /= torch.cuda.device_count()  # Distribute among GPUs
-        assert bsz_tr.is_integer()
-        bsz_tr = int(bsz_tr)
     args = dict(
         output_dir=os.path.join(utcd_util.get_output_base(), DIR_PROJ, DIR_MDL, 'gpt2', model_name, now(for_path=True)),
         do_train=True,
@@ -539,7 +548,7 @@ def get_train_setup(
         logging_steps=1,
         save_strategy='epoch',
         fp16=torch.cuda.is_available(),
-        fp16_full_eval=True,
+        fp16_full_eval=False,
         # fp16_full_eval=False,  # As in doc, harms metric
         optim=OptimizerNames.ADAMW_TORCH,
         disable_tqdm=True,
@@ -571,7 +580,7 @@ def compute_metrics(eval_pred: MyEvalPrediction):
 def get_all_setup(
         model_name, dataset_name: str = 'ag_news',
         n_sample=None, random_seed=None, do_eval=True, custom_logging=True,
-        train_args: Dict = None
+        train_args: Dict = None, dataset_args: Dict = None
 ) -> Tuple[GPT2LMHeadModel, Union[GPT2TokenizerFast, ZsGPT2Tokenizer], datasets.Dataset, datasets.Dataset, Trainer]:
     if model_name == 'debug-gpt-ori':  # Sanity check: As if keep training GPT-2, with padding for simplicity
         conf = AutoConfig.from_pretrained('gpt2')
@@ -605,11 +614,13 @@ def get_all_setup(
         tr_map_func = tokenize_func(tokenizer_, dataset_name=dataset_name, mode='train')
         vl_map_func = tokenize_func(tokenizer_, dataset_name=dataset_name, mode='test')
 
+    if dataset_args is None:
+        dataset_args = dict()
     dset_tr_, dset_vl_ = get_dset(
         dataset_name=dataset_name,
         d_map_func=dict(train=tr_map_func, test=vl_map_func), remove_columns=['text', 'labels'],
         n_sample=n_sample, random_seed=random_seed,
-        fast='debug' not in model_name
+        fast='debug' not in model_name, **dataset_args
     )
     trainer_args = dict(
         model=model_, args=train_args_, data_collator=data_collator_,
@@ -828,36 +839,6 @@ if __name__ == '__main__':
             # trainer.evaluate()
         # train_(resume=False)
         # train(resume=True)
-
-        def evaluate():
-            trainer.model = load_trained(epoch=3)  # Override the model
-            ic(trainer.evaluate())
-        # evaluate_trained()
-
-        def profile_evaluate():
-            trainer.model = load_trained(epoch=2)
-            profile_runtime(lambda: trainer.evaluate())
-        # profile_evaluate()
-
-        def evaluate_ood():
-            trainer.model = load_trained(epoch=2)
-
-            dataset_name = 'UTCD-ood'
-            # n_ = 1024
-            # n_ = 1024 * 32
-            n_ = None
-
-            vl = get_dset(  # Obsolete, just training eval, not classification performance eval
-                dataset_name=dataset_name,
-                d_map_func=dict(test=tokenize_func(tkzer, dataset_name=dataset_name, mode='test')), splits='test',
-                # Run on newly-added dset only
-                filter_func=lambda sample: sample['dataset_id'] == config('UTCD.dataset_name2id')['multi_eurlex'],
-                remove_columns=['label', 'text'], n_sample=n_  # **Note** no shuffling performed
-            )[0]
-            # gating with `if trainer.is_local_process_zero()`
-            # somehow causes `torchrun` to not terminate after 1st compute loss
-            ic(trainer.evaluate(eval_dataset=vl))
-        # evaluate_ood()
     # training()
 
     def evaluating():
@@ -871,11 +852,36 @@ if __name__ == '__main__':
     def new_training():
         dnm = 'UTCD-in'
         nm = 'gpt2-medium'
-        n = 128
+        # n = 128
+        n = 32
+        # n = None
 
-        train_args = dict(num_train_epochs=3)
+        train_args = dict(  # overfit small
+            weight_decay=0,
+            learning_rate=3e-4,
+            per_device_train_batch_size=4,
+            num_train_epochs=64,
+            lr_scheduler_type=SchedulerType.CONSTANT,
+            gradient_accumulation_steps=8,
+            save_strategy='no',
+        )
+        dataset_args = dict(  # debugging
+            # filter_func=lambda sample: sample['dataset_id'] == config('UTCD.dataset_name2id')['dbpedia'],
+            filter_func=lambda sample: len(sample['labels']) > 1,
+        )
+        # train_args = dict(
+        #     num_train_epochs=3,
+        #     per_device_train_batch_size=4,
+        # gradient_accumulation_steps = 8
+        # )
+        # train_args = dict(  # Distribute among GPUs & fit in memory; Effectively batch size 128 as in paper
+        #     num_train_epochs=3,
+        #     per_device_train_batch_size=4,
+        #     gradient_accumulation_steps=8
+        # )
         md, tkzer, dset_tr, dset_vl, trainer = get_all_setup(
-            nm, dnm, do_eval=False, custom_logging=True, n_sample=n, random_seed=seed, train_args=train_args
+            nm, dnm, do_eval=False, custom_logging=True, n_sample=n, random_seed=seed,
+            train_args=train_args, dataset_args=dataset_args
         )
         trainer.train()
     new_training()

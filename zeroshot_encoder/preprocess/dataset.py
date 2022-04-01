@@ -19,8 +19,6 @@ def get_dset(
     if isinstance(splits, str):
         splits = [splits]
     dsets = [dset[s] for s in splits]
-    if n_sample is not None:
-        dsets = [d.select(range(n_sample)) for d in dsets]
     num_proc = None
     n_cpu = os.cpu_count()
     if fast and n_cpu >= 2:
@@ -28,6 +26,11 @@ def get_dset(
         datasets.set_progress_bar_enabled(False)
     if filter_func is not None:
         dsets = [dset.filter(filter_func, num_proc=num_proc) for dset in dsets]
+    if n_sample is not None:
+        # from icecream import ic
+        # for d in dsets:
+        #     ic(len(d))
+        dsets = [d.select(range(min(n_sample, len(d)))) for d in dsets]
     if d_map_func is not None:
         dsets = [
             dset.map(d_map_func[split], batched=True, remove_columns=remove_columns, num_proc=num_proc)

@@ -34,9 +34,10 @@ def get_utcd_from_gdrive(domain: str = 'in'):
         zip_.close()
 
 
-def process_utcd_dataset(in_domain=True, join=False):
+def process_utcd_dataset(domain: str = 'in', join=False):
     """
-    :param in_domain: If True, process all the in-domain datasets; otherwise, process all the out-of-domain datasets
+    :param domain: One of [`in`, `out`]
+        If 'in', process all the in-domain datasets; otherwise, process all the out-of-domain datasets
     :param join: If true, all datasets are joined to a single dataset
 
     .. note::
@@ -46,11 +47,12 @@ def process_utcd_dataset(in_domain=True, join=False):
     Save processed datasets to disk
     """
     logger = get_logger('Process UTCD')
-    output_dir = 'UTCD-in' if in_domain else 'UTCD-out'
+    assert domain in ['in', 'out'], f'Invalid domain: expect one of {logi(["in", "out"])}, got {logi(domain)}'
+    output_dir = 'UTCD-in' if domain == 'in' else 'UTCD-out'
     ext = config('UTCD.dataset_ext')
     path_dsets = os.path.join(PATH_BASE, DIR_PROJ, DIR_DSET)
     path_out = os.path.join(get_output_base(), DIR_PROJ, DIR_DSET, 'processed')
-    logger.info(f'Processing UTCD datasets with {log_dict(dict(in_domain=in_domain, join=join))}... ')
+    logger.info(f'Processing UTCD datasets with {log_dict(dict(domain=domain, join=join))}... ')
 
     def path2dsets(dnm: str, d_dset: Dict) -> Union[DatasetDict, Dict[str, pd.DataFrame]]:
         logger.info(f'Processing dataset {logi(dnm)}... ')
@@ -77,7 +79,7 @@ def process_utcd_dataset(in_domain=True, join=False):
             {key: json2dset(key, dset) for key, dset in dsets_.items() if key not in ['labels', 'aspect']}
         )
     d_dsets = {
-        dnm: path2dsets(dnm, d) for dnm, d in config('UTCD.datasets').items() if d['out_of_domain'] == (not in_domain)
+        dnm: path2dsets(dnm, d) for dnm, d in config('UTCD.datasets').items() if d['domain'] == domain
     }
     if join:
         dnm2id = config('UTCD.dataset_name2id')
@@ -165,12 +167,12 @@ if __name__ == '__main__':
     # sanity_check('UTCD-in')
 
     def get_utcd_in():
-        process_utcd_dataset(join=True)
+        process_utcd_dataset(domain='in', join=True)
         sanity_check('UTCD-in')
     get_utcd_in()
 
     def get_utcd_ood():
-        process_utcd_dataset(in_domain=True, join=True)
+        process_utcd_dataset(domain='in', join=True)
         sanity_check('UTCD-ood')
     # get_utcd_ood()
 

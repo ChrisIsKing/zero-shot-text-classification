@@ -10,6 +10,7 @@ import itertools
 import configparser
 import concurrent.futures
 from typing import Union, Tuple, List, Dict, Iterable, TypeVar, Callable
+from pygments import highlight, lexers, formatters
 from functools import reduce
 from collections import OrderedDict
 
@@ -47,11 +48,24 @@ T = TypeVar('T')
 K = TypeVar('K')
 
 
-def join_its(its: Iterable[Iterable[T]]) -> Iterable[T]:
+def chain_its(its: Iterable[Iterable[T]]) -> Iterable[T]:
     out = itertools.chain()
     for it in its:
         out = itertools.chain(out, it)
     return out
+
+
+def join_it(it: Iterable[T], sep: T) -> Iterable[T]:
+    it = iter(it)
+
+    curr = next(it, None)
+    if curr is not None:
+        yield curr
+        curr = next(it, None)
+    while curr is not None:
+        yield sep
+        yield curr
+        curr = next(it, None)
 
 
 def group_n(it: Iterable[T], n: int) -> Iterable[Tuple[T]]:
@@ -272,6 +286,24 @@ def log_dict_nc(d: Dict = None, **kwargs) -> str:
     return log_dict(d, with_color=False, **kwargs)
 
 
+def log_dict_id(d: Dict) -> str:
+    """
+    Indented dict
+    """
+    return json.dumps(d, indent=4)
+
+
+def log_dict_pg(d: Dict) -> str:
+    return highlight(log_dict_id(d), lexers.JsonLexer(), formatters.TerminalFormatter())
+
+
+def log_dict_p(d: Dict, **kwargs) -> str:
+    """
+    for path
+    """
+    return log_dict(d, with_color=False, sep='=', **kwargs)
+
+
 def hex2rgb(hx: str) -> Union[Tuple[int], Tuple[float]]:
     # Modified from https://stackoverflow.com/a/62083599/10732321
     if not hasattr(hex2rgb, 'regex'):
@@ -450,3 +482,5 @@ if __name__ == '__main__':
 
     # lg = get_logger('test-lang')
     # ic(lg, type(lg))
+
+    pass
