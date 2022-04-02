@@ -24,11 +24,13 @@ class MyLoggingCallback(TrainerCallback):
     """
     def __init__(
             self, parent_trainer: Trainer, do_eval=True,
-            name='Zero-shot GPT-2 Training'
+            name='Zero-shot GPT-2 Training', is_ddp: Union[int, bool] = False,
     ):
         """
         :param parent_trainer: The parent Trainer
         :param name: Logger name
+        :param is_ddp: Flag for if distributed training is used
+            So that logging step is correct, since each scrip only see 1 GPU
         """
         self.name = name
         self.out_dict = None
@@ -48,6 +50,10 @@ class MyLoggingCallback(TrainerCallback):
         self.n_eval = len(dset_vl_)
         lr, n_ep = args.learning_rate, args.num_train_epochs
         self.bsz = args.per_device_train_batch_size * args.gradient_accumulation_steps
+        self.is_ddp = is_ddp
+        if is_ddp:
+            assert isinstance(is_ddp, int), 'When DDP enabled, is_ddp must specify #GPU'
+            self.bsz = self.bsz * is_ddp
         if torch.cuda.is_available() and self.trainer.args.n_gpu > 1:
             self.bsz *= self.trainer.args.n_gpu
         seq_max_len = len(dset_tr__[0]['input_ids'])
@@ -55,7 +61,8 @@ class MyLoggingCallback(TrainerCallback):
         self.n_step = max(math.ceil(n_data / self.bsz), 1) * n_ep  # #step/epoch at least 1
         self.train_meta = OrderedDict([
             ('#data', n_data), ('model size', md_sz),
-            ('learning rate', lr), ('batch shape', (self.bsz, seq_max_len)), ('#epochs', n_ep), ('#steps', self.n_step)
+            ('learning rate', lr), ('batch shape', (self.bsz, seq_max_len)), ('#epochs', n_ep), ('#steps', self.n_step),
+            ('DDP', self.is_ddp)
         ])
         self.called_val_init = False
 
@@ -397,12 +404,16 @@ def get_accs(
 
 
 class CustomTrainer(Trainer):
-    def __init__(self, tokenizer: GPT2TokenizerFast = None, custom_logging=True, compute_cls_acc=True, **kwargs):
+    def __init__(
+            self, tokenizer: GPT2TokenizerFast = None, custom_logging=True, compute_cls_acc=True,
+            is_ddp: Union[bool, int] = False, **kwargs
+    ):
         super().__init__(**kwargs)
         assert 'args' in kwargs
 
         self.custom_logging = custom_logging
         self.compute_cls_acc = compute_cls_acc
+        self.is_ddp = is_ddp
 
         self.tokenizer = tokenizer  # TODO: generalize to more tokenizers?
         self.mode = None
@@ -418,7 +429,7 @@ class CustomTrainer(Trainer):
         ]
 
         if self.custom_logging:
-            self.add_callback(MyLoggingCallback(self, do_eval=self.args.do_eval))
+            self.add_callback(MyLoggingCallback(self, do_eval=self.args.do_eval, is_ddp=self.is_ddp))
         else:
             self.add_callback(ColoredPrinterCallback())
 

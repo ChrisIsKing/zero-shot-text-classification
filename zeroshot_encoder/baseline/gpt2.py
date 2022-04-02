@@ -328,9 +328,6 @@ class ZsGPT2LMHeadModel(GPT2LMHeadModel):
 
     def forward(self, dataset_id=None, **kwargs):
         # Function override to ignore `dataset_id`, not need in learning; Just need to pass value for evaluation
-        # ic(kwargs['input_ids'], self.tokenizer.encode(self.tokenizer.ques_sep_token)[0])
-        # from icecream import ic
-        # ic('in forward pass')
         # if torch.any(kwargs['input_ids'] == self.tokenizer.encode(self.tokenizer.ques_sep_token)[0]):
         #     pprint_gpt2_input(self.tokenizer, d=kwargs | dict(dataset_id=dataset_id))
         #     exit(1)
@@ -598,7 +595,8 @@ def compute_metrics(eval_pred: MyEvalPrediction):
 def get_all_setup(
         model_name, dataset_name: str = 'ag_news',
         n_sample=None, random_seed=None, do_eval=True, custom_logging=True,
-        train_args: Dict = None, dataset_args: Dict = None
+        train_args: Dict = None, dataset_args: Dict = None,
+        is_ddp: Union[bool, int] = False  # so that my own logging is correct
 ) -> Tuple[GPT2LMHeadModel, Union[GPT2TokenizerFast, ZsGPT2Tokenizer], datasets.Dataset, datasets.Dataset, Trainer]:
     if model_name == 'debug-gpt-ori':  # Sanity check: As if keep training GPT-2, with padding for simplicity
         conf = AutoConfig.from_pretrained('gpt2')
@@ -646,6 +644,7 @@ def get_all_setup(
     )
     trainer_ = CustomTrainer(
         tokenizer=tokenizer_, custom_logging=custom_logging, compute_cls_acc=model_name != 'debug-gpt-ori',
+        is_ddp=is_ddp,
         **trainer_args
     )
     return model_, tokenizer_, dset_tr_, dset_vl_, trainer_
@@ -679,7 +678,7 @@ def plot_dataset_token_length_stats(domain: str = 'in'):
     ic(df)
 
     fig, axes = plt.subplots(2, 2, figsize=(16, 9))
-    args_bar = dict(kde=True, kde_kws=dict(bw_adjust=0.15))
+    args_bar = dict(kde=True, kde_kws=dict(bw_adjust=0.5))
     args_cum = dict(cumulative=True, fill=False, element='step')
     for i_row, i_col in itertools.product(range(2), range(2)):
         ax = axes[i_row, i_col]
@@ -924,37 +923,41 @@ if __name__ == '__main__':
         dnm = 'UTCD-in'
         nm = 'gpt2-medium'
         # n = 128
-        n = 32
-        # n = None
+        # n = 32
+        n = None
+        # n = 256
 
-        train_args = dict(  # overfit small
-            weight_decay=0,
-            learning_rate=3e-4,
-            per_device_train_batch_size=4,
-            num_train_epochs=128,
-            lr_scheduler_type=SchedulerType.CONSTANT,
-            gradient_accumulation_steps=8,
-            save_strategy='no',
-        )
-        dataset_args = dict(  # debugging
-            # filter_func=lambda sample: sample['dataset_id'] == config('UTCD.dataset_name2id')['dbpedia'],
-            filter_func=lambda sample: len(sample['labels']) > 1,
-        )
+        # train_args = dict(  # overfit small
+        #     weight_decay=0,
+        #     learning_rate=3e-4,
+        #     per_device_train_batch_size=4,
+        #     num_train_epochs=128,
+        #     lr_scheduler_type=SchedulerType.CONSTANT,
+        #     gradient_accumulation_steps=8,
+        #     save_strategy='no',
+        # )
+        dataset_args = None
+        # dataset_args = dict(  # debugging
+        #     # filter_func=lambda sample: sample['dataset_id'] == config('UTCD.dataset_name2id')['dbpedia'],
+        #     filter_func=lambda sample: len(sample['labels']) > 1,
+        # )
         # train_args = dict(
         #     num_train_epochs=3,
         #     per_device_train_batch_size=4,
         # gradient_accumulation_steps = 8
         # )
-        # train_args = dict(  # Distribute among GPUs & fit in memory; Effectively batch size 128 as in paper
-        #     num_train_epochs=3,
-        #     per_device_train_batch_size=4,
-        #     gradient_accumulation_steps=8
-        # )
+        train_args = dict(  # Distribute among GPUs & fit in memory; Effectively batch size 128 as in paper
+            num_train_epochs=3,
+            per_device_train_batch_size=4,
+            gradient_accumulation_steps=8
+        )
         md, tkzer, dset_tr, dset_vl, trainer = get_all_setup(
             nm, dnm, do_eval=False, custom_logging=True, n_sample=n, random_seed=seed,
-            train_args=train_args, dataset_args=dataset_args
+            train_args=train_args, dataset_args=dataset_args,
+            is_ddp=4
         )
         trainer.train()
+    # ic(torch.cuda.device_count())
     new_training()
 
     # plot_dataset_token_length_stats(domain='in')
