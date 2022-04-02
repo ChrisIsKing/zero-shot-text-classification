@@ -320,7 +320,7 @@ def plot_utcd_n_toks(d_n_toks: Dict, save=True):
         ax.set_title(f'{text_type} with {mode} tokenization')
         if text_type == 'text':  # empirical, cos there are outliers for `text`s
             p = norm().cdf(3)  # quantile at 3std
-            mi, ma = df.n_token.min(), math.ceil(df.n_token.quantile(p))
+            mi = df.n_token.min()
             ma = weighted_quantile(df.n_token, [p], sample_weight=df.counts)[0]
             ax.set_xlim([mi, ma])
         else:

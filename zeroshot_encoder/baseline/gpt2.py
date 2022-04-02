@@ -7,7 +7,7 @@ from typing import Any
 from warnings import warn
 from collections import defaultdict
 
-import pandas as pd
+from scipy.stats import norm
 from torch import nn
 from sklearn.metrics import classification_report
 import transformers
@@ -653,54 +653,43 @@ def plot_dataset_token_length_stats(domain: str = 'in'):
 
     def map_func(examples):
         tokenized = func(examples)
-        # txt = examples['text']
-        # for i, t in enumerate(txt):
-        #     ic(t, tokenized['ids_text'][i])
-        # ic(examples, dict(
-        #     n_token=[len(ids) for ids in tokenized['input_ids']],
-        #     n_token_text=[len(ids) for ids in tokenized['ids_text']],
-        #     dataset_id=tokenized['dataset_id']
-        # ))
-        # exit(1)
         return dict(
             n_token=[len(ids) for ids in tokenized['input_ids']],
             n_token_text=[len(ids) for ids in tokenized['ids_text']],
             dataset_name=[did2nm[i] for i in tokenized['dataset_id']]
         )
-        # for ids__ in ids_:
-        #     ic(len(ids__))
-        # ic(type(ids_), len(ids_))
-        # exit(1)
     dset_tr, dset_vl = get_dataset(
         dataset_name=f'UTCD-{domain}',
         map_func=map_func, remove_columns=['text', 'labels'],
-        # filter_func=lambda sample: len(sample['labels']) > 1,  # TODO: debugging
-        n_sample=1024*16,
-        random_seed=77,
+        # n_sample=1024*16,
+        # random_seed=77,
         fast=True
     )
     # discard training set for out-of-domain
     dset = datasets.concatenate_datasets([dset_tr, dset_vl]) if domain == 'in' else dset_tr
-    # ic(dset_tr, dset_tr[:20])
     df = pd.DataFrame(dset[:])
     ic(df)
 
     fig, axes = plt.subplots(2, 2, figsize=(16, 9))
-    # args_bar = dict(discrete=True, kde=True)
-    args_bar = dict(kde=True)
-    args_cum = dict(cumulative=True, fill=False, common_norm=False, stat='density', element='step', )
+    args_bar = dict(kde=True, kde_kws=dict(bw_adjust=0.15))
+    args_cum = dict(cumulative=True, fill=False, element='step')
     for i_row, i_col in itertools.product(range(2), range(2)):
         ax = axes[i_row, i_col]
         legend = i_row == 1 and i_col == 0
         args = dict(palette='husl', legend=legend, common_norm=False, ax=ax, stat='density')
-        # lgd = ax.legend()
-        # ic(list(lgd.get_texts()))
-        # ic(lgd.get_title())
         args |= args_bar if i_col == 0 else args_cum
-        sns.histplot(data=df, x='n_token' if i_row == 0 else 'n_token_text', hue='dataset_name', **args)
+        x = 'n_token' if i_row == 0 else 'n_token_text'
+        if i_col == 0:
+            n_bin = df[x].max() - df[x].min() + 1
+            args['bins'] = n_bin
+        sns.histplot(data=df, x=x, hue='dataset_name', **args)
         ax.set(xlabel='#token' if i_row == 0 else '#token for text', ylabel=None)
-    # lgd.get_texts()[0].set_text('make it short')
-    title = f'GPT2 token length distribution for {domain}-domain'
+        # if i_col == 0:  # dynamic upperbound for the bar plots
+        p = norm().cdf(3.5)  # quantile by std
+        mi, ma = df[x].min(), math.ceil(df[x].quantile(p))
+        # mi, ma = df[x].min(), 512*3
+        ax.set_xlim([mi, ma])
+    title = f'GPT2 token length distribution for UTCD {domain}-domain'
     plt.suptitle(title)
     fig.supylabel('density')
 
