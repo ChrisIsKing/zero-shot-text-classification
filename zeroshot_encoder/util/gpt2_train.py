@@ -346,17 +346,12 @@ def get_accs(
             :return: Potentially breaks down the indices of list of labels into sublists, one for each label
             """
             msk_sep: torch.Tensor = labels_[i_sample, idxs_answ] == id_sep
-            # from icecream import ic
-            # ic(msk_sep)
             if torch.any(msk_sep):
                 idxs_sep = msk_sep.nonzero().flatten().tolist()
-                # ic(idxs_answ, idxs_sep, labels_[i_sample, idxs_answ])
                 # filters out the sep token
                 idxs = [*idxs_sep, None]
                 lst_idxs_answ_ = [idxs_answ[:idxs_sep[0]]]
                 lst_idxs_answ_ += [idxs_answ[idx+1:idxs[i+1]] for i, idx in enumerate(idxs[:-1])]
-                # ic(lst_idxs_answ_)
-                # exit(1)
                 return [(i_sample, idxs_answ_) for idxs_answ_ in lst_idxs_answ_]
             else:
                 return [(i_sample, idxs_answ)]

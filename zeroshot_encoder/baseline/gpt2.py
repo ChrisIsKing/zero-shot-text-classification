@@ -172,7 +172,7 @@ class ZsGPT2Tokenizer(GPT2TokenizerFast):
 
                 def lb_int2desc(lb: int) -> str:
                     return label2description[lb]
-                if mode:
+                if mode == 'inference':
                     answers = ''  # indexing wouldn't work cos multi label; Will not be used anyway, see below
                 else:
                     answers = label2description[labels]
@@ -181,6 +181,15 @@ class ZsGPT2Tokenizer(GPT2TokenizerFast):
             np.random.shuffle(idx_lbs)
             strs_lb = ' , '.join(f'" {lb_int2desc(idx)} "' for idx in idx_lbs)
             question = self.templates[idxs_tpl[i]].format(strs_lb)
+            n_answs = len(answers)
+            # from icecream import ic
+            if n_answs > 1:
+                idx_answs = np.arange(n_answs)
+                np.random.shuffle(idx_answs)
+                # ic('inside answ', answers)
+                answers = [answers[idx] for idx in idx_answs]
+                # ic('inside answ', answers)
+            # ic(answers)
 
             ids_ques = self._call_paren(question, **kwargs)
             ids_text = self._call_paren(text, **kwargs)
@@ -228,7 +237,7 @@ class ZsGPT2Tokenizer(GPT2TokenizerFast):
             tids = [self.enc_spec(self.question_type_token)] * n_ques + \
                    [self.enc_spec(self.text_type_token)] * n_text + \
                    [self.enc_spec(self.answer_type_token)] * n_answ
-            if mode:
+            if mode == 'inference':
                 ids, tids = ids[:-(n_answ-1)], tids[:-(n_answ-1)]
                 assert len(ids) == (n_ques+n_text+1)  # sanity check
             msks = [1] * len(ids)  # Encode ids are attended for CLM
@@ -241,19 +250,16 @@ class ZsGPT2Tokenizer(GPT2TokenizerFast):
                 """
                 Pad to max_length, truncate if necessary
                 """
-                if mode == 'stats':  # no padding
-                    return ints
+                if name == 'attention_mask':
+                    int_pad = 0  # Ignore in attention
+                elif name == 'position_ids':
+                    # Arbitrary, since will be ignored, but needs to be within `n_token` for embedding mapping
+                    int_pad = 0
                 else:
-                    if name == 'attention_mask':
-                        int_pad = 0  # Ignore in attention
-                    elif name == 'position_ids':
-                        # Arbitrary, since will be ignored, but needs to be within `n_token` for embedding mapping
-                        int_pad = 0
-                    else:
-                        # `input_id`s set to `pad_token` will be ignored by `DataCollatorForLanguageModeling`
-                        int_pad = self.enc_spec(self.pad_token)
-                    return ints[:max_length] if len(ints) > max_length else (ints + [int_pad] * (max_length - len(ints)))
-            out = {k: (ints if mode else pad(ints, k)) for k, ints in ((
+                    # `input_id`s set to `pad_token` will be ignored by `DataCollatorForLanguageModeling`
+                    int_pad = self.enc_spec(self.pad_token)
+                return ints[:max_length] if len(ints) > max_length else (ints + [int_pad] * (max_length - len(ints)))
+            out = {k: (pad(ints, k) if mode == 'train' else ints) for k, ints in ((
                 ('input_ids', ids), ('attention_mask', msks), ('token_type_ids', tids), ('position_ids', pids)
             ))}
             out['dataset_id'] = dataset_id  # For computing zero-shot classification accuracy
@@ -323,6 +329,8 @@ class ZsGPT2LMHeadModel(GPT2LMHeadModel):
     def forward(self, dataset_id=None, **kwargs):
         # Function override to ignore `dataset_id`, not need in learning; Just need to pass value for evaluation
         # ic(kwargs['input_ids'], self.tokenizer.encode(self.tokenizer.ques_sep_token)[0])
+        # from icecream import ic
+        # ic('in forward pass')
         # if torch.any(kwargs['input_ids'] == self.tokenizer.encode(self.tokenizer.ques_sep_token)[0]):
         #     pprint_gpt2_input(self.tokenizer, d=kwargs | dict(dataset_id=dataset_id))
         #     exit(1)
@@ -684,10 +692,8 @@ def plot_dataset_token_length_stats(domain: str = 'in'):
             args['bins'] = n_bin
         sns.histplot(data=df, x=x, hue='dataset_name', **args)
         ax.set(xlabel='#token' if i_row == 0 else '#token for text', ylabel=None)
-        # if i_col == 0:  # dynamic upperbound for the bar plots
-        p = norm().cdf(3.5)  # quantile by std
+        p = norm().cdf(3.5)  # # dynamic upperbound; quantile by std
         mi, ma = df[x].min(), math.ceil(df[x].quantile(p))
-        # mi, ma = df[x].min(), 512*3
         ax.set_xlim([mi, ma])
     title = f'GPT2 token length distribution for UTCD {domain}-domain'
     plt.suptitle(title)
@@ -925,7 +931,7 @@ if __name__ == '__main__':
             weight_decay=0,
             learning_rate=3e-4,
             per_device_train_batch_size=4,
-            num_train_epochs=64,
+            num_train_epochs=128,
             lr_scheduler_type=SchedulerType.CONSTANT,
             gradient_accumulation_steps=8,
             save_strategy='no',
@@ -949,7 +955,7 @@ if __name__ == '__main__':
             train_args=train_args, dataset_args=dataset_args
         )
         trainer.train()
-    # new_training()
+    new_training()
 
-    plot_dataset_token_length_stats(domain='in')
+    # plot_dataset_token_length_stats(domain='in')
 
