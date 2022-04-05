@@ -87,7 +87,8 @@ if __name__ == "__main__":
         num_epochs = args.epochs
         model_save_path = join(args.output, args.sampling)
 
-        model = CrossEncoder(args.base_model, num_labels=2)
+        # cos pretrained with 3 classes
+        model = CrossEncoder(args.base_model, num_labels=2, automodel_args=dict(ignore_mismatched_sizes=True))
         # Add end of turn token for sgd
         model.tokenizer.add_special_tokens({'eos_token': '[eot]'})
         model.model.resize_token_embeddings(len(model.tokenizer))
@@ -120,6 +121,8 @@ if __name__ == "__main__":
         datasets = list(data.keys())
 
         # load model
+        from icecream import ic
+        ic(args.model_path)
         model = CrossEncoder(args.model_path)
 
         label_map = ["false", "true"]

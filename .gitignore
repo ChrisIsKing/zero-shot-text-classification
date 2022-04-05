@@ -16,6 +16,7 @@ gpt2-wikitext2/
 gdrive
 chore/
 trained-models/
+plot/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

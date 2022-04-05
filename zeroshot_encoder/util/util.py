@@ -10,13 +10,13 @@ import itertools
 import configparser
 import concurrent.futures
 from typing import Union, Tuple, List, Dict, Iterable, TypeVar, Callable
+from pygments import highlight, lexers, formatters
 from functools import reduce
 from collections import OrderedDict
 
 import numpy as np
 import pandas as pd
 import torch
-import datasets
 import matplotlib.pyplot as plt
 import seaborn as sns
 import colorama
@@ -48,11 +48,34 @@ T = TypeVar('T')
 K = TypeVar('K')
 
 
-def join_its(its: Iterable[Iterable[T]]) -> Iterable[T]:
+def chain_its(its: Iterable[Iterable[T]]) -> Iterable[T]:
     out = itertools.chain()
     for it in its:
         out = itertools.chain(out, it)
     return out
+
+
+def join_it(it: Iterable[T], sep: T) -> Iterable[T]:
+    it = iter(it)
+
+    curr = next(it, None)
+    if curr is not None:
+        yield curr
+        curr = next(it, None)
+    while curr is not None:
+        yield sep
+        yield curr
+        curr = next(it, None)
+
+
+def group_n(it: Iterable[T], n: int) -> Iterable[Tuple[T]]:
+    # Credit: https://stackoverflow.com/a/8991553/10732321
+    it = iter(it)
+    while True:
+        chunk = tuple(itertools.islice(it, n))
+        if not chunk:
+            return
+        yield chunk
 
 
 def conc_map(fn: Callable[[T], K], it: Iterable[T]) -> Iterable[K]:
@@ -65,6 +88,31 @@ def conc_map(fn: Callable[[T], K], it: Iterable[T]) -> Iterable[K]:
     """
     with concurrent.futures.ThreadPoolExecutor() as executor:
         return executor.map(fn, it)
+
+
+def batched_conc_map(
+        fn: Callable[[Tuple[List[T], int, int]], K], lst: List[T], n_worker: int = os.cpu_count()
+) -> List[K]:
+    """
+    Batched concurrent mapping, map elements in list in batches
+
+    :param fn: A map function that operates on a batch/subset of `lst` elements,
+        given inclusive begin & exclusive end indices
+    :param lst: A list of elements to map
+    :param n_worker: Number of concurrent workers
+    """
+    n: int = len(lst)
+    if n_worker > 1 and n > n_worker * 4:  # factor of 4 is arbitrary, otherwise not worse the overhead
+        preprocess_batch = round(n / n_worker / 2)
+        strts: List[int] = list(range(0, n, preprocess_batch))
+        ends: List[int] = strts[1:] + [n]  # inclusive begin, exclusive end
+        lst_out = []
+        for lst_ in conc_map(lambda args_: fn(*args_), [(lst, s, e) for s, e in zip(strts, ends)]):  # Expand the args
+            lst_out.extend(lst_)
+        return lst_out
+    else:
+        args = lst, 0, n
+        return fn(*args)
 
 
 def lst2uniq_ids(lst: List[T]) -> List[int]:
@@ -211,7 +259,7 @@ def log(s, c: str = 'log', c_time='green', as_str=False, bold=False):
         print(f'{c}{log(now(), c=c_time, as_str=True)}| {s}{log.reset}')
 
 
-def log_s(s, c, bold = False):
+def log_s(s, c, bold: bool = False):
     return log(s, c=c, as_str=True, bold=bold)
 
 
@@ -236,6 +284,24 @@ def log_dict(d: Dict = None, with_color=True, **kwargs) -> str:
 
 def log_dict_nc(d: Dict = None, **kwargs) -> str:
     return log_dict(d, with_color=False, **kwargs)
+
+
+def log_dict_id(d: Dict) -> str:
+    """
+    Indented dict
+    """
+    return json.dumps(d, indent=4)
+
+
+def log_dict_pg(d: Dict) -> str:
+    return highlight(log_dict_id(d), lexers.JsonLexer(), formatters.TerminalFormatter())
+
+
+def log_dict_p(d: Dict, **kwargs) -> str:
+    """
+    for path
+    """
+    return log_dict(d, with_color=False, sep='=', **kwargs)
 
 
 def hex2rgb(hx: str) -> Union[Tuple[int], Tuple[float]]:
@@ -355,11 +421,11 @@ def get_logger(name: str, typ: str = 'stdout', file_path: str = None) -> logging
     :param file_path: File path for file-write logging
     """
     assert typ in ['stdout', 'file-write']
-    logger = logging.getLogger(name)
+    logger = logging.getLogger(f'{name} file write' if typ == 'file-write' else name)
     logger.handlers = []  # A crude way to remove prior handlers, ensure only 1 handler per logger
     logger.setLevel(logging.DEBUG)
     if typ == 'stdout':
-        handler = logging.StreamHandler(stream=sys.stdout)  # For my own coloring
+        handler = logging.StreamHandler(stream=sys.stdout)  # stdout for my own coloring
     else:
         os.makedirs(os.path.dirname(file_path), exist_ok=True)
         handler = logging.FileHandler(file_path)
@@ -403,146 +469,6 @@ def plot_points(arr, **kwargs):
     plt.plot(arr[:, 0], arr[:, 1], **kwargs)
 
 
-def get_utcd_info() -> pd.DataFrame:
-    """
-    Metadata about each dataset in UTCD
-    """
-    infos = [
-        dict(dataset_name=dnm, aspect=d_dset['aspect'], out_of_domain=d_dset['out_of_domain'])
-        | {f'{split}-{k}': v for split, d_info in d_dset['splits'].items() for k, v in d_info.items()}
-        for dnm, d_dset in config('UTCD.datasets').items()
-    ]
-    return pd.DataFrame(infos)
-
-
-def get_output_base():
-    # For remote machines, save heavy-duty data somewhere else to save `/home` disk space
-    hnm = get_hostname()
-    if 'clarity' in hnm:  # Clarity lab
-        return '/data'
-    elif 'arc-ts' in hnm:  # Great Lakes; `profmars0` picked arbitrarily among [`profmars0`, `profmars1`]
-        # Per https://arc.umich.edu/greatlakes/user-guide/
-        return os.path.join('/scratch', 'profmars_root', 'profmars0', 'stefanhg')
-    else:
-        return PATH_BASE
-
-
-def process_utcd_dataset(in_domain=False, join=False, group_labels=False):
-    """
-    :param in_domain: If True, process all the in-domain datasets; otherwise, process all the out-of-domain datasets
-    :param join: If true, all datasets are joined to a single dataset
-    :param group_labels: If true, the datasets are converted to a multi-label format
-
-    .. note::
-        1. The original dataset format is list of (text, label) pairs
-        2. `group_labels` supported only when datasets are not jointed, intended for evaluation
-
-    Save processed datasets to disk
-    """
-    logger = get_logger('Process UTCD')
-
-    nm_dsets = 'UTCD-ood' if in_domain else 'UTCD'
-    ext = config('UTCD.dataset_ext')
-    path_dsets = os.path.join(PATH_BASE, DIR_PROJ, DIR_DSET)
-    path_out = os.path.join(get_output_base(), DIR_PROJ, DIR_DSET, 'processed')
-    logger.info(f'Processing UTCD datasets with '
-                f'{log_dict(dict(in_domain=in_domain, join=join, group_labels=group_labels))}... ')
-
-    def path2dsets(dnm: str, d_dset: Dict) -> Union[datasets.DatasetDict, Dict[str, pd.DataFrame]]:
-        logger.info(f'Processing dataset {logi(dnm)}... ')
-        path = d_dset['path']
-        path = os.path.join(path_dsets, f'{path}.{ext}')
-        with open(path) as f:
-            dsets_: Dict = json.load(f)
-
-        def json2dset(split: str, dset: List) -> Union[datasets.Dataset, pd.DataFrame]:
-            assert all(sample[0] != '' for sample in dset)
-            if group_labels:
-                # Otherwise, process just normally
-                dset = sorted(dset)  # Sort first by text then by label, for `groupby`
-                # Group the label for each unique text
-                lbs_: List[str] = config(f'UTCD.datasets.{dnm}.splits.{split}.labels')
-                # index is label per `lbs_` ordering, same with `datasets.ClassLabel`
-                lb2id = {lb: i for i, lb in enumerate(lbs_)}
-                dset = [  # Map to integer labels
-                    dict(text=k, labels=[lb2id[lb] for txt, lb in v])
-                    for k, v in itertools.groupby(dset, key=lambda pr: pr[0])
-                ]
-                lbs = datasets.Sequence(  # if not multi-label, `Sequence` of single element
-                    datasets.ClassLabel(names=lbs_),
-                    length=-1 if config(f'UTCD.datasets.{dnm}.splits.{split}.multi_label') else 1
-                )
-                # ic(lbs)
-                return datasets.Dataset.from_pandas(
-                    pd.DataFrame(dset),
-                    features=datasets.Features(text=datasets.Value(dtype='string'), labels=lbs)
-                )
-            else:
-                dset = [dict(text=txt, label=lb) for (txt, lb) in dset]  # Heuristic on how the `json` are stored
-                df_ = pd.DataFrame(dset)
-                if join:  # Leave processing labels til later
-                    return df_
-                else:
-                    # Sort the string labels, enforce deterministic order
-                    lbs = sorted(df_.label.unique())
-                    assert lbs == config(f'UTCD.datasets.{dnm}.splits.{split}.labels')  # Sanity check
-                    lbs = datasets.ClassLabel(names=lbs)
-                    features_ = datasets.Features(text=datasets.Value(dtype='string'), label=lbs)
-                    # Map to integer labels so that compatible to current training infrastructure in `gpt2.py`
-                    df_.label.replace(to_replace=lbs.names, value=range(lbs.num_classes), inplace=True)
-                    return datasets.Dataset.from_pandas(df_, features=features_)
-        return datasets.DatasetDict({split: json2dset(split, dset) for split, dset in dsets_.items()})
-    d_dsets = {
-        dnm: path2dsets(dnm, d) for dnm, d in config('UTCD.datasets').items() if d['out_of_domain'] == (not in_domain)
-    }
-    if join:
-        dnm2id = config('UTCD.dataset_name2id')
-
-        def pre_concat(dnm: str, df_: pd.DataFrame) -> pd.DataFrame:
-            df_['dataset_id'] = [dnm2id[dnm]] * len(df_)  # Add dataset source information to each row
-            return df_
-        # Global label across all datasets, all splits
-        # Needed for inversely mapping to local label regardless of joined split, e.g. train/test,
-        #   in case some label only in certain split
-        lbs_lb = sorted(set(join_its(df.label.unique() for dsets in d_dsets.values() for df in dsets.values())))
-        lbs_lb = datasets.ClassLabel(names=lbs_lb)
-
-        def dfs2dset(dfs: Iterable[pd.DataFrame]) -> datasets.Dataset:
-            df = pd.concat(dfs)
-            # The string labels **may overlap** across the datasets
-            # Keep internal feature label ordering same as dataset id
-            lbs_dset = sorted(dnm2id, key=dnm2id.get)
-            df.label.replace(to_replace=lbs_lb.names, value=range(lbs_lb.num_classes), inplace=True)
-            features = datasets.Features(
-                text=datasets.Value(dtype='string'), label=lbs_lb, dataset_id=datasets.ClassLabel(names=lbs_dset)
-            )
-            return datasets.Dataset.from_pandas(df, features=features)
-        tr = dfs2dset(pre_concat(dnm, dsets['train']) for dnm, dsets in d_dsets.items())
-        vl = dfs2dset(pre_concat(dnm, dsets['test']) for dnm, dsets in d_dsets.items())
-        dsets = datasets.DatasetDict(train=tr, test=vl)
-        dsets.save_to_disk(os.path.join(path_out, nm_dsets))
-    else:
-        for dnm, dsets in d_dsets.items():
-            dsets.save_to_disk(os.path.join(path_out, f'{dnm}-label-grouped' if group_labels else dnm))
-    logger.info(f'Dataset(s) saved to {logi(path_out)}')
-
-
-def map_ag_news():
-    dnm = 'ag_news'
-    d_dset = config(f'UTCD.datasets.{dnm}')
-    ext = config('UTCD.dataset_ext')
-    path_dset = os.path.join(PATH_BASE, DIR_PROJ, DIR_DSET)
-    path = d_dset['path']
-    path = os.path.join(path_dset, f'{path}.{ext}')
-    with open(path) as f:
-        dsets: Dict = json.load(f)
-    d_lb2desc = config(f'baselines.gpt2-nvidia.label-descriptors.{dnm}')
-    for split, dset in dsets.items():
-        dsets[split] = [[txt, d_lb2desc[lb]] for txt, lb in dset]
-    with open(os.path.join(path_dset, f'{dnm}.json'), 'w') as f:
-        json.dump(dsets, f, indent=4)
-
-
 if __name__ == '__main__':
     from icecream import ic
 
@@ -554,44 +480,7 @@ if __name__ == '__main__':
 
     # map_ag_news()
 
-    def sanity_check(dsets_nm):
-        path = os.path.join(get_output_base(), DIR_PROJ, DIR_DSET, 'processed', dsets_nm)
-        ic(path)
-        dset = datasets.load_from_disk(path)
-        te, vl = dset['train'], dset['test']
-        ic(len(te), len(vl))
-        lbs = vl.features['label']
-        ic(lbs)
-        ic(vl[60], lbs.int2str(118))
-
-    def get_utcd():
-        process_utcd_dataset(join=True)
-        sanity_check('UTCD')
-    # get_utcd()
-
-    def get_utcd_ood():
-        process_utcd_dataset(in_domain=True, join=True)
-        sanity_check('UTCD-ood')
-    # get_utcd_ood()
-
-    process_utcd_dataset(in_domain=True, join=False, group_labels=False)
-    process_utcd_dataset(in_domain=False, join=False, group_labels=False)
-    process_utcd_dataset(in_domain=True, join=False, group_labels=True)
-    process_utcd_dataset(in_domain=False, join=False, group_labels=True)
-
-    def sanity_check_ln_eurlex():
-        path = os.path.join(get_output_base(), DIR_PROJ, DIR_DSET, 'processed', 'multi_eurlex')
-        ic(path)
-        dset = datasets.load_from_disk(path)
-        ic(dset, len(dset))
-    # sanity_check_ln_eurlex()
-    # ic(lst2uniq_ids([5, 6, 7, 6, 5, 1]))
-
-    def output_utcd_info():
-        df = get_utcd_info()
-        ic(df)
-        df.to_csv(os.path.join(PATH_BASE, DIR_PROJ, DIR_DSET, 'utcd-info.csv'))
-    # output_utcd_info()
-
     # lg = get_logger('test-lang')
     # ic(lg, type(lg))
+
+    pass

@@ -1,8 +1,10 @@
+from time import sleep
 from typing import Optional
 
 from torch.utils.data import DataLoader, Dataset
+from torch.utils.tensorboard import SummaryWriter
 from transformers import GPT2TokenizerFast
-from transformers import TrainerCallback, TrainingArguments, Trainer
+from transformers import TrainerCallback, Trainer
 from transformers.trainer_utils import EvalLoopOutput
 from transformers.file_utils import is_torch_tpu_available
 if is_torch_tpu_available():
@@ -10,7 +12,7 @@ if is_torch_tpu_available():
     import torch_xla.distributed.parallel_loader as pl
 
 from zeroshot_encoder.util import *
-from zeroshot_encoder.util import PT_LOSS_PAD, MyEvalPrediction, TrainPlot
+from zeroshot_encoder.util.train import *
 
 
 class MyLoggingCallback(TrainerCallback):
@@ -22,30 +24,15 @@ class MyLoggingCallback(TrainerCallback):
     """
     def __init__(
             self, parent_trainer: Trainer, do_eval=True,
-            name='Zero-shot GPT-2 Training', interactive=True, save_plot=True
+            name='Zero-shot GPT-2 Training', is_ddp: Union[int, bool] = False,
     ):
         """
         :param parent_trainer: The parent Trainer
         :param name: Logger name
+        :param is_ddp: Flag for if distributed training is used
+            So that logging step is correct, since each scrip only see 1 GPU
         """
-        self.logger = logging.getLogger(name)
-        self.logger.setLevel(logging.DEBUG)
-        had_handler = False
-        hd_attr_nm = 'name_for_my_logging'  # Use a name that's unlikely to have collisions
-        for hd in self.logger.handlers:  # Set console output logging
-            if hasattr(hd, hd_attr_nm) and getattr(hd, hd_attr_nm) == name:
-                had_handler = True
-        if not had_handler:
-            handler = logging.StreamHandler(stream=sys.stdout)  # For my own coloring
-            handler.setLevel(logging.DEBUG)
-            handler.setFormatter(MyFormatter(with_color=True))
-            # For ipython compatibility, potentially update it instead of adding new handler
-            setattr(handler, hd_attr_nm, name)
-            self.logger.addHandler(handler)
-        self.logger_fl = logging.getLogger('trainer-file-write')  # Write out to file
-        self.logger_fl.setLevel(logging.DEBUG)
-        self.fl_handler = None
-
+        self.name = name
         self.out_dict = None
         self.out_dict_tr = None
         self.is_compute_loss_on_train = True
@@ -55,12 +42,18 @@ class MyLoggingCallback(TrainerCallback):
 
         self.trainer = parent_trainer
         self.do_eval = do_eval
+        if do_eval:
+            raise NotImplementedError('TODO: implement eval logging')
         args, dset_tr__, dset_vl_, md_, tokzer = (
             getattr(parent_trainer, k) for k in ['args', 'train_dataset', 'eval_dataset', 'model', 'tokenizer']
         )
         self.n_eval = len(dset_vl_)
         lr, n_ep = args.learning_rate, args.num_train_epochs
         self.bsz = args.per_device_train_batch_size * args.gradient_accumulation_steps
+        self.is_ddp = is_ddp
+        if is_ddp:
+            assert isinstance(is_ddp, int), 'When DDP enabled, is_ddp must specify #GPU'
+            self.bsz = self.bsz * is_ddp
         if torch.cuda.is_available() and self.trainer.args.n_gpu > 1:
             self.bsz *= self.trainer.args.n_gpu
         seq_max_len = len(dset_tr__[0]['input_ids'])
@@ -68,53 +61,40 @@ class MyLoggingCallback(TrainerCallback):
         self.n_step = max(math.ceil(n_data / self.bsz), 1) * n_ep  # #step/epoch at least 1
         self.train_meta = OrderedDict([
             ('#data', n_data), ('model size', md_sz),
-            ('learning rate', lr), ('batch shape', (self.bsz, seq_max_len)), ('#epochs', n_ep), ('#steps', self.n_step)
+            ('learning rate', lr), ('batch shape', (self.bsz, seq_max_len)), ('#epochs', n_ep), ('#steps', self.n_step),
+            ('DDP', self.is_ddp)
         ])
         self.called_val_init = False
-        self.log_hist: List[Dict] = []
 
-        self.log_fnm_tpl = f'{name}, n={n_data}, l={md_sz}, a={lr}, bsz={self.bsz}, n_ep={n_ep}, {{}}'
-        self.log_fnm = None  # Current logging file name template & file instance during training
+        self.save_time = now(for_path=True)
+        self.logger, self.logger_fl, self.tb_writer = None, None, None
+        self.log_fnm = f'{name}, n={n_data}, l={md_sz}, a={lr}, bsz={self.bsz}, n_ep={n_ep}, {self.save_time}'
         paths_ = self.trainer.args.output_dir.split(os.sep)
         path_proj = paths_[paths_.index(DIR_PROJ):]
-        self.out_dir = os.path.join(PATH_BASE, *path_proj)  # Keep the logging & plotting inside project directory
+        # Keep the logging & plotting inside project directory, not potentially in `scratch`
+        self.output_dir = os.path.join(PATH_BASE, *path_proj)
 
         self.train_begin, self.train_end = None, None
         self.t_strt, self.t_end = None, None
 
-        self.interactive = interactive
-        self.plot = TrainPlot(
-            title=name, train_args=parent_trainer.args, out_dir=self.out_dir, meta=self.train_meta, save_plot=save_plot
-        )
-
-    def _update_log_handler(self, log_fnm: str):
-        self.logger_fl.removeHandler(self.fl_handler)  # Remove prior `FileHandler`, prep for next potential run
-        self.fl_handler = None
-
-        # Set file write logging
-        os.makedirs(self.out_dir, exist_ok=True)
-        # For only 1 of the processes if distributed training
-        self.fl_handler = logging.FileHandler(os.path.join(self.out_dir, log_fnm))
-        self.fl_handler.setLevel(logging.DEBUG)
-        self.fl_handler.setFormatter(MyFormatter(with_color=False))
-        self.logger_fl.addHandler(self.fl_handler)
-
     def on_train_begin(self, args: TrainingArguments, state, control, **kwargs):
         if self.trainer.is_local_process_zero():  # For distributed training; TODO: support multi machine?
-            self.log_fnm = self.log_fnm_tpl.format(now(sep='-'))
-            self._update_log_handler(f'train, {self.log_fnm}.log')
-
-            self.logger.info(f'Training started with {log_dict(self.train_meta)}')
-            self.logger_fl.info(f'Training started with {log_dict(self.train_meta, with_color=False)}')
-            out_args = f'with model config: {self.trainer.model.config} \n' \
-                       f'and training args: {self.trainer.args}'
-            self.logger.info(out_args)
-            self.logger_fl.info(out_args)
+            self.logger: logging.Logger = get_logger(self.name)
+            self.logger_fl = get_logger(
+                name=self.name, typ='file-write', file_path=os.path.join(self.output_dir, f'{self.log_fnm}.log')
+            )
+            self.tb_writer = SummaryWriter(os.path.join(self.output_dir, f'tb - {self.log_fnm}'))
+            conf = self.trainer.model.config.to_dict()
+            args = self.trainer.args.to_dict()
+            sleep(2)  # otherwise, logging messages missing
+            self.logger.info(f'Training started on model{log_dict_pg(conf)}, {log_dict(self.train_meta)} and '
+                             f'training args: {log_dict_pg(args)}...  ')
+            self.logger_fl.info(f'Training started on model{log_dict_id(conf)}, {log_dict_nc(self.train_meta)} and '
+                                f'training args: {log_dict_id(args)}...  ')
+            sleep(2)
             self.t_strt = datetime.datetime.now()
 
             self.train_begin = True
-            if self.interactive:
-                self.plot.make_plot()
 
     def on_train_end(self, args: TrainingArguments, state, control, **kwargs):
         if self.train_begin:
@@ -126,17 +106,8 @@ class MyLoggingCallback(TrainerCallback):
             self.logger.info(f'Training completed in {logi(t)} ')
             self.logger_fl.info(f'Training completed in {t} ')
 
-            if self.interactive:
-                self.plot.finish()
-            else:  # If didn't show plot before
-                self.plot.plot_single(self.log_hist)
-
     def on_evaluate(self, args: TrainingArguments, state, control, **kwargs):
         if self.trainer.is_local_process_zero():  # Similarly to `on_train_begin`
-            if self.trainer.mode == 'eval':
-                self.log_fnm = self.log_fnm_tpl.format(now(sep='-'))
-                self._update_log_handler(f'eval, {self.log_fnm}.log')
-
             dl_vl: DataLoader
             model, dl_vl = kwargs['model'], kwargs['eval_dataloader']
             dset_vl: Dataset = dl_vl.dataset
@@ -152,79 +123,48 @@ class MyLoggingCallback(TrainerCallback):
             self.logger_fl.info(f'Ran evaluation with {log_dict(eval_meta, with_color=False)}')
 
     def on_log(self, args: TrainingArguments, state, control, logs: Dict = None, **kwargs):
-        def out_dict2str(d: Dict, return_wo_color: bool = False):
-            keys_ = [
-                'step', 'epoch', 'train_loss', 'eval_loss', 'train_acc', 'eval_acc',
-                'train_acc_cls', 'eval_acc_cls', 'train_acc_mis', 'eval_acc_mis',
-                'learning_rate'
-            ]
-            fmt = [
-                f':>{len(str(self.n_step))}', f':{len(str(self.trainer.args.num_train_epochs)) + 4}.3f',
-                ':7.4f', ':7.4f', ':6.2f', ':6.2f',
-                ':6.2f', ':6.2f', ':6.2f', ':6.2f', ':.2e'
-            ]
-            s_fmts = [f'{{{k}{fmt_}}}' for k, fmt_ in zip(keys_, fmt)]  # Enforce ordering
-
-            d = {k: (
-                    ('loss' in k and round(v, 4)) or
-                    ('acc' in k and round(v*100, 4)) or
-                    ('learning_rate' in k and round(v, 6)) or
-                    v
-                ) for k, v in d.items()
-            }
-            s_outs = [(k, fmt_.format(**{k: d[k]})) for fmt_, k in zip(s_fmts, keys_) if k in d]
-            out_ = ', '.join(f'{k}={logi(s)}' for (k, s) in s_outs)
-            if return_wo_color:
-                out_ = out_, ', '.join(f'{k}={s}' for (k, s) in s_outs)
-            return out_
-
         def log_update(d_out):
-            # TODO: logging on terminal is ugly if distributed training
-            out_console, out_write = out_dict2str(d_out, return_wo_color=True)
-            self.logger.info(out_console)
-            self.logger_fl.info(out_write)
-            self.log_hist.append(d_out)
-            if self.interactive:
-                self.plot.update(self.log_hist)
+            if self.train_begin:
+                d_out_ = {k: v for k, v in d_out.items() if not any(k_ in k for k_ in ['epoch', 'step'])}
+                step__ = d_out['step']
+                for k, v in d_out_.items():
+                    self.tb_writer.add_scalar(f'Train/{k}', v, step__)
+                    # This creates plots not under the same plot
+                # self.tb_writer.add_scalar(main_tag='Train', tag_scalar_dict=d_out_, global_step=d_out['step'])
+            d_out = pretty_log_dict(d_out, ref=self.train_meta, prefix='train')
+            self.logger.info(log_dict(d_out))
+            self.logger_fl.info(log_dict_nc(d_out))
 
-        def acc_stats2dict(out_dict: Dict, n_sample: int, prefix: str) -> Dict:
+        def acc_stats2dict(out_dict: Dict) -> Dict:
             """
             Convert `acc_meta`, `classification_acc_meta` dict to stats for logging
             """
-            # TODO: with multiple GPUs, creating a pandas Dataframe produces
-            # torch/nn/parallel/_functions.py:68: UserWarning: Was asked to gather along dimension 0,
-            # but all input tensors were scalars; will instead unsqueeze and return a vector.
-            # stats_acc: pd.Series = pd.DataFrame(out_dict[self.k_acc]).sum(axis=0)
-            # stats_acc_cls: pd.Series = pd.DataFrame(out_dict[self.k_cls]).sum(axis=0)
-            # assert stats_acc_cls.n_missing/n_sample  == 0
-            # return {
-            #     f'{prefix}_acc': stats_acc.n_acc / stats_acc.n_total,
-            #     f'{prefix}_acc_cls': (stats_acc_cls.n_acc/stats_acc_cls.n_total) if stats_acc_cls.n_total != 0 else 0,
-            #     # f'{prefix}_acc_mis': stats_acc_cls.n_missing/n_sample  # As a fraction
-            # }
             stats_acc = {k: sum(d[k] for d in out_dict[self.k_acc]) for k in out_dict[self.k_acc][0].keys()}
-            stats_acc_cls = {k: sum(d[k] for d in out_dict[self.k_cls]) for k in out_dict[self.k_cls][0].keys()}
-            assert stats_acc_cls['n_missing']/n_sample == 0
-            return {
-                f'{prefix}_acc': stats_acc['n_acc'] / stats_acc['n_total'],
-                f'{prefix}_acc_cls': (
-                    (stats_acc_cls['n_acc']/stats_acc_cls['n_total']) if stats_acc_cls['n_total'] != 0 else 0
-                )
+            stats_acc_cls = {
+                k: sum(d[k] for d in out_dict[self.k_cls]) for k in out_dict[self.k_cls][0].keys()
+                if k in ['n_acc', 'n_total']
             }
+            del out_dict[self.k_acc]
+            del out_dict[self.k_cls]
+            return dict(
+                ntp_acc=stats_acc['n_acc'] / stats_acc['n_total'],
+                cls_acc=(stats_acc_cls['n_acc']/stats_acc_cls['n_total']) if stats_acc_cls['n_total'] != 0 else 0
+            )
 
         def set_eval_cls_acc():  # TODO: support gradient accumulation
             stats_cls_acc: List[Dict] = self.out_dict.pop(self.k_cls_eval)
             stats_cls_acc: Dict = {k: sum(d[k] for d in stats_cls_acc) for k in stats_cls_acc[0]}
             self.out_dict = {
                 **self.out_dict,
-                **acc_stats2dict(stats_cls_acc, self.n_eval, prefix='eval')
+                **acc_stats2dict(stats_cls_acc)
             }
 
         def log_default(d_stats: Dict):
             self.logger.info(log_dict(d_stats) if isinstance(d_stats, dict) else d_stats)
             self.logger_fl.info(log_dict(d_stats, with_color=False) if isinstance(d_stats, dict) else d_stats)
 
-        if self.trainer.is_local_process_zero():  # `state.is_local_process_zero` is wrong in DDP eval
+        # basically only log the main process; `state.is_local_process_zero` is wrong in DDP eval
+        if self.trainer.is_local_process_zero():
             if self.trainer.mode == 'train':  # cos `evaluate` may be called during training
                 step = state.global_step
                 if self.do_eval:
@@ -237,7 +177,7 @@ class MyLoggingCallback(TrainerCallback):
                                 tr_acc, tr_loss, n_ep = (logs[k] for k in ('acc', 'loss', 'epoch'))
                                 self.out_dict: Dict[str, Union[str, int, float, List]] = {
                                     **dict(step=step, epoch=0, train_acc=tr_acc, train_loss=tr_loss,),
-                                    **acc_stats2dict(logs[self.k_cls], self.bsz, prefix='train')
+                                    **acc_stats2dict(logs[self.k_cls])
                                 }
 
                                 # Prep for Trainer internal evaluation call
@@ -271,7 +211,7 @@ class MyLoggingCallback(TrainerCallback):
                                     # Now is the 1st call, after logging for last batch completes
                                     self.out_dict = {
                                         **dict(step=step, train_acc=acc, train_loss=loss),
-                                        **acc_stats2dict(logs[self.k_cls], self.bsz, prefix='train')
+                                        **acc_stats2dict(logs[self.k_cls])
                                     }
                             else:  # On eval set, keep track like above
                                 if self.k_cls_eval not in self.out_dict:
@@ -331,13 +271,11 @@ class MyLoggingCallback(TrainerCallback):
                                 self.out_dict_tr[self.k_cls].append(logs[self.k_cls])
                     elif 'loss' in logs:  # The Trainer default training loss logging
                         # Take the averaging by parent `Trainer` for granted
-                        self.out_dict_tr.update(acc_stats2dict(self.out_dict_tr, self.bsz, prefix='train'))
-                        del self.out_dict_tr[self.k_acc]
-                        del self.out_dict_tr[self.k_cls]
-                        self.out_dict_tr['learning_rate'] = logs['learning_rate']
-                        self.out_dict_tr['train_loss'] = logs['loss']
-                        # assert self.out_dict_tr['epoch'] == round(state.epoch, 2)  # Assertion sometimes fails
+                        self.out_dict_tr.update(acc_stats2dict(self.out_dict_tr))
+                        self.out_dict_tr['lr'], self.out_dict_tr['loss'] = logs['learning_rate'], logs['loss']
                         self.out_dict_tr['epoch'] = state.epoch
+                        if 'step' in self.out_dict_tr:  # 1-indexed
+                            self.out_dict_tr['step'] += 1
                         log_update(self.out_dict_tr)
                         self.out_dict_tr = None  # Rest for next global step
                     elif any('runtime' in k for k in logs.keys()):
@@ -348,10 +286,6 @@ class MyLoggingCallback(TrainerCallback):
             else:
                 assert self.trainer.mode == 'eval'
                 log_default(logs)
-                # if 'src' not in logs:  # Skip custom compute_loss logging
-                #     log_default(logs)
-        # if state.is_local_process_zero:
-        #     self.logger.info(log_dict(logs) if isinstance(logs, dict) else logs)
 
 
 class ColoredPrinterCallback(TrainerCallback):
@@ -387,7 +321,7 @@ def get_accs(
     :param compute_cls_acc: Whether to compute classification accuracy
     :return: NTP accuracy & sample classification accuracy metadata
 
-    .. note: Classification accuracy based on NTP task during training
+    .. note: Classification accuracy based on NTP task **during training**
         **assumes** predicted token id at the same location of label id
     """
     preds = logits.argmax(dim=-1)
@@ -403,11 +337,31 @@ def get_accs(
     if compute_cls_acc:
         token_type_ids, dataset_id = inputs['token_type_ids'].detach(), inputs['dataset_id'].detach()
 
-        id_att = tokenizer.enc_spec(tokenizer.answ_type_token)
-        id_answ = tokenizer.enc_spec(tokenizer.answ_token)
+        id_att = tokenizer.enc_spec(tokenizer.answer_type_token)
+        id_answ = tokenizer.enc_spec(tokenizer.boa_token)
         id_eos = tokenizer.enc_spec(tokenizer.eos_token)
         # Also shift by 1
         lst_idxs_answ: List[List[int]] = [(row == id_att).nonzero().flatten().tolist() for row in token_type_ids[:, 1:]]
+
+        id_sep = tokenizer.encode(tokenizer.ques_sep_token)[0]
+
+        def get_label_ids(i_sample: int, idxs_answ: List[int]) -> List[Tuple[int, List[int]]]:
+            """
+            Prepare for input to `get_label_id`
+            :param i_sample: Index of sample as in `input_ids`
+            :param idxs_answ: Indices of the answer part
+            :return: Potentially breaks down the indices of list of labels into sublists, one for each label
+            """
+            msk_sep: torch.Tensor = labels_[i_sample, idxs_answ] == id_sep
+            if torch.any(msk_sep):
+                idxs_sep = msk_sep.nonzero().flatten().tolist()
+                # filters out the sep token
+                idxs = [*idxs_sep, None]
+                lst_idxs_answ_ = [idxs_answ[:idxs_sep[0]]]
+                lst_idxs_answ_ += [idxs_answ[idx+1:idxs[i+1]] for i, idx in enumerate(idxs[:-1])]
+                return [(i_sample, idxs_answ_) for idxs_answ_ in lst_idxs_answ_]
+            else:
+                return [(i_sample, idxs_answ)]
 
         def get_label_id(i_sample: int, idxs_answ: List[int]) -> Dict[str, int]:
             """
@@ -417,8 +371,9 @@ def get_accs(
             """
             assert len(idxs_answ)  # Should always exist, see `ZsGPT2Tokenizer.__call__`
             token_ids_true = labels_[i_sample, idxs_answ].tolist()  # Inputs are labels
-            assert token_ids_true[0] == id_answ  # Remove answer special prefix token & potentially the ending token
-            idxs_answ, token_ids_true = idxs_answ[1:], token_ids_true[1:]
+            # Remove answer special prefix token & potentially the ending token
+            if token_ids_true[0] == id_answ:
+                idxs_answ, token_ids_true = idxs_answ[1:], token_ids_true[1:]
             assert len(token_ids_true)  # Labels should always be available
             if token_ids_true[-1] == id_eos:
                 idxs_answ, token_ids_true = idxs_answ[:-1], token_ids_true[:-1]
@@ -427,36 +382,41 @@ def get_accs(
             dset_id = dataset_id[i_sample].item()
             dnm_ = config('UTCD.dataset_id2name')[dset_id]
             split = 'train' if mode == 'train' else 'test'
-            descs = config(f'UTCD.datasets.{dnm_}.labels.{split}')  # TODO: assume `train` mode
+            descs = config(f'UTCD.datasets.{dnm_}.splits.{split}.labels')
             desc_true = tokenizer.decode(token_ids_true)
             assert desc_true in descs
             # By default, the predictions and labels will not agree
             d_lbs_ = dict(label_id_pred=-1, label_id_true=descs.index(desc_true))  # Local label wrt dataset
             desc_pred = tokenizer.decode(preds[i_sample, idxs_answ])
+            # print(desc_true, desc_pred)
             if desc_pred in descs:
                 d_lbs_['label_id_pred'] = descs.index(desc_pred)
             return d_lbs_
 
-        lst_idxs_n_lbs = [get_label_id(i_sample, idxs_answ) for i_sample, idxs_answ in enumerate(lst_idxs_answ)]
+        args = sum([get_label_ids(i_sample, idxs_answ) for i_sample, idxs_answ in enumerate(lst_idxs_answ)], start=[])
+        lst_idxs_n_lbs = [get_label_id(*a) for a in args]
         d_lbs: Dict[str, List[int]] = {k_id: [d[k_id] for d in lst_idxs_n_lbs] for k_id in lst_idxs_n_lbs[0].keys()}
         ids_pred, ids_true = d_lbs['label_id_pred'], d_lbs['label_id_true']
         n_acc = sum(p == t for p, t in zip(ids_pred, ids_true))  # prediction ids match label ids
-        n_total = len(ids_true)
-        assert n_total == len(labels_)  # Number of samples with complete label
+        n_total = len(ids_true)  # note multi-label means potentially more classification denominator than batch size
         d_ret['classification_acc_meta'] = dict(n_acc=n_acc, n_total=n_total, ids_pred=ids_pred, ids_true=ids_true)
     return d_ret
 
 
 class CustomTrainer(Trainer):
-    def __init__(self, tokenizer: GPT2TokenizerFast = None, custom_logging=True, compute_cls_acc=True, **kwargs):
+    def __init__(
+            self, tokenizer: GPT2TokenizerFast = None, custom_logging=True, compute_cls_acc=True,
+            is_ddp: Union[bool, int] = False, **kwargs
+    ):
         super().__init__(**kwargs)
         assert 'args' in kwargs
 
         self.custom_logging = custom_logging
         self.compute_cls_acc = compute_cls_acc
+        self.is_ddp = is_ddp
 
         self.tokenizer = tokenizer  # TODO: generalize to more tokenizers?
-        self.mode: str = None
+        self.mode = None
 
         self.post_init()
         # Sanity check for distributed training
@@ -469,7 +429,7 @@ class CustomTrainer(Trainer):
         ]
 
         if self.custom_logging:
-            self.add_callback(MyLoggingCallback(self, do_eval=self.args.do_eval, interactive=False))
+            self.add_callback(MyLoggingCallback(self, do_eval=self.args.do_eval, is_ddp=self.is_ddp))
         else:
             self.add_callback(ColoredPrinterCallback())
 

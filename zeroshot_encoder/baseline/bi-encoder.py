@@ -66,17 +66,22 @@ if __name__ == "__main__":
         train_dataloader = DataLoader(train, shuffle=True, batch_size=train_batch_size)
         train_loss = losses.CosineSimilarityLoss(model)
 
-        evauator = evaluation.EmbeddingSimilarityEvaluator.from_input_examples(test, name='UTCD-test')
+        evaluator = evaluation.EmbeddingSimilarityEvaluator.from_input_examples(test, name='UTCD-test')
 
         warmup_steps = math.ceil(len(train_dataloader) * num_epochs * 0.1) #10% of train data for warm-up
         logger.info("Warmup-steps: {}".format(warmup_steps))
 
-        model.fit(train_objectives=[(train_dataloader, train_loss)], 
-                epochs=num_epochs,
-                evaluator=evauator, 
-                warmup_steps=warmup_steps,
-                evaluation_steps=100000,
-                output_path=model_save_path)
+        model.fit(
+            train_objectives=[(train_dataloader, train_loss)],
+            epochs=num_epochs,
+            # internally, passing in an evaluator means after training ends, model not saved...
+            evaluator=evaluator,
+            warmup_steps=warmup_steps,
+            evaluation_steps=100000,
+            output_path=model_save_path
+        )
+        # hence, make explicit call to save model
+        model.save(model_save_path)
     
     if args.command == 'test':
         pred_path = join(args.model_path, 'preds/{}/'.format(args.domain))

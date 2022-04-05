@@ -117,20 +117,21 @@ def binary_cls_format(data, name=None, sampling='rand', train=True, mode='vanill
                 random.seed(i)
                 if len(other_labels) >= 2:
                     random_label = random.sample(other_labels, k=2)
-                    examples.append(InputExample(texts=[text, random_label[0]], label=0))
-                    examples.append(InputExample(texts=[text, random_label[1]], label=0))
+                    # As expected by sentence-transformer::CrossEncoder
+                    examples.append(InputExample(texts=[text, random_label[0]], label=float(0)))
+                    examples.append(InputExample(texts=[text, random_label[1]], label=float(0)))
                 elif len(other_labels) > 0:
-                    examples.append(InputExample(texts=[text, other_labels[0]], label=0))
+                    examples.append(InputExample(texts=[text, other_labels[0]], label=float(0)))
 
             elif sampling == 'vect':
                 if len(other_labels) >= 2:
                     text_vector = vects[i]
                     other_label_vectors = [label_vectors[label] for label in other_labels]
                     scores = [text_vector.similarity(vector) for vector in other_label_vectors]
-                    examples.append(InputExample(texts=[text, other_labels[argmax(scores)]], label=0))
-                    examples.append(InputExample(texts=[text, other_labels[argmin(scores)]], label=0))
+                    examples.append(InputExample(texts=[text, other_labels[argmax(scores)]], label=float(0)))
+                    examples.append(InputExample(texts=[text, other_labels[argmin(scores)]], label=float(0)))
                 elif len(other_labels) > 0:
-                    examples.append(InputExample(texts=[text, other_labels[0]], label=0))
+                    examples.append(InputExample(texts=[text, other_labels[0]], label=float(0)))
 
     else:
         for text, labels in data['test'].items():
