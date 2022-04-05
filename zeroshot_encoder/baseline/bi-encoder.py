@@ -1,17 +1,14 @@
 import math
 import random
 import logging
-import json
 import pandas as pd
 from numpy import argmax
 from zeroshot_encoder.util.load_data import get_data, binary_cls_format, in_domain_data_path, out_of_domain_data_path
 from os.path import join
 from sentence_transformers import SentenceTransformer, models,losses, evaluation, util
-from torch import nn
 from argparse import ArgumentParser
 from torch.utils.data import DataLoader
 from pathlib import Path
-from collections import Counter
 from tqdm import tqdm
 from sklearn.metrics import classification_report
 
@@ -33,6 +30,7 @@ def parse_args():
     # set test arguments
     test.add_argument('--model_path', type=str, required=True)
     test.add_argument('--domain', type=str, choices=['in', 'out'] ,required=True)
+    test.add_argument('--mode', type=str, choices=['vanilla', 'implicit', 'explicit'], default='vanilla')
     
     return parser.parse_args()
 
@@ -48,9 +46,8 @@ if __name__ == "__main__":
         train = []
         test = []
         for dataset in datasets:
-            if args.mode == 'vanilla':
-                train += binary_cls_format(data[dataset], name=dataset, sampling=args.sampling)
-                test += binary_cls_format(data[dataset], train=False)
+            train += binary_cls_format(data[dataset], name=dataset, sampling=args.sampling, mode=args.mode)
+            test += binary_cls_format(data[dataset], train=False, mode=args.mode)
         
         train_batch_size = args.batch_size
         num_epochs = args.epochs
@@ -99,7 +96,7 @@ if __name__ == "__main__":
         # loop through all datasets
         for dataset in datasets:
             examples = data[dataset]["test"]
-            labels = data[dataset]['labels']
+            labels = data[dataset]['labels'] if args.mode == 'vanilla' else ['{} {}'.format(label, data[dataset]['aspect']) for label in data[dataset]['labels']]
             preds = []
             gold = []
             correct = 0

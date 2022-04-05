@@ -34,6 +34,7 @@ def parse_args():
     # set test arguments
     test.add_argument('--model_path', type=str, required=True)
     test.add_argument('--domain', type=str, choices=['in', 'out'] ,required=True)
+    test.add_argument('--mode', type=str, choices=['vanilla', 'implicit', 'explicit'], default='vanilla')
 
     # sest pre-train arguments
     pre_train.add_argument('--output', type=str, required=True)
@@ -76,8 +77,8 @@ if __name__ == "__main__":
         test = []
         for dataset in datasets:
             if args.mode == 'vanilla':
-                train += binary_cls_format(data[dataset], name=dataset, sampling=args.sampling)
-                test += binary_cls_format(data[dataset], train=False)
+                train += binary_cls_format(data[dataset], name=dataset, sampling=args.sampling, mode=args.mode)
+                test += binary_cls_format(data[dataset], train=False, mode=args.mode)
             elif args.model == 'implicit':
                 train += nli_cls_format(data[dataset], name=dataset, sampling=args.sampling)
                 test += nli_cls_format(data[dataset], name=dataset, train=False)

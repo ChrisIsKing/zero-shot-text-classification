@@ -31,6 +31,7 @@ def parse_args():
     # set test arguments
     test.add_argument('--model_path', type=str, required=True)
     test.add_argument('--domain', type=str, choices=['in', 'out'] ,required=True)
+    test.add_argument('--mode', type=str, choices=['vanilla', 'implicit', 'explicit'], default='vanilla')
     
     return parser.parse_args()
 
@@ -45,9 +46,8 @@ if __name__ == "__main__":
         train = []
         test = []
         for dataset in datasets:
-            if args.mode == 'vanilla':
-                train += binary_cls_format(data[dataset], name=dataset, sampling=args.sampling)
-                test += binary_cls_format(data[dataset], train=False)
+                train += binary_cls_format(data[dataset], name=dataset, sampling=args.sampling, mode=args.mode)
+                test += binary_cls_format(data[dataset], train=False, mode=args.mode)
 
         train_batch_size = args.batch_size
         num_epochs = args.epochs
@@ -100,7 +100,7 @@ if __name__ == "__main__":
             # loop through each test example
             print("Evaluating dataset: {}".format(dataset))
             for index, (text, gold_labels) in enumerate(tqdm(examples.items())):
-                query = [(text, label) for label in labels]
+                query = [(text, label) for label in labels] if args.mode == 'vanilla' else [(text, '{} {}'.format(label, data[dataset]['aspect'])) for label in labels]
                 results = model.predict(query, apply_softmax=True)
 
                 # compute which pred is higher

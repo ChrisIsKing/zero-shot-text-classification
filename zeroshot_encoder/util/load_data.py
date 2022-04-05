@@ -87,10 +87,14 @@ def get_nli_data():
                 dev_samples.append(InputExample(texts=[row['sentence1'], row['sentence2']], label=label_id))
     return train_samples, dev_samples
 
-def binary_cls_format(data, name=None, sampling='rand', train=True):
+def binary_cls_format(data, name=None, sampling='rand', train=True, mode='vanilla'):
     examples = []
     if train:
-        label_list = data['labels']
+        if mode == 'vanilla':
+            label_list = data['labels']
+        elif mode == 'implicit':
+            label_list = ['{} {}'.format(label, data['aspect']) for label in data['labels']]
+
         example_list = [x for x in data['train'].keys()]
 
         if sampling == 'vect':
@@ -101,7 +105,7 @@ def binary_cls_format(data, name=None, sampling='rand', train=True):
         
         print('Generating {} examples'.format(name))
         for i, (text, labels) in enumerate(tqdm(data['train'].items())):
-            true_labels = labels
+            true_labels = labels if mode != 'implicit' else ['{} {}'.format(label, data['aspect']) for label in labels]
             other_labels = [label for label in label_list if label not in true_labels]
             
             # Generate label for true example
@@ -131,7 +135,10 @@ def binary_cls_format(data, name=None, sampling='rand', train=True):
     else:
         for text, labels in data['test'].items():
            for label in labels:
-               examples.append(InputExample(texts=[text, label], label=1))
+                if mode == 'implicit':
+                   examples.append(InputExample(texts=[text, '{} {}'.format(label, data['aspect'])], label=1))
+                else:
+                    examples.append(InputExample(texts=[text, label], label=1))
     return examples
 
 def nli_template(label, category):
