@@ -22,7 +22,7 @@ import seaborn as sns
 import colorama
 import sty
 
-from zeroshot_encoder.util.data_path import PATH_BASE, DIR_DSET, DIR_PROJ, DIR_MDL, PKG_NM
+from zeroshot_encoder.util.data_path import PATH_BASE, DIR_PROJ, PKG_NM
 
 
 pd.set_option('expand_frame_repr', False)

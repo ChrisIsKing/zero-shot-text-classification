@@ -707,15 +707,12 @@ def load_trained(epoch: int = 3) -> ZsGPT2LMHeadModel:
     assert epoch in [2, 3]
     if not hasattr(load_trained, 'epoch2path'):
         load_trained.epoch2path = {
-            2: os.path.join(
-                PATH_BASE, DIR_PROJ, 'trained-models', 'gpt2-nvidia', '2022-03-04 21-33-12', 'checkpoint-37066'
-            ),
-            3: os.path.join(
-                PATH_BASE, DIR_PROJ, 'trained-models', 'gpt2-nvidia', '2022-03-04 21-33-12', 'checkpoint-55599'
-            )
+            # 2: os.path.join('2022-03-04 21-33-12', 'checkpoint-37066'),
+            # 3: os.path.join('2022-03-04 21-33-12', 'checkpoint-55599'),
+            3: os.path.join('2022-04-02_11-51-19', 'checkpoint-51390'),
         }
-    checkpoint_path = load_trained.epoch2path[epoch]
-    return ZsGPT2LMHeadModel.from_pretrained(checkpoint_path, is_zs_gpt2=True).to('cuda')  # with caching
+    path = os.path.join(PATH_BASE, DIR_PROJ, 'trained-models', 'gpt2-nvidia', load_trained.epoch2path[epoch])
+    return ZsGPT2LMHeadModel.from_pretrained(path, is_zs_gpt2=True).to('cuda')  # with caching
 
 
 def evaluate_trained(in_domain: bool = True, batch_size: int = 48, n_ep: int = 3):
