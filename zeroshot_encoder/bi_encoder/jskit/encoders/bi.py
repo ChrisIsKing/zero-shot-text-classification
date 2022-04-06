@@ -230,8 +230,8 @@ def save_model(model_path: str):
                 os.makedirs(cand_bert_path)
             if not os.path.exists(cont_bert_path):
                 os.makedirs(cont_bert_path)
-            model.cand_bert.config.to_json_file(cand_bert_path + "config.json")
-            model.cont_bert.config.to_json_file(cont_bert_path + "config.json")
+            model.cand_bert.config_dict.to_json_file(cand_bert_path + "config.json")
+            model.cont_bert.config_dict.to_json_file(cont_bert_path + "config.json")
             tokenizer.save_vocabulary(cand_bert_path)
             tokenizer.save_vocabulary(cont_bert_path)
             torch.save(model.cand_bert.state_dict(),

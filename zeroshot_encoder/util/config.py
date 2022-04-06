@@ -8,7 +8,7 @@ from zeroshot_encoder.util import *
 
 
 STSb = 'stsb_multi_mt'  # Per Hugging Face
-config = {
+config_dict = {
     'fine-tune': dict(
         eg_sbert=dict(  # Per *Sentence-BERT: Sentence Embeddings using Siamese BERT-Networks*, section 4.2
             dataset_name=STSb,
@@ -102,25 +102,21 @@ config = {
             # Out-of-domain datasets: test split intended to evaluation
             # TODO: until new multi-label format supported
             amazon_polarity=dict(
-                path='UTCD-ood/amazon_polarity', aspect='sentiment', eval_labels_same=True, domain='out'
-            ),
+                path='UTCD/out-of-domain/amazon_polarity', aspect='sentiment', eval_labels_same=True, domain='out'),
             finance_sentiment=dict(
-                path='UTCD-ood/finance_sentiment', aspect='sentiment', eval_labels_same=True, domain='out'
-            ),
-            yelp=dict(path='UTCD-ood/yelp', aspect='sentiment', eval_labels_same=True, domain='out'),
+                path='UTCD/out-of-domain/finance_sentiment', aspect='sentiment', eval_labels_same=True, domain='out'),
+            yelp=dict(path='UTCD/out-of-domain/yelp', aspect='sentiment', eval_labels_same=True, domain='out'),
             # Removed for too many options blow up GPT2's 1024 token length; TODO: remove, keep now cos plotting
-            arxiv=dict(path='UTCD-ood/arxiv', aspect='topic', eval_labels_same=True, domain='out'),
+            # arxiv=dict(path='UTCD/out-of-domain/arxiv', aspect='topic', eval_labels_same=True, domain='out'),
             multi_eurlex=dict(
-              path='UTCD-ood/multi_eurlex', aspect='topic', eval_labels_same=True, domain='out'),
-            patent=dict(path='UTCD-ood/patent', aspect='topic', eval_labels_same=True, domain='out'),
+              path='UTCD/out-of-domain/multi_eurlex', aspect='topic', eval_labels_same=True, domain='out'),
+            patent=dict(path='UTCD/out-of-domain/patent', aspect='topic', eval_labels_same=True, domain='out'),
             consumer_finance=dict(
-                path='UTCD-ood/consumer_finance', aspect='topic', eval_labels_same=True, domain='out'
-            ),
-            banking77=dict(path='UTCD-ood/banking77', aspect='intent', eval_labels_same=True, domain='out'),
-            snips=dict(path='UTCD-ood/snips', aspect='intent', eval_labels_same=True, domain='out'),
+                path='UTCD/out-of-domain/consumer_finance', aspect='topic', eval_labels_same=True, domain='out'),
+            banking77=dict(path='UTCD/out-of-domain/banking77', aspect='intent', eval_labels_same=True, domain='out'),
+            snips=dict(path='UTCD/out-of-domain/snips', aspect='intent', eval_labels_same=True, domain='out'),
             nlu_evaluation=dict(
-                path='UTCD-ood/nlu_evaluation', aspect='intent', eval_labels_same=True, domain='out'
-            )
+                path='UTCD/out-of-domain/nlu_evaluation', aspect='intent', eval_labels_same=True, domain='out')
         ),
         dataset_ext='json'  # all in json
     ),
@@ -128,7 +124,7 @@ config = {
 }
 
 path_dset = os.path.join(PATH_BASE, DIR_PROJ, DIR_DSET)
-ext = config['UTCD']['dataset_ext']
+ext = config_dict['UTCD']['dataset_ext']
 
 
 def _re_call() -> Callable[[str], int]:
@@ -180,32 +176,35 @@ def path2dataset_info(d: Dict) -> Tuple[Dict, Dict, Dict]:
     with open(path) as fl:
         dsets: Dict = json.load(fl)
 
-    def split2info(split, dset: Dict[str, List[str]]) -> Dict:
+    def split2info(split, dset: Dict[str, List[str]], count_token_length: bool = True) -> Dict:
         # Based on heuristics on how the `json` are stored
         # creating a list of all the strings consume memory for prohibitively large datasets
         n_text_, n_pair_ = len(dset.keys()), sum([len(lbs) for lbs in dset.values()])
         lbs_uniq = set().union(*dset.values())
         n_multi_label = sum([len(lbs_) > 1 for lbs_ in dset.values()])
-        txt_n_toks, lb_n_toks = dict(), dict()
-        for mode in tokenize_modes:
-            n, desc_t, desc_l = 16, f'{split}-{mode}-text', f'{split}-{mode}-label'
-            lb2tokenize_len = {lb: get_tokenizer_len(lb, mode) for lb in lbs_uniq}
+        txt_n_toks, lb_n_toks = None, None
+        if count_token_length:
+            txt_n_toks, lb_n_toks = dict(), dict()
+            for mode in tokenize_modes:
+                n, desc_t, desc_l = 16, f'{split}-{mode}-text', f'{split}-{mode}-label'
+                lb2tokenize_len = {lb: get_tokenizer_len(lb, mode) for lb in lbs_uniq}
 
-            counter_txt, counter_lb = Counter(), Counter()
-            if mode == 're':
-                for t in tqdm(dset.keys(), total=len(dset), desc=f'{desc_t:>{n}}'):
-                    counter_txt[get_tokenizer_len(t, mode)] += 1
-            else:
-                batch_size = 2048*2
-                for grp in tqdm(
-                        group_n(dset.keys(), batch_size), total=math.ceil(len(dset) / batch_size), desc=f'{desc_t:>{n}}'
-                ):
-                    lens: List[int] = get_tokenizer_len(list(grp), mode)
-                    counter_txt.update(lens)
-            for t in tqdm(dset.values(), desc=f'{desc_l:>{n}}'):
-                for lb in t:
-                    counter_lb[lb2tokenize_len[lb]] += 1
-            txt_n_toks[mode], lb_n_toks[mode] = counter_txt, counter_lb
+                counter_txt, counter_lb = Counter(), Counter()
+                if mode == 're':
+                    for t in tqdm(dset.keys(), total=len(dset), desc=f'{desc_t:>{n}}'):
+                        counter_txt[get_tokenizer_len(t, mode)] += 1
+                else:
+                    batch_size = 2048*2
+                    for grp in tqdm(
+                            group_n(dset.keys(), batch_size),
+                            total=math.ceil(len(dset) / batch_size), desc=f'{desc_t:>{n}}'
+                    ):
+                        lens: List[int] = get_tokenizer_len(list(grp), mode)
+                        counter_txt.update(lens)
+                for t in tqdm(dset.values(), desc=f'{desc_l:>{n}}'):
+                    for lb in t:
+                        counter_lb[lb2tokenize_len[lb]] += 1
+                txt_n_toks[mode], lb_n_toks[mode] = counter_txt, counter_lb
         return dict(
             labels=sorted(lbs_uniq),
             n_label=len(lbs_uniq),
@@ -218,11 +217,16 @@ def path2dataset_info(d: Dict) -> Tuple[Dict, Dict, Dict]:
         )
     labels, aspect = dsets.pop('labels'), dsets.pop('aspect')
     assert aspect == d['aspect']
-    d_out = {split: split2info(split, dset) for split, dset in dsets.items()}  # Labels for each split
+    d_out = {  # ignore out of domain train split for potentially too large
+        split: split2info(split, dset, count_token_length=not (split == 'train' and d['domain'] == 'out'))
+        for split, dset in dsets.items()
+    }  # Labels for each split
     assert all(split in ['train', 'test'] for split in d_out.keys())
     # sum over all splits of the dataset for token length computation
     txt_n_toks_all = [d_out.pop('txt_n_toks') for d_out in d_out.values()]
     lb_n_toks_all = [d_out.pop('lb_n_toks') for d_out in d_out.values()]
+    txt_n_toks_all = [e for e in txt_n_toks_all if e]  # pop from the dict, then remove them for stats
+    lb_n_toks_all = [e for e in lb_n_toks_all if e]
     txt_n_toks_all = {mode: sum([c[mode] for c in txt_n_toks_all], start=Counter()) for mode in tokenize_modes}
     lb_n_toks_all = {mode: sum([c[mode] for c in lb_n_toks_all], start=Counter()) for mode in tokenize_modes}
 
@@ -238,23 +242,21 @@ def path2dataset_info(d: Dict) -> Tuple[Dict, Dict, Dict]:
 
 
 def extract_utcd_meta() -> Dict:
-    d_dsets: Dict = config['UTCD']['datasets']
+    d_dsets: Dict = config_dict['UTCD']['datasets']
     logger = get_logger('Process UTCD')
     d_n_toks = dict()
     for dnm, d_dset in d_dsets.items():
         logger.info(f'Processing {logi(dnm)}... ')
-        if d_dset['domain'] == 'in':
-            d_meta, d_avg_tok, d_n_toks[dnm] = path2dataset_info(d_dset)
-            d_dset['splits'] = d_meta
-            d_dset.update(d_avg_tok)
+        d_meta, d_avg_tok, d_n_toks[dnm] = path2dataset_info(d_dset)
+        d_dset['splits'] = d_meta
+        d_dset.update(d_avg_tok)
     dnms = sorted(d_dsets)  # All datasets, in- and out-of-domain, share the same dataset <=> id mapping
-    config['UTCD']['dataset_name2id'] = {dnm: i for i, dnm in enumerate(dnms)}
-    config['UTCD']['dataset_id2name'] = {i: dnm for i, dnm in enumerate(dnms)}
-
+    config_dict['UTCD']['dataset_name2id'] = {dnm: i for i, dnm in enumerate(dnms)}
+    config_dict['UTCD']['dataset_id2name'] = {i: dnm for i, dnm in enumerate(dnms)}
     return d_n_toks
 
 
-def plot_utcd_n_toks(d_n_toks: Dict, save=True):
+def plot_utcd_n_toks(d_n_toks: Dict, domain: str, save=True):
     def weighted_quantile(values, quantiles, sample_weight=None, values_sorted=False, old_style=False):
         # Credit: https://stackoverflow.com/a/29677616/10732321
         """ Very close to numpy.percentile, but supports weights.
@@ -312,21 +314,22 @@ def plot_utcd_n_toks(d_n_toks: Dict, save=True):
         df = d_df[(text_type, mode)]
         legend = i_row == 0 and i_col == 0
         sns.histplot(
-            data=df, x='n_token', hue='dataset_name', kde=text_type == 'text', discrete=True, weights='counts',
-            palette='husl',
-            legend=legend, common_norm=False, ax=ax, stat='density'
+            data=df, x='n_token', hue='dataset_name', weights='counts',
+            kde=text_type == 'text', discrete=True, common_norm=False, stat='density',
+            palette='husl', legend=legend, ax=ax
         )
         ax.set(xlabel=None, ylabel=None)
         ax.set_title(f'{text_type} with {mode} tokenization')
         if text_type == 'text':  # empirical, cos there are outliers for `text`s
             p = norm().cdf(3)  # quantile at 3std
             mi = df.n_token.min()
-            ma = weighted_quantile(df.n_token, [p], sample_weight=df.counts)[0]
+            ma = round(weighted_quantile(df.n_token, [p], sample_weight=df.counts)[0])
             ax.set_xlim([mi, ma])
         else:
-            xticks = ax.get_xticks()
+            xticks = ax.get_xticks()  # enforce integer ticks
             ax.set_xticks(list(range(math.floor(xticks.min()), math.ceil(xticks.max()) + 1)))
-    title = 'Tokenization length distribution across datasets'
+    domain = 'in-domain' if domain == 'in' else 'out-of-domain eval'
+    title = f'Tokenization length distribution across {domain} datasets'
     plt.suptitle(title)
     fig.supxlabel('#token')
     fig.supylabel('Density')
@@ -338,13 +341,19 @@ def plot_utcd_n_toks(d_n_toks: Dict, save=True):
         plt.show()
 
 
-plot_utcd_n_toks(extract_utcd_meta(), save=True)
+d_n_tok = extract_utcd_meta()
+# for dom in ['in', 'out']:
+for dom in ['in']:
+    # plot only in-domain data as out-of-domain tokens lengths are too long,
+    # resulting in prohibitively large # of patches for bar-plot to terminate soon
+    d_n_tok_ = {dnm: v for dnm, v in d_n_tok.items() if get(config_dict, f'UTCD.datasets.{dnm}.domain') == dom}
+    plot_utcd_n_toks(d_n_tok_, domain=dom, save=True)
 
 
 if __name__ == '__main__':
     from icecream import ic
 
     fl_nm = 'config.json'
-    ic(config)
+    ic(config_dict)
     with open(os.path.join(PATH_BASE, DIR_PROJ, PKG_NM, 'util', 'config.json'), 'w') as f:
-        json.dump(config, f, indent=4)
+        json.dump(config_dict, f, indent=4)
