@@ -874,6 +874,22 @@ def evaluate_trained(domain: str = 'in', batch_size: int = 48, n_ep: int = 3):
         logger_fl.info(f'Evaluation on {dnm_} written to CSV at {path}')
 
 
+def gpt2_inference(text: str, label_options: List[str]) -> str:
+    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    model = load_trained(epoch=3).to(device)
+    model_size = model.config.max_length = model.config.n_ctx
+    model.config.pad_token_id = model.config.eos_token_id
+    model.eval()
+    tkzer = ZsGPT2Tokenizer.from_pretrained('gpt2', use_fast=True, model_max_length=model_size)
+
+    # 'dataset_name` just so that it passes, irrelevant
+    tokenize_fn = tokenize_func(tkzer, dataset_name='UTCD', mode='inference-sample')
+    inputs = tokenize_fn(dict(text=text, dataset_id=-1, labels=-1, label_options=label_options))
+    inputs = {k: torch.tensor(v).to(device).unsqueeze(0) for k, v in inputs.items()}  # add dummy batch dim
+    outputs = model.generate(**inputs)
+    return tkzer.batch_decode(outputs, skip_special_tokens=False)
+
+
 if __name__ == '__main__':
     from icecream import ic
 
@@ -972,24 +988,8 @@ if __name__ == '__main__':
     # new_training()
 
     def sanity_check_trained_generate():
-        device = 'cuda' if torch.cuda.is_available() else 'cpu'
-        model = load_trained(epoch=3).to(device)
-        # To disable warning `Setting `pad_token_id` to `eos_token_id` for open-end generation.`
-        model_size = model.config.max_length = model.config.n_ctx
-        model.config.pad_token_id = model.config.eos_token_id
-        model.eval()
-        tkzer = ZsGPT2Tokenizer.from_pretrained('gpt2', use_fast=True, model_max_length=model_size)
-        model.tokenizer = tkzer  # See ZsGPT2LMHeadModel.forward() sanity check`
-
         text = 'hello world'
         label_options = ['happy', 'sad', 'angry', 'fearful', 'surprised']
-        # just so that it passes, irrelevant
-        tokenize_fn = tokenize_func(tkzer, dataset_name='UTCD', mode='inference-sample')
-        inputs = tokenize_fn(dict(text=text, dataset_id=-1, labels=-1, label_options=label_options))
-        inputs = {k: torch.tensor(v).to(device).unsqueeze(0) for k, v in inputs.items()}  # add dummy batch dim
         ic(text, label_options)
-        # ic(inputs)
-        outputs = model.generate(**inputs)
-        outputs_str = tkzer.batch_decode(outputs, skip_special_tokens=False)
-        ic(outputs_str)
+        ic(gpt2_inference(text, label_options))
     sanity_check_trained_generate()
