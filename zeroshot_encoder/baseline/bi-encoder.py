@@ -112,6 +112,8 @@ if __name__ == "__main__":
             # loop through each test example
             print("Evaluating dataset: {}".format(dataset))
             for index, (text, gold_labels) in enumerate(tqdm(examples.items())):
+                if args.mode == 'implicit':
+                    gold_labels = [f'{label} {data[dataset]["aspect"]}' for label in gold_labels]
                 results = [util.cos_sim(example_vectors[index], label_vectors[i]) for i in range(len(labels))]
 
                 # compute which pred is higher

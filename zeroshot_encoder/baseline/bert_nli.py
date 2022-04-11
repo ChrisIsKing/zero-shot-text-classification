@@ -79,7 +79,7 @@ if __name__ == "__main__":
             if args.mode == 'vanilla':
                 train += binary_cls_format(data[dataset], name=dataset, sampling=args.sampling, mode=args.mode)
                 test += binary_cls_format(data[dataset], train=False, mode=args.mode)
-            elif args.model == 'implicit':
+            elif args.mode == 'implicit':
                 train += nli_cls_format(data[dataset], name=dataset, sampling=args.sampling)
                 test += nli_cls_format(data[dataset], name=dataset, train=False)
 
@@ -148,7 +148,6 @@ if __name__ == "__main__":
                     gold.append(pred)
                 else:
                     gold.append(gold_labels[0])
-                
             
             print('{} Dataset Accuracy = {}'.format(dataset, correct/len(examples)))
             report = classification_report(gold, preds, output_dict=True)

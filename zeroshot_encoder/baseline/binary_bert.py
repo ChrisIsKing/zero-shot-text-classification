@@ -112,7 +112,6 @@ if __name__ == "__main__":
                     gold.append(pred)
                 else:
                     gold.append(gold_labels[0])
-                
             
             print('{} Dataset Accuracy = {}'.format(dataset, correct/len(examples)))
             report = classification_report(gold, preds, output_dict=True)
