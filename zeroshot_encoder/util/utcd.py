@@ -18,7 +18,7 @@ def get_output_base():
 
 
 def get_utcd_from_gdrive(domain: str = 'in'):
-    assert domain in ['in', 'out']
+    ca(domain=domain)
     path = os.path.join(PATH_BASE, DIR_PROJ, DIR_DSET, 'UTCD')
     os.makedirs(path, exist_ok=True)
     if domain == 'in':
@@ -47,7 +47,7 @@ def process_utcd_dataset(domain: str = 'in', join=False):
     Save processed datasets to disk
     """
     logger = get_logger('Process UTCD')
-    assert domain in ['in', 'out'], f'Invalid domain: expect one of {logi(["in", "out"])}, got {logi(domain)}'
+    ca(domain=domain)
     output_dir = 'UTCD-in' if domain == 'in' else 'UTCD-out'
     ext = config('UTCD.dataset_ext')
     path_dsets = os.path.join(PATH_BASE, DIR_PROJ, DIR_DSET)

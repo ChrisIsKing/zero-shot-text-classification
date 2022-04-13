@@ -5,6 +5,7 @@ from sentence_transformers.readers import InputExample
 from tqdm import tqdm
 
 from zeroshot_encoder.util import *
+import zeroshot_encoder.util.utcd as utcd_util
 from zeroshot_encoder.util.load_data import get_data, encoder_cls_format, in_domain_data_path, out_of_domain_data_path
 import zeroshot_encoder.bi_encoder.jskit.encoders.bi as js_bi
 import zeroshot_encoder.bi_encoder.jskit.encoders.utils as js_util
@@ -18,7 +19,7 @@ MD_NM_OUT = 'Dual Bi-encoder'
 def get_train_args() -> Dict:
     # Keep the same as in `zeroshot_encoder.baseline.bi-encoder`
     return dict(  # To override `jskit.encoders.bi` defaults
-        output_dir=os.path.join(get_output_base(), DIR_PROJ, DIR_MDL, MODEL_NAME, now(for_path=True)),
+        output_dir=os.path.join(utcd_util.get_output_base(), DIR_PROJ, DIR_MDL, MODEL_NAME, now(for_path=True)),
         train_batch_size=16,  # pe `bi-encoder.py` default
         eval_batch_size=32,
         learning_rate=2e-5,  # not specified by `bi-encoder.py`, go with default `SentenceTransformer`
@@ -123,7 +124,7 @@ def run_train(sampling: str = 'rand'):
 
 
 def load_model() -> Tuple[BertTokenizer, js_util.models.BiEncoder]:
-    path = os.path.join(get_output_base(), DIR_PROJ, DIR_MDL, MODEL_NAME, '2022-03-21_15-46-17')
+    path = os.path.join(utcd_util.get_output_base(), DIR_PROJ, DIR_MDL, MODEL_NAME, '2022-03-21_15-46-17')
     js_bi.load_model(path)
     return js_bi.tokenizer, js_bi.model
 
@@ -197,7 +198,7 @@ class EncoderWrapper:
 
 
 def evaluate_trained(domain: str = 'in', candidate_batch_size: int = 256, context_batch_size: int = 32):
-    assert domain in ['in', 'out']
+    ca(domain=domain)
     tokenizer, model = load_model()
     model.eval()
     ew = EncoderWrapper(model, tokenizer)

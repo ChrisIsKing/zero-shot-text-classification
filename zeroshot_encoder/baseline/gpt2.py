@@ -654,8 +654,7 @@ def get_all_setup(
 
 
 def plot_dataset_token_length_stats(domain: str = 'in'):
-    domains = ['in', 'out']
-    assert domain in domains, f'Domain error: expect one of {domains}, got {domain}'
+    ca(domain=domain)
     tokenizer = get_model_n_tokenizer('gpt2-medium')[1]
     # `split` shouldn't matter
     func = tokenize_func(tokenizer=tokenizer, dataset_name=f'UTCD-{domain}', split='train', mode='stats')
@@ -722,8 +721,7 @@ def evaluate_trained(domain: str = 'in', batch_size: int = 48, n_ep: int = 3):
     """
     Run evaluation, on potentially multi-label datasets
     """
-    domains = ['in', 'out']
-    assert domain in domains, f'Domain error: expect one of {logi(domains)}, got {logi(domain)}'
+    ca(domain=domain)
     model = load_trained(epoch=n_ep).to('cuda')
     conf, model_cnm = model.config, model.__class__.__qualname__
     # To disable warning `Setting `pad_token_id` to `eos_token_id` for open-end generation.`
