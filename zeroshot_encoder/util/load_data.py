@@ -1,13 +1,8 @@
-import json
 import gdown
 import random
 import spacy
 import gzip
 import csv
-import os
-import time
-import itertools
-from typing import Tuple, List
 from collections import Counter
 from tqdm import tqdm
 from numpy import argmax, argmin
@@ -16,7 +11,8 @@ from os.path import isfile, join, basename
 from zipfile import ZipFile
 from sentence_transformers.readers import InputExample
 from sentence_transformers import util
-from zeroshot_encoder.util import get_logger, logi, log_s, log_dict
+
+from zeroshot_encoder.util import *
 
 in_domain_url = 'https://drive.google.com/uc?id=1V7IzdZ9HQbFUQz9NzBDjmqYBdPd9Yfe3'
 out_of_domain_url = 'https://drive.google.com/uc?id=1nd32_UrFbgoCgH4bDtFFD_YFZhzcts3x'
@@ -47,6 +43,7 @@ category_map = {
     "yelp": "sentiment",
 }
 
+
 def get_data(path):
     if not os.path.exists(path):
         download_data(path)
@@ -56,6 +53,7 @@ def get_data(path):
         dataset_name = basename(path).split('.')[0]
         data[dataset_name] = json.load(open(path))
     return data
+
 
 def download_data(path, file=None):
     if path == in_domain_data_path:
@@ -67,6 +65,7 @@ def download_data(path, file=None):
     with ZipFile(file, "r") as zip:
         zip.extractall(dataset_path)
         zip.close()
+
 
 def get_nli_data():
     nli_dataset_path = 'dataset/AllNLI.tsv.gz'
@@ -87,13 +86,26 @@ def get_nli_data():
                 dev_samples.append(InputExample(texts=[row['sentence1'], row['sentence2']], label=label_id))
     return train_samples, dev_samples
 
+
 def binary_cls_format(data, name=None, sampling='rand', train=True, mode='vanilla'):
     examples = []
+    aspect = data['aspect']
     if train:
-        if mode == 'vanilla':
+        from icecream import ic
+        ic.lineWrapWidth = 512
+        label_list = None
+        aspect_token, sep_token = None, None
+        label_un_modified = mode != 'implicit'
+        if mode in ['vanilla', 'implicit-on-text-encode-aspect', 'implicit-on-text-encode-sep']:
             label_list = data['labels']
+            if mode == 'implicit-on-text-encode-aspect':
+                aspect_token = config('training.implicit-on-text.encode-aspect.aspect2aspect-token')[aspect]
+            elif mode == 'implicit-on-text-encode-sep':
+                sep_token = config('training.implicit-on-text.encode-sep.aspect-sep-token')
         elif mode == 'implicit':
             label_list = ['{} {}'.format(label, data['aspect']) for label in data['labels']]
+        else:
+            raise NotImplementedError(f'{logi(mode)} not supported yet')
 
         example_list = [x for x in data['train'].keys()]
 
@@ -104,9 +116,23 @@ def binary_cls_format(data, name=None, sampling='rand', train=True, mode='vanill
             print('Time Elapsed {} ms'.format((time.time() - start)*1000))
         
         print('Generating {} examples'.format(name))
+        i_debug = 0
         for i, (text, labels) in enumerate(tqdm(data['train'].items())):
-            true_labels = labels if mode != 'implicit' else ['{} {}'.format(label, data['aspect']) for label in labels]
+            if label_un_modified:
+                true_labels = labels
+            else:
+                true_labels = ['{} {}'.format(label, data['aspect']) for label in labels]
             other_labels = [label for label in label_list if label not in true_labels]
+
+            if mode == 'implicit-on-text-encode-aspect':
+                text = f'{aspect_token} {text}'
+            elif mode == 'implicit-on-text-encode-sep':
+                text = f'{aspect} {sep_token} {text}'
+
+            if i_debug < 9:
+                ic(text)
+                i_debug += 1
+            # exit(1)
             
             # Generate label for true example
             for label in true_labels:
@@ -134,13 +160,23 @@ def binary_cls_format(data, name=None, sampling='rand', train=True, mode='vanill
                     examples.append(InputExample(texts=[text, other_labels[0]], label=float(0)))
 
     else:
+        aspect_token = config('training.implicit-on-text.encode-aspect.aspect2aspect-token')[aspect]
+        sep_token = config('training.implicit-on-text.encode-sep.aspect-sep-token')
         for text, labels in data['test'].items():
-           for label in labels:
-                if mode == 'implicit':
-                   examples.append(InputExample(texts=[text, '{} {}'.format(label, data['aspect'])], label=1))
+            for label in labels:
+                if mode == 'vanilla':
+                    pass
+                elif mode == '':
+                    label = '{} {}'.format(label, aspect)
+                elif mode == 'implicit-on-text-encode-aspect':
+                    text = f'{aspect_token} {text}'
+                elif mode == 'implicit-on-text-encode-sep':
+                    text = f'{aspect} {sep_token} {text}'
                 else:
-                    examples.append(InputExample(texts=[text, label], label=1))
+                    raise NotImplementedError(f'{logi(mode)} not supported yet')
+                examples.append(InputExample(texts=[text, label], label=1))
     return examples
+
 
 def nli_template(label, category):
     if category == 'topic':
@@ -149,6 +185,7 @@ def nli_template(label, category):
         return 'This text expresses the intent of {}'.format(label)
     elif category == 'sentiment':
         return 'This text expresses a {} sentiment'.format(label)
+
 
 def nli_cls_format(data, name=None, sampling='rand', train=True):
     examples = []
@@ -186,15 +223,17 @@ def nli_cls_format(data, name=None, sampling='rand', train=True):
                     text_vector = vects[i]
                     other_label_vectors = [label_vectors[label] for label in other_labels]
                     scores = [text_vector.similarity(vector) for vector in other_label_vectors]
-                    examples.append(InputExample(texts=[text, nli_template(other_labels[argmax(scores)], data['aspect'])], label=0))
-                    examples.append(InputExample(texts=[text, nli_template(other_labels[argmin(scores)], data['aspect'])], label=0))
+                    examples.append(InputExample(
+                        texts=[text, nli_template(other_labels[argmax(scores)], data['aspect'])], label=0))
+                    examples.append(InputExample(
+                        texts=[text, nli_template(other_labels[argmin(scores)], data['aspect'])], label=0))
                 elif len(other_labels) > 0:
                     examples.append(InputExample(texts=[text, nli_template(other_labels[0])], label=0))
 
     else:
         for text, labels in data['test'].items():
-           for label in labels:
-               examples.append(InputExample(texts=[text, nli_template(label, data['aspect'])], label=1))
+            for label in labels:
+                examples.append(InputExample(texts=[text, nli_template(label, data['aspect'])], label=1))
     return examples
 
 
@@ -280,5 +319,5 @@ def encoder_cls_format(
 
     else:
         for element in arr:
-           examples.append(InputExample(texts=[element[1], element[0]], label=float(1)))
+            examples.append(InputExample(texts=[element[1], element[0]], label=float(1)))
     return examples

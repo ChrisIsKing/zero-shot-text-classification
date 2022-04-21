@@ -1766,5 +1766,19 @@
             "17": "yelp"
         }
     },
+    "training": {
+        "implicit-on-text": {
+            "encode-aspect": {
+                "aspect2aspect-token": {
+                    "sentiment": "<|sentiment|>",
+                    "intent": "<|intent|>",
+                    "topic": "<|topic|>"
+                }
+            },
+            "encode-sep": {
+                "aspect-sep-token": "<|ASPECT-SEP|>"
+            }
+        }
+    },
     "random-seed": 77
 }

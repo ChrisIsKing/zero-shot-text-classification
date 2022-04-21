@@ -120,6 +120,14 @@ config_dict = {
         ),
         dataset_ext='json'  # all in json
     ),
+    'training': {
+        'implicit-on-text': {
+            'encode-aspect': {
+                'aspect2aspect-token': dict(sentiment='<|sentiment|>', intent='<|intent|>', topic='<|topic|>')
+            },
+            'encode-sep': {'aspect-sep-token': '<|ASPECT-SEP|>'}
+        },
+    },
     'random-seed': 77
 }
 
