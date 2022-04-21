@@ -75,8 +75,7 @@ if __name__ == "__main__":
         model.tokenizer.add_special_tokens(spec_tok_args)
         model.model.resize_token_embeddings(len(model.tokenizer))
 
-        random.shuffle(train)
-        train_dataloader = DataLoader(train, shuffle=False, batch_size=train_batch_size)
+        train_dataloader = DataLoader(train, shuffle=True, batch_size=train_batch_size)
 
         evaluator = CESoftmaxAccuracyEvaluator.from_input_examples(test, name='UTCD-test')
 
