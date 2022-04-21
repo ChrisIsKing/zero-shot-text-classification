@@ -91,8 +91,6 @@ def binary_cls_format(data, name=None, sampling='rand', train=True, mode='vanill
     examples = []
     aspect = data['aspect']
     if train:
-        from icecream import ic
-        ic.lineWrapWidth = 512
         label_list = None
         aspect_token, sep_token = None, None
         label_un_modified = mode != 'implicit'
@@ -116,7 +114,6 @@ def binary_cls_format(data, name=None, sampling='rand', train=True, mode='vanill
             print('Time Elapsed {} ms'.format((time.time() - start)*1000))
         
         print('Generating {} examples'.format(name))
-        i_debug = 0
         for i, (text, labels) in enumerate(tqdm(data['train'].items())):
             if label_un_modified:
                 true_labels = labels
@@ -128,11 +125,6 @@ def binary_cls_format(data, name=None, sampling='rand', train=True, mode='vanill
                 text = f'{aspect_token} {text}'
             elif mode == 'implicit-on-text-encode-sep':
                 text = f'{aspect} {sep_token} {text}'
-
-            if i_debug < 9:
-                ic(text)
-                i_debug += 1
-            # exit(1)
             
             # Generate label for true example
             for label in true_labels:

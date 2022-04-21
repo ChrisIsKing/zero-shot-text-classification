@@ -48,11 +48,6 @@ logger = logging.getLogger(__name__)
 
 
 if __name__ == "__main__":
-    from icecream import ic
-
-    ic.lineWrapWidth = 512
-    ic(ic.lineWrapWidth)
-
     args = parse_args()
     if args.command == 'train':
         data = get_data(in_domain_data_path)
@@ -71,26 +66,17 @@ if __name__ == "__main__":
         model = CrossEncoder('bert-base-uncased', num_labels=2)
         spec_tok_args = dict(eos_token='[eot]')  # Add end of turn token for sgd
         add_spec_toks = None
-        ic(args.mode, args.mode == 'implicit-on-text-encode-sep')
         if args.mode == 'implicit-on-text-encode-aspect':
             add_spec_toks = list(config('training.implicit-on-text.encode-aspect.aspect2aspect-token').values())
         elif args.mode == 'implicit-on-text-encode-sep':
             add_spec_toks = [config('training.implicit-on-text.encode-sep.aspect-sep-token')]
         if add_spec_toks:
             spec_tok_args |= dict(additional_special_tokens=add_spec_toks)
-        ic(spec_tok_args)
         model.tokenizer.add_special_tokens(spec_tok_args)
         model.model.resize_token_embeddings(len(model.tokenizer))
 
         random.shuffle(train)
         train_dataloader = DataLoader(train, shuffle=False, batch_size=train_batch_size)
-
-        for ie in train[:9]:
-            ic(ie.texts, ie.label)
-            for t in ie.texts:
-                ids = model.tokenizer.encode(t, add_special_tokens=True)
-                toks = [model.tokenizer.decode(i) for i in ids]
-                ic(t, ids[:20], toks[:20])
 
         evaluator = CESoftmaxAccuracyEvaluator.from_input_examples(test, name='UTCD-test')
 
@@ -122,7 +108,6 @@ if __name__ == "__main__":
 
         # load model
         model = CrossEncoder(args.model_path)
-        ic(datasets, model.config.num_labels)
 
         label_map = ["false", "true"]
 
@@ -136,27 +121,26 @@ if __name__ == "__main__":
             correct = 0
 
             if mode == 'vanilla':
-                def txt_n_lbs2query(txt: str, lbs: List[str]) -> List[Tuple[str, str]]:
-                    return [(txt, lb) for lb in lbs]
+                def txt_n_lbs2query(txt: str, lbs: List[str]) -> List[List[str]]:
+                    return [[txt, lb] for lb in lbs]
             elif mode == 'implicit':
-                def txt_n_lbs2query(txt: str, lbs: List[str]) -> List[Tuple[str, str]]:
-                    return [(txt, f'{lb} {aspect}') for lb in lbs]
+                def txt_n_lbs2query(txt: str, lbs: List[str]) -> List[List[str]]:
+                    return [[txt, f'{lb} {aspect}'] for lb in lbs]
             elif mode == 'implicit-on-text-encode-aspect':
                 aspect_token = config('training.implicit-on-text.encode-aspect.aspect2aspect-token')[aspect]
 
-                def txt_n_lbs2query(txt: str, lbs: List[str]) -> List[Tuple[str, str]]:
-                    return [(f'{aspect_token} {txt}', lb) for lb in lbs]
+                def txt_n_lbs2query(txt: str, lbs: List[str]) -> List[List[str]]:
+                    return [[f'{aspect_token} {txt}', lb] for lb in lbs]
             elif mode == 'implicit-on-text-encode-sep':
                 sep_token = config('training.implicit-on-text.encode-sep.aspect-sep-token')
 
-                def txt_n_lbs2query(txt: str, lbs: List[str]) -> List[Tuple[str, str]]:
-                    return [(f'{aspect} {sep_token} {txt}', lb) for lb in lbs]
+                def txt_n_lbs2query(txt: str, lbs: List[str]) -> List[List[str]]:
+                    return [[f'{aspect} {sep_token} {txt}', lb] for lb in lbs]
             else:
                 raise NotImplementedError(f'{logi(mode)} not supported yet')
 
             # loop through each test example
-            print("Evaluating dataset: {}".format(dataset))
-            i_debug = 0
+            print(f'Evaluating dataset: {logi(dataset)}')
             for index, (text, gold_labels) in enumerate(tqdm(examples.items())):
                 query = txt_n_lbs2query(text, labels)
                 results = model.predict(query, apply_softmax=True)
@@ -170,18 +154,8 @@ if __name__ == "__main__":
                     gold.append(pred)
                 else:
                     gold.append(gold_labels[0])
-
-                if i_debug < 9:
-                    ic(query[0], pred, gold_labels)
-                    ic(results.shape, results, labels)
-                    # for t in query[0]:
-                    #     ids = model.tokenizer.encode(t, add_special_tokens=True)
-                    #     toks = [model.tokenizer.decode(i) for i in ids]
-                    #     ic(t, ids[:20], toks[:20])
-                    i_debug += 1
             
-            print('{} Dataset Accuracy = {}'.format(dataset, correct/len(examples)))
+            print(f'{logi(dataset)} Dataset Accuracy: {logi(correct/len(examples))}')
             report = classification_report(gold, preds, output_dict=True)
             df = pd.DataFrame(report).transpose()
             df.to_csv('{}/{}.csv'.format(result_path, dataset))
-            
