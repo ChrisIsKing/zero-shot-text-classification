@@ -158,7 +158,7 @@ def binary_cls_format(data, name=None, sampling='rand', train=True, mode='vanill
             for label in labels:
                 if mode == 'vanilla':
                     pass
-                elif mode == '':
+                elif mode == 'implicit':
                     label = '{} {}'.format(label, aspect)
                 elif mode == 'implicit-on-text-encode-aspect':
                     text = f'{aspect_token} {text}'
