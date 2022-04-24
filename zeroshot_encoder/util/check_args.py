@@ -8,7 +8,13 @@ class CheckArg:
     model_names = ['binary-bert', 'bert-nli', 'bi-encoder', 'dual-bi-encoder', 'gpt2-nvidia']
     domains = ['in', 'out']
     sampling_strategies = ['rand', 'vect', 'none', 'NA']
-    training_strategies = ['vanilla', 'implicit', 'explicit']
+    training_strategies = [
+        'vanilla',
+        'implicit',
+        'implicit-on-text-encode-aspect',
+        'implicit-on-text-encode-sep',
+        'explicit'
+    ]
 
     @staticmethod
     def check_mismatch(arg_type: str, arg_value: str, expected_values: List[str]):
@@ -49,6 +55,5 @@ ca = CheckArg()
 
 
 if __name__ == '__main__':
-
     md_nm, dm, samp_strat, tr_strat = 'bert-nli', 'in', 'rand', 'implicit'
     ca(model_name=md_nm, domain=dm, sampling_strategy=samp_strat, training_strategy=tr_strat)
