@@ -313,3 +313,22 @@ def encoder_cls_format(
         for element in arr:
             examples.append(InputExample(texts=[element[1], element[0]], label=float(1)))
     return examples
+
+def seq_cls_format(data):
+    train = []
+    test = []
+
+    label_map = {k:i for i, k in enumerate(data['labels'])}
+
+    for k,v in data['train'].items():
+        # loop through each true label
+        for label in v:
+            train.append({'text': k, 'label': label_map[label], 'label_name': label})
+    
+    for k,v in data['test'].items():
+        # loop through each true label
+        for label in v:
+            test.append({'text': k, 'label': label_map[label], 'label_name': label})
+
+
+    return train, test, label_map
