@@ -76,8 +76,8 @@ if __name__ == "__main__":
             logging_dir='./logs',            # directory for storing logs
             load_best_model_at_end=True,     # load the best model when finished training (default metric is loss)
             # but you can specify `metric_for_best_model` argument to change to accuracy or other metric
-            logging_steps=400,               # log & save weights each logging_steps
-            save_steps=400,
+            logging_steps=100000,               # log & save weights each logging_steps
+            save_steps=100000,
             evaluation_strategy="steps",     # evaluate each `logging_steps`
         )
 
@@ -91,10 +91,3 @@ if __name__ == "__main__":
 
         trainer.train()
         print(trainer.evaluate())
-
-
-        
-
-
-
-        
