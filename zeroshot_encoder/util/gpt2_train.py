@@ -1,6 +1,12 @@
+import sys
+import math
+import logging
+import datetime
 from time import sleep
 from typing import Optional
+from collections import OrderedDict
 
+import torch
 from torch.utils.data import DataLoader, Dataset
 from torch.utils.tensorboard import SummaryWriter
 from transformers import GPT2TokenizerFast
@@ -11,7 +17,9 @@ if is_torch_tpu_available():
     import torch_xla.core.xla_model as xm
     import torch_xla.distributed.parallel_loader as pl
 
-from zeroshot_encoder.util import *
+from stefutil import *
+from zeroshot_encoder.util.data_path import BASE_PATH, PROJ_DIR
+from zeroshot_encoder.util.util import *
 from zeroshot_encoder.util.train import *
 
 
@@ -70,9 +78,9 @@ class MyLoggingCallback(TrainerCallback):
         self.logger, self.logger_fl, self.tb_writer = None, None, None
         self.log_fnm = f'{name}, n={n_data}, l={md_sz}, a={lr}, bsz={self.bsz}, n_ep={n_ep}, {self.save_time}'
         paths_ = self.trainer.args.output_dir.split(os.sep)
-        path_proj = paths_[paths_.index(DIR_PROJ):]
+        path_proj = paths_[paths_.index(PROJ_DIR):]
         # Keep the logging & plotting inside project directory, not potentially in `scratch`
-        self.output_dir = os.path.join(PATH_BASE, *path_proj)
+        self.output_dir = os.path.join(BASE_PATH, *path_proj)
 
         self.train_begin, self.train_end = None, None
         self.t_strt, self.t_end = None, None
@@ -380,9 +388,9 @@ def get_accs(
                 assert len(token_ids_true)
 
             dset_id = dataset_id[i_sample].item()
-            dnm_ = config('UTCD.dataset_id2name')[dset_id]
+            dnm_ = sconfig('UTCD.dataset_id2name')[dset_id]
             split = 'train' if mode == 'train' else 'test'
-            descs = config(f'UTCD.datasets.{dnm_}.splits.{split}.labels')
+            descs = sconfig(f'UTCD.datasets.{dnm_}.splits.{split}.labels')
             desc_true = tokenizer.decode(token_ids_true)
             assert desc_true in descs
             # By default, the predictions and labels will not agree

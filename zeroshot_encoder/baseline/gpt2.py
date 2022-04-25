@@ -3,11 +3,19 @@ Implementation of NVIDIA-GPT2 approach.
 
 [Zero-shot Text Classification With Generative Language Models](https://arxiv.org/abs/1912.10165)
 """
-from typing import Any
-from warnings import warn
-from collections import defaultdict
 
+import os
+import re
+import math
+import itertools
+from typing import List, Tuple, Dict, Union, Any
+from warnings import warn
+from collections import defaultdict, OrderedDict
+
+import numpy as np
+import pandas as pd
 from scipy.stats import norm
+import torch
 from torch import nn
 from sklearn.metrics import classification_report
 import transformers
@@ -20,8 +28,10 @@ from transformers import DataCollatorForLanguageModeling
 from transformers.file_utils import ModelOutput
 from transformers.training_args import OptimizerNames
 import datasets
+import matplotlib.pyplot as plt
+import seaborn as sns
 
-from zeroshot_encoder.util import *
+from stefutil import *
 from zeroshot_encoder.util.train import MyEvalPrediction
 import zeroshot_encoder.util.utcd as utcd_util
 from zeroshot_encoder.preprocess import get_dataset
@@ -64,12 +74,12 @@ class ZsGPT2Tokenizer(GPT2TokenizerFast):
             dataset_name, split = key
             key = f'{dataset_name}-{split}'
             if key not in self:
-                path = os.path.join(utcd_util.get_output_base(), DIR_PROJ, DIR_DSET, 'processed', dataset_name)
+                path = os.path.join(utcd_util.get_output_base(), PROJ_DIR, DSET_DIR, 'processed', dataset_name)
                 dset = datasets.load_from_disk(path)[split]
                 # See `zeroshot_encoder.util.util.py::process_utcd_dataset`
                 feats = dset.features['labels'].feature
                 n_cls = feats.num_classes
-                assert feats.names == config(f'UTCD.datasets.{dataset_name}.splits.{split}.labels')  # sanity check
+                assert feats.names == sconfig(f'UTCD.datasets.{dataset_name}.splits.{split}.labels')  # sanity check
                 label2description: Dict[int, str] = {i: desc for i, desc in enumerate(feats.names)}  # label is index
                 self[key] = dict(
                     n_classes=n_cls, label2description=label2description,
@@ -85,7 +95,7 @@ class ZsGPT2Tokenizer(GPT2TokenizerFast):
             pad_token='[PAD]', additional_special_tokens=list(ZsGPT2Tokenizer.SPEC_TOKS.values())
         ))
 
-        self.templates = config('baselines.gpt2-nvidia.templates')
+        self.templates = sconfig('baselines.gpt2-nvidia.templates')
         # Mapping from dataset name to label for non-UTCD cases
         # self.cache: Dict[Tuple[str, str], Dict] = ZsGPT2Tokenizer.Cache(self)
         self.cache = ZsGPT2Tokenizer.Cache(self)
@@ -146,7 +156,7 @@ class ZsGPT2Tokenizer(GPT2TokenizerFast):
         def call_single(
                 i, dataset_id: int = None, text: str = None, labels: List[int] = None, label_options: List[str] = None
         ):
-            dset_nm: str = None if mode == 'inference-sample' else config('UTCD.dataset_id2name')[dataset_id]
+            dset_nm: str = None if mode == 'inference-sample' else sconfig('UTCD.dataset_id2name')[dataset_id]
             if mode == 'inference-sample':
                 assert label_options is not None
                 n_cls = len(label_options)
@@ -155,11 +165,11 @@ class ZsGPT2Tokenizer(GPT2TokenizerFast):
                     return label_options[lb]
                 answers = []
             elif 'UTCD' in dataset_name:
-                descs = config(f'UTCD.datasets.{dset_nm}.splits.{split}.labels')  # Descriptive labels
+                descs = sconfig(f'UTCD.datasets.{dset_nm}.splits.{split}.labels')  # Descriptive labels
                 n_cls = len(descs)
                 # `label` is shared across all datasets, map to local label within dataset
                 if self.cache_utcd is None:
-                    path = os.path.join(utcd_util.get_output_base(), DIR_PROJ, DIR_DSET, 'processed', dataset_name)
+                    path = os.path.join(utcd_util.get_output_base(), PROJ_DIR, DSET_DIR, 'processed', dataset_name)
                     # cos `Sequential`; each split, the label is the same
                     self.cache_utcd = datasets.load_from_disk(path)[split].features['labels'].feature
                 # The ordering indicates int<=>str label mapping, i.e., index is int label,
@@ -300,7 +310,7 @@ def pprint_gpt2_input(tokenizer: ZsGPT2Tokenizer, d: Dict[str, torch.Tensor]):
     n_pad = n_ct + n_dnm + 3
     ids, pids, tids, dids = (d[k].detach() for k in ('input_ids', 'position_ids', 'token_type_ids', 'dataset_id'))
     pad = tokenizer.enc_spec(tokenizer.pad_token)
-    id2name = config('UTCD.dataset_id2name')
+    id2name = sconfig('UTCD.dataset_id2name')
 
     for i, (ids_, did, pids_, tids_) in enumerate(zip(ids, dids, pids, tids)):
         msk = (ids_ != pad)
@@ -452,7 +462,7 @@ def tokenize_func(
         :param sample: A batch of data samples
         """
         if 'UTCD' not in dataset_name:
-            sample['dataset_id'] = [config('UTCD.dataset_name2id')[dataset_name]] * len(sample['text'])
+            sample['dataset_id'] = [sconfig('UTCD.dataset_name2id')[dataset_name]] * len(sample['text'])
         # Otherwise, `dataset_id` already part of input
         return tokenizer(sample, dataset_name=dataset_name, max_length=max_length, split=split, mode=mode, **kwargs)
     return _tokenize_func
@@ -540,7 +550,7 @@ def get_train_setup(
     else:
         bsz_tr = bsz_vl = bsz
     args = dict(
-        output_dir=os.path.join(utcd_util.get_output_base(), DIR_PROJ, DIR_MDL, 'gpt2', model_name, now(for_path=True)),
+        output_dir=os.path.join(utcd_util.get_output_base(), PROJ_DIR, MODEL_DIR, 'gpt2', model_name, now(for_path=True)),
         do_train=True,
         do_eval=do_eval,
         evaluation_strategy='steps' if do_eval else 'no',
@@ -658,7 +668,7 @@ def plot_dataset_token_length_stats(domain: str = 'in'):
     tokenizer = get_model_n_tokenizer('gpt2-medium')[1]
     # `split` shouldn't matter
     func = tokenize_func(tokenizer=tokenizer, dataset_name=f'UTCD-{domain}', split='train', mode='stats')
-    did2nm = config('UTCD.dataset_id2name')
+    did2nm = sconfig('UTCD.dataset_id2name')
 
     def map_func(examples):
         tokenized = func(examples)
@@ -700,7 +710,7 @@ def plot_dataset_token_length_stats(domain: str = 'in'):
     plt.suptitle(title)
     fig.supylabel('density')
 
-    output_dir = os.path.join(PATH_BASE, DIR_PROJ, 'plot')
+    output_dir = os.path.join(BASE_PATH, PROJ_DIR, 'plot')
     os.makedirs(output_dir, exist_ok=True)
     plt.savefig(os.path.join(output_dir, f'{title}, {now(for_path=True)}.png'), dpi=300)
 
@@ -713,7 +723,7 @@ def load_trained(epoch: int = 3) -> ZsGPT2LMHeadModel:
             # 3: os.path.join('2022-03-04 21-33-12', 'checkpoint-55599'),
             3: os.path.join('2022-04-02_11-51-19', 'checkpoint-51390'),
         }
-    path = os.path.join(PATH_BASE, DIR_PROJ, 'trained-models', 'gpt2-nvidia', load_trained.epoch2path[epoch])
+    path = os.path.join(BASE_PATH, PROJ_DIR, 'trained-models', 'gpt2-nvidia', load_trained.epoch2path[epoch])
     return ZsGPT2LMHeadModel.from_pretrained(path, is_zs_gpt2=True).to('cuda')  # with caching
 
 
@@ -732,11 +742,11 @@ def evaluate_trained(domain: str = 'in', batch_size: int = 48, n_ep: int = 3):
     model.tokenizer = tkzer  # See ZsGPT2LMHeadModel.forward() sanity check`
 
     split = 'test'
-    path_dir = os.path.join(PATH_BASE, DIR_PROJ, 'evaluations', MODEL_NAME, now(for_path=True))
+    path_dir = os.path.join(BASE_PATH, PROJ_DIR, 'evaluations', MODEL_NAME, now(for_path=True))
 
     dataset_names = [
-        dnm for dnm in config('UTCD.datasets').keys()
-        if (config(f'UTCD.datasets.{dnm}.domain') == domain)
+        dnm for dnm in sconfig('UTCD.datasets').keys()
+        if (sconfig(f'UTCD.datasets.{dnm}.domain') == domain)
     ]
     d_model = OrderedDict([('model name', model_cnm), ('trained #epoch', n_ep), ('model size', model_size)])
     d_eval = OrderedDict([
@@ -754,7 +764,7 @@ def evaluate_trained(domain: str = 'in', batch_size: int = 48, n_ep: int = 3):
     logger_fl.info(f'Running evaluation {domain} on model {log_dict_nc(d_model)}, with {log_dict_nc(d_eval)}... ')
 
     for dnm_ in dataset_names:
-        d_info = config(f'UTCD.datasets.{dnm_}.splits.{split}')
+        d_info = sconfig(f'UTCD.datasets.{dnm_}.splits.{split}')
         lb2id = defaultdict(lambda: -1)  # If generated invalid descriptive label, will return -1
         labels = d_info['labels']
         # predictions and label descriptions all to lower case to be more lenient
@@ -893,7 +903,7 @@ if __name__ == '__main__':
 
     from zeroshot_encoder.util import *
 
-    seed = config('random-seed')
+    seed = sconfig('random-seed')
     transformers.set_seed(seed)
 
     def training():

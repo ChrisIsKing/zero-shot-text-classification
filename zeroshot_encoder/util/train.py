@@ -7,7 +7,7 @@ from transformers import TrainingArguments
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-from zeroshot_encoder.util import LN_KWARGS, now
+from stefutil import *
 
 
 PT_LOSS_PAD = -100  # Pytorch indicator value for ignoring loss, used in huggingface for padding tokens

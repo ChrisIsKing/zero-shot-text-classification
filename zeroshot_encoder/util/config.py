@@ -1,10 +1,22 @@
+import os
+import re
+import math
+import json
+import itertools
+from os.path import join as os_join
+from typing import List, Tuple, Dict, Callable, Union
 from collections import Counter
 
+import numpy as np
+import pandas as pd
 from scipy.stats import norm
 from transformers import AutoTokenizer
+import matplotlib.pyplot as plt
+import seaborn as sns
 from tqdm import tqdm
 
-from zeroshot_encoder.util import *
+from stefutil import *
+from zeroshot_encoder.util.data_path import BASE_PATH, PROJ_DIR, DSET_DIR
 
 
 STSb = 'stsb_multi_mt'  # Per Hugging Face
@@ -128,10 +140,34 @@ config_dict = {
             'encode-sep': {'aspect-sep-token': '<|ASPECT-SEP|>'}
         },
     },
-    'random-seed': 77
+    'random-seed': 77,
+    'check-arg': [
+        dict(
+            display_name='Model Name', attr_name='model_name',
+            accepted_values=['binary-bert', 'bert-nli', 'bi-encoder', 'dual-bi-encoder', 'gpt2-nvidia']
+        ),
+        dict(
+            display_name='Dataset Domain', attr_name='dataset_domain',
+            accepted_values=['in', 'out']
+        ),
+        dict(
+            display_name='Sampling Strategy', attr_name='sampling_strategy',
+            accepted_values=['rand', 'vect', 'none', 'NA']
+        ),
+        dict(
+            display_name='Training strategy', attr_name='training_strategy',
+            accepted_values=[
+                'vanilla',
+                'implicit',
+                'implicit-on-text-encode-aspect',
+                'implicit-on-text-encode-sep',
+                'explicit'
+            ]
+        )
+    ]
 }
 
-path_dset = os.path.join(PATH_BASE, DIR_PROJ, DIR_DSET)
+path_dset = os_join(BASE_PATH, PROJ_DIR, DSET_DIR)
 ext = config_dict['UTCD']['dataset_ext']
 
 
@@ -180,7 +216,7 @@ def path2dataset_info(d: Dict) -> Tuple[Dict, Dict, Dict]:
         number of tokens for plot
     )
     """
-    path = os.path.join(path_dset, f'{d["path"]}.{ext}')
+    path = os_join(path_dset, f'{d["path"]}.{ext}')
     with open(path) as fl:
         dsets: Dict = json.load(fl)
 
@@ -323,7 +359,7 @@ def plot_utcd_n_toks(d_n_toks: Dict, domain: str, save=True):
         legend = i_row == 0 and i_col == 0
         sns.histplot(
             data=df, x='n_token', hue='dataset_name', weights='counts',
-            kde=text_type == 'text', discrete=True, common_norm=False, stat='density',
+            kde=text_type == 'text', kde_kws=dict(gridsize=2048), discrete=True, common_norm=False, stat='density',
             palette='husl', legend=legend, ax=ax
         )
         ax.set(xlabel=None, ylabel=None)
@@ -342,7 +378,7 @@ def plot_utcd_n_toks(d_n_toks: Dict, domain: str, save=True):
     fig.supxlabel('#token')
     fig.supylabel('Density')
     if save:
-        output_dir = os.path.join(PATH_BASE, DIR_PROJ, 'chore', 'plot')
+        output_dir = os_join(BASE_PATH, PROJ_DIR, 'chore', 'plot')
         os.makedirs(output_dir, exist_ok=True)
         plt.savefig(os.path.join(output_dir, f'{title}, {now(for_path=True)}.png'), dpi=300)
     else:
@@ -350,7 +386,6 @@ def plot_utcd_n_toks(d_n_toks: Dict, domain: str, save=True):
 
 
 d_n_tok = extract_utcd_meta()
-# for dom in ['in', 'out']:
 for dom in ['in']:
     # plot only in-domain data as out-of-domain tokens lengths are too long,
     # resulting in prohibitively large # of patches for bar-plot to terminate soon
@@ -361,7 +396,9 @@ for dom in ['in']:
 if __name__ == '__main__':
     from icecream import ic
 
+    from zeroshot_encoder.util.data_path import PKG_NM
+
     fl_nm = 'config.json'
     ic(config_dict)
-    with open(os.path.join(PATH_BASE, DIR_PROJ, PKG_NM, 'util', 'config.json'), 'w') as f:
+    with open(os_join(BASE_PATH, PROJ_DIR, PKG_NM, 'util', 'config.json'), 'w') as f:
         json.dump(config_dict, f, indent=4)
