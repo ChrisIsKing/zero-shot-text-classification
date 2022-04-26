@@ -1,5 +1,7 @@
 import os
 
+__all__ = ['BASE_PATH', 'PROJ_DIR', 'PKG_NM', 'DSET_DIR', 'MODEL_DIR']
+
 paths = __file__.split(os.sep)
 paths = paths[:paths.index('util')]
 

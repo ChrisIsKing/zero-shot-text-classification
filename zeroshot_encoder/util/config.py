@@ -1,4 +1,3 @@
-import os
 import re
 import math
 import json
@@ -16,6 +15,7 @@ import seaborn as sns
 from tqdm import tqdm
 
 from stefutil import *
+from zeroshot_encoder.util.util import save_fig
 from zeroshot_encoder.util.data_path import BASE_PATH, PROJ_DIR, DSET_DIR
 
 
@@ -295,8 +295,8 @@ def extract_utcd_meta() -> Dict:
         d_dset['splits'] = d_meta
         d_dset.update(d_avg_tok)
     dnms = sorted(d_dsets)  # All datasets, in- and out-of-domain, share the same dataset <=> id mapping
+    config_dict['UTCD']['dataset_id2name'] = dnms
     config_dict['UTCD']['dataset_name2id'] = {dnm: i for i, dnm in enumerate(dnms)}
-    config_dict['UTCD']['dataset_id2name'] = {i: dnm for i, dnm in enumerate(dnms)}
     return d_n_toks
 
 
@@ -378,9 +378,7 @@ def plot_utcd_n_toks(d_n_toks: Dict, domain: str, save=True):
     fig.supxlabel('#token')
     fig.supylabel('Density')
     if save:
-        output_dir = os_join(BASE_PATH, PROJ_DIR, 'chore', 'plot')
-        os.makedirs(output_dir, exist_ok=True)
-        plt.savefig(os.path.join(output_dir, f'{title}, {now(for_path=True)}.png'), dpi=300)
+        save_fig(title)
     else:
         plt.show()
 

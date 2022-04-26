@@ -54,6 +54,8 @@ logger = logging.getLogger(__name__)
 
 
 if __name__ == "__main__":
+    from icecream import ic
+
     args = parse_args()
     if args.command == 'train':
         data = get_data(in_domain_data_path)
@@ -81,7 +83,13 @@ if __name__ == "__main__":
         model.tokenizer.add_special_tokens(spec_tok_args)
         model.model.resize_token_embeddings(len(model.tokenizer))
 
-        train_dataloader = DataLoader(train, shuffle=True, batch_size=train_batch_size)
+        new_shuffle = False
+        if new_shuffle:
+            train_dataloader = DataLoader(train, shuffle=True, batch_size=train_batch_size)
+        else:
+            random.shuffle(train)
+            train_dataloader = DataLoader(train, shuffle=False, batch_size=train_batch_size)
+        ic(new_shuffle)
 
         evaluator = CESoftmaxAccuracyEvaluator.from_input_examples(test, name='UTCD-test')
 

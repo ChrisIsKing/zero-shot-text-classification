@@ -15,10 +15,10 @@ __all__ = ['sconfig', 'save_fig', 'plot_points']
 
 
 sconfig = StefConfig(config_file=os_join(BASE_PATH, PROJ_DIR, PKG_NM, 'util', 'config.json')).__call__
-_sutil = StefUtil(
+u = StefUtil(
     base_path=BASE_PATH, project_dir=PROJ_DIR, package_name=PKG_NM, dataset_dir=DSET_DIR, model_dir=MODEL_DIR
 )
-save_fig = _sutil.save_fig
+save_fig = u.save_fig
 
 for d in sconfig('check-arg'):
     ca.cache_mismatch(**d)

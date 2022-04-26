@@ -283,7 +283,7 @@ class ZsGPT2Tokenizer(GPT2TokenizerFast):
                 f'{logi("label_options")} supported for {logi("inference-sample")} only'
         if is_batched:
             ds = [call_single(i, d_id, txt, lb) for i, (d_id, txt, lb) in enumerate(zip(
-                *[samples[k] for k in keys_]
+                *[samples[k] for k in keys_ if k in samples]  # only `label_options` may not be required
             ))]
             return BatchEncoding({k: [d[k] for d in ds] for k in ds[0]})  # Stack all the ids
         else:
@@ -664,7 +664,7 @@ def get_all_setup(
 
 
 def plot_dataset_token_length_stats(domain: str = 'in'):
-    ca(domain=domain)
+    ca(dataset_domain=domain)
     tokenizer = get_model_n_tokenizer('gpt2-medium')[1]
     # `split` shouldn't matter
     func = tokenize_func(tokenizer=tokenizer, dataset_name=f'UTCD-{domain}', split='train', mode='stats')
@@ -690,7 +690,7 @@ def plot_dataset_token_length_stats(domain: str = 'in'):
     ic(df)
 
     fig, axes = plt.subplots(2, 2, figsize=(16, 9))
-    args_bar = dict(kde=True, kde_kws=dict(bw_adjust=0.5))
+    args_bar = dict(kde=True, kde_kws=dict(bw_adjust=0.5, gridsize=2048))
     args_cum = dict(cumulative=True, fill=False, element='step')
     for i_row, i_col in itertools.product(range(2), range(2)):
         ax = axes[i_row, i_col]
@@ -1000,4 +1000,6 @@ if __name__ == '__main__':
         label_options = ['happy', 'sad', 'angry', 'fearful', 'surprised']
         ic(text, label_options)
         ic(gpt2_inference(text, label_options))
-    sanity_check_trained_generate()
+    # sanity_check_trained_generate()
+
+    plot_dataset_token_length_stats(domain='in')
