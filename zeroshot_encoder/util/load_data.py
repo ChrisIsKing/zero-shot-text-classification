@@ -18,7 +18,7 @@ from sentence_transformers import util
 import gdown
 from tqdm import tqdm
 
-from stefutil import *
+# from stefutil import *
 from zeroshot_encoder.util import *
 
 in_domain_url = 'https://drive.google.com/uc?id=1V7IzdZ9HQbFUQz9NzBDjmqYBdPd9Yfe3'
@@ -343,7 +343,7 @@ def seq_cls_format(data, all=False):
                     test.append({'text': k, 'label': label_map[label], 'label_name': label})
             
     else:
-        
+
         label_map = {k:i for i, k in enumerate(data['labels'])}
 
         for k,v in data['train'].items():
