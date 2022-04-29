@@ -314,21 +314,40 @@ def encoder_cls_format(
             examples.append(InputExample(texts=[element[1], element[0]], label=float(1)))
     return examples
 
-def seq_cls_format(data):
+def seq_cls_format(data, all=False):
     train = []
     test = []
+    label_map = {}
 
-    label_map = {k:i for i, k in enumerate(data['labels'])}
-
-    for k,v in data['train'].items():
-        # loop through each true label
-        for label in v:
-            train.append({'text': k, 'label': label_map[label], 'label_name': label})
+    if all:
+        for dataset, item in data.items():
+            for label in item['labels']:
+                if label not in label_map:
+                    label_map[label] = len(label_map)
+            
+            for k,v in item['train'].items():
+                # loop through each true label
+                for label in v:
+                    train.append({'text': k, 'label': label_map[label], 'label_name': label})
     
-    for k,v in data['test'].items():
-        # loop through each true label
-        for label in v:
-            test.append({'text': k, 'label': label_map[label], 'label_name': label})
+            for k,v in item['test'].items():
+                # loop through each true label
+                for label in v:
+                    test.append({'text': k, 'label': label_map[label], 'label_name': label})
+            
+    else:
+        
+        label_map = {k:i for i, k in enumerate(data['labels'])}
+
+        for k,v in data['train'].items():
+            # loop through each true label
+            for label in v:
+                train.append({'text': k, 'label': label_map[label], 'label_name': label})
+        
+        for k,v in data['test'].items():
+            # loop through each true label
+            for label in v:
+                test.append({'text': k, 'label': label_map[label], 'label_name': label})
 
 
     return train, test, label_map

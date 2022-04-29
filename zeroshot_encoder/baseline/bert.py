@@ -42,10 +42,14 @@ if __name__ == "__main__":
         else:
             data = get_data(out_of_domain_data_path)
 
-        # get dataset data
-        dataset = data[args.dataset]
-        train, test, labels = seq_cls_format(dataset)
-        num_labels = len(dataset['labels'])
+        if args.dataset == "all":
+            dataset = data
+            train, test, labels = seq_cls_format(dataset, all=True)
+        else:
+            # get dataset data
+            dataset = data[args.dataset]
+            train, test, labels = seq_cls_format(dataset)
+            num_labels = len(dataset['labels'])
 
         tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased")
         model = BertForSequenceClassification.from_pretrained('bert-base-uncased', return_dict=True, num_labels=num_labels)
