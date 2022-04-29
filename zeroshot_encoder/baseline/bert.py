@@ -49,7 +49,8 @@ if __name__ == "__main__":
             # get dataset data
             dataset = data[args.dataset]
             train, test, labels = seq_cls_format(dataset)
-            num_labels = len(dataset['labels'])
+        
+        num_labels = len(labels)
 
         tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased")
         model = BertForSequenceClassification.from_pretrained('bert-base-uncased', return_dict=True, num_labels=num_labels)
