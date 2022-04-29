@@ -1,6 +1,9 @@
+import os
+from typing import List, Tuple, Dict, Callable, Union
+
 import datasets
 
-from zeroshot_encoder.util import *
+from zeroshot_encoder.util.data_path import PROJ_DIR, DSET_DIR
 import zeroshot_encoder.util.utcd as utcd_util
 
 
@@ -12,7 +15,7 @@ def get_dataset(
         splits: Union[str, List[str], Tuple[str]] = ('train', 'test')
 ) -> List[datasets.Dataset]:
     if from_disk:
-        path = os.path.join(utcd_util.get_output_base(), DIR_PROJ, DIR_DSET, 'processed', dataset_name)
+        path = os.path.join(utcd_util.get_output_base(), PROJ_DIR, DSET_DIR, 'processed', dataset_name)
         dset = datasets.load_from_disk(path)
     else:
         dset = datasets.load_dataset(dataset_name)

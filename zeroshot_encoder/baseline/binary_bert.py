@@ -1,18 +1,24 @@
+import math
 import random
-from argparse import ArgumentParser
+import logging
+from typing import List
 from pathlib import Path
 from os.path import join
-from tqdm import tqdm
-from sklearn.metrics import classification_report
+from argparse import ArgumentParser
+
+import pandas as pd
 from torch.utils.data import DataLoader
+from sklearn.metrics import classification_report
 from sentence_transformers.cross_encoder import CrossEncoder
 from sentence_transformers.cross_encoder.evaluation import CESoftmaxAccuracyEvaluator
+from tqdm import tqdm
+
+from stefutil import *
+from zeroshot_encoder.util import *
 from zeroshot_encoder.util.load_data import get_data, binary_cls_format, in_domain_data_path, out_of_domain_data_path
 
-from zeroshot_encoder.util import *
 
-
-random.seed(42)
+random.seed(42)  # for negative sampling
 
 
 def parse_args():
@@ -48,6 +54,8 @@ logger = logging.getLogger(__name__)
 
 
 if __name__ == "__main__":
+    from icecream import ic
+
     args = parse_args()
     if args.command == 'train':
         data = get_data(in_domain_data_path)
@@ -67,15 +75,21 @@ if __name__ == "__main__":
         spec_tok_args = dict(eos_token='[eot]')  # Add end of turn token for sgd
         add_spec_toks = None
         if args.mode == 'implicit-on-text-encode-aspect':
-            add_spec_toks = list(config('training.implicit-on-text.encode-aspect.aspect2aspect-token').values())
+            add_spec_toks = list(sconfig('training.implicit-on-text.encode-aspect.aspect2aspect-token').values())
         elif args.mode == 'implicit-on-text-encode-sep':
-            add_spec_toks = [config('training.implicit-on-text.encode-sep.aspect-sep-token')]
+            add_spec_toks = [sconfig('training.implicit-on-text.encode-sep.aspect-sep-token')]
         if add_spec_toks:
             spec_tok_args |= dict(additional_special_tokens=add_spec_toks)
         model.tokenizer.add_special_tokens(spec_tok_args)
         model.model.resize_token_embeddings(len(model.tokenizer))
 
-        train_dataloader = DataLoader(train, shuffle=True, batch_size=train_batch_size)
+        new_shuffle = False
+        if new_shuffle:
+            train_dataloader = DataLoader(train, shuffle=True, batch_size=train_batch_size)
+        else:
+            random.shuffle(train)
+            train_dataloader = DataLoader(train, shuffle=False, batch_size=train_batch_size)
+        ic(new_shuffle)
 
         evaluator = CESoftmaxAccuracyEvaluator.from_input_examples(test, name='UTCD-test')
 
@@ -126,12 +140,12 @@ if __name__ == "__main__":
                 def txt_n_lbs2query(txt: str, lbs: List[str]) -> List[List[str]]:
                     return [[txt, f'{lb} {aspect}'] for lb in lbs]
             elif mode == 'implicit-on-text-encode-aspect':
-                aspect_token = config('training.implicit-on-text.encode-aspect.aspect2aspect-token')[aspect]
+                aspect_token = sconfig('training.implicit-on-text.encode-aspect.aspect2aspect-token')[aspect]
 
                 def txt_n_lbs2query(txt: str, lbs: List[str]) -> List[List[str]]:
                     return [[f'{aspect_token} {txt}', lb] for lb in lbs]
             elif mode == 'implicit-on-text-encode-sep':
-                sep_token = config('training.implicit-on-text.encode-sep.aspect-sep-token')
+                sep_token = sconfig('training.implicit-on-text.encode-sep.aspect-sep-token')
 
                 def txt_n_lbs2query(txt: str, lbs: List[str]) -> List[List[str]]:
                     return [[f'{aspect} {sep_token} {txt}', lb] for lb in lbs]

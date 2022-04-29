@@ -1,8 +1,16 @@
-import gdown
+import os
+import json
+from typing import List, Dict, Iterable, Union
 from zipfile import ZipFile
+
+import pandas as pd
 from datasets import Value, Features, ClassLabel, Sequence, Dataset, DatasetDict
 
-from zeroshot_encoder.util import *
+import gdown
+
+from stefutil import *
+from zeroshot_encoder.util.util import *
+from zeroshot_encoder.util.data_path import BASE_PATH, PROJ_DIR, DSET_DIR
 
 
 def get_output_base():
@@ -14,12 +22,12 @@ def get_output_base():
         # Per https://arc.umich.edu/greatlakes/user-guide/
         return os.path.join('/scratch', 'profmars_root', 'profmars0', 'stefanhg')
     else:
-        return PATH_BASE
+        return BASE_PATH
 
 
 def get_utcd_from_gdrive(domain: str = 'in'):
     ca(domain=domain)
-    path = os.path.join(PATH_BASE, DIR_PROJ, DIR_DSET, 'UTCD')
+    path = os.path.join(BASE_PATH, PROJ_DIR, DSET_DIR, 'UTCD')
     os.makedirs(path, exist_ok=True)
     if domain == 'in':
         url = 'https://drive.google.com/uc?id=1V7IzdZ9HQbFUQz9NzBDjmqYBdPd9Yfe3'
@@ -49,9 +57,9 @@ def process_utcd_dataset(domain: str = 'in', join=False):
     logger = get_logger('Process UTCD')
     ca(domain=domain)
     output_dir = 'UTCD-in' if domain == 'in' else 'UTCD-out'
-    ext = config('UTCD.dataset_ext')
-    path_dsets = os.path.join(PATH_BASE, DIR_PROJ, DIR_DSET)
-    path_out = os.path.join(get_output_base(), DIR_PROJ, DIR_DSET, 'processed')
+    ext = sconfig('UTCD.dataset_ext')
+    path_dsets = os.path.join(BASE_PATH, PROJ_DIR, DSET_DIR)
+    path_out = os.path.join(get_output_base(), PROJ_DIR, DSET_DIR, 'processed')
     logger.info(f'Processing UTCD datasets with {log_dict(dict(domain=domain, join=join))}... ')
 
     def path2dsets(dnm: str, d_dset: Dict) -> Union[DatasetDict, Dict[str, pd.DataFrame]]:
@@ -66,12 +74,12 @@ def process_utcd_dataset(domain: str = 'in', join=False):
             if join:  # will convert to global integers later, see below
                 return pd.DataFrame([dict(text=txt, labels=lbs) for txt, lbs in dset.items()])
             else:  # TODO: didn't test
-                lbs_: List[str] = config(f'UTCD.datasets.{dnm}.splits.{split}.labels')
+                lbs_: List[str] = sconfig(f'UTCD.datasets.{dnm}.splits.{split}.labels')
                 # Map to **local** integer labels; index is label per `lbs_` ordering, same with `datasets.ClassLabel`
                 lb2id = {lb: i for i, lb in enumerate(lbs_)}
                 # if not multi-label, `Sequence` of single element
                 df = pd.DataFrame([dict(text=txt, labels=[lb2id[lb] for lb in lbs]) for txt, lbs in dset.items()])
-                length = -1 if config(f'UTCD.datasets.{dnm}.splits.{split}.multi_label') else 1
+                length = -1 if sconfig(f'UTCD.datasets.{dnm}.splits.{split}.multi_label') else 1
                 lbs = Sequence(feature=ClassLabel(names=lbs_), length=length)
                 feats = Features(text=Value(dtype='string'), labels=lbs)
                 return Dataset.from_pandas(df, features=feats)
@@ -79,15 +87,15 @@ def process_utcd_dataset(domain: str = 'in', join=False):
             {key: json2dset(key, dset) for key, dset in dsets_.items() if key not in ['labels', 'aspect']}
         )
     d_dsets = {
-        dnm: path2dsets(dnm, d) for dnm, d in config('UTCD.datasets').items() if d['domain'] == domain
+        dnm: path2dsets(dnm, d) for dnm, d in sconfig('UTCD.datasets').items() if d['domain'] == domain
     }
     if join:
-        dnm2id = config('UTCD.dataset_name2id')
+        dnm2id = sconfig('UTCD.dataset_name2id')
         # Global label across all datasets, all splits
         # Needed for inversely mapping to local label regardless of joined split, e.g. train/test,
         #   in case some label only in certain split
         lbs_global = [
-            config(f'UTCD.datasets.{dnm}.splits.{split}.labels')
+            sconfig(f'UTCD.datasets.{dnm}.splits.{split}.labels')
             for dnm in d_dsets.keys() for split in ['train', 'test']
         ]
         lbs_global = sorted(set().union(*lbs_global))
@@ -122,14 +130,14 @@ def process_utcd_dataset(domain: str = 'in', join=False):
 
 def map_ag_news():
     dnm = 'ag_news'
-    d_dset = config(f'UTCD.datasets.{dnm}')
-    ext = config('UTCD.dataset_ext')
-    path_dset = os.path.join(PATH_BASE, DIR_PROJ, DIR_DSET)
+    d_dset = sconfig(f'UTCD.datasets.{dnm}')
+    ext = sconfig('UTCD.dataset_ext')
+    path_dset = os.path.join(BASE_PATH, PROJ_DIR, DSET_DIR)
     path = d_dset['path']
     path = os.path.join(path_dset, f'{path}.{ext}')
     with open(path) as f:
         dsets: Dict = json.load(f)
-    d_lb2desc = config(f'baselines.gpt2-nvidia.label-descriptors.{dnm}')
+    d_lb2desc = sconfig(f'baselines.gpt2-nvidia.label-descriptors.{dnm}')
     for split, dset in dsets.items():
         dsets[split] = [[txt, d_lb2desc[lb]] for txt, lb in dset]
     with open(os.path.join(path_dset, f'{dnm}.json'), 'w') as f:
@@ -145,7 +153,7 @@ def get_utcd_info() -> pd.DataFrame:
         dict(dataset_name=dnm, aspect=d_dset['aspect'], domain=d_dset['domain'])
         | {f'{split}-{k}': v for split, d_info in d_dset['splits'].items() for k, v in d_info.items()}
         | {k: d_dset[k] for k in k_avg_tok}
-        for dnm, d_dset in config('UTCD.datasets').items()
+        for dnm, d_dset in sconfig('UTCD.datasets').items()
     ]
     return pd.DataFrame(infos)
 
@@ -156,7 +164,7 @@ if __name__ == '__main__':
     from datasets import load_from_disk
 
     def sanity_check(dsets_nm):
-        path = os.path.join(get_output_base(), DIR_PROJ, DIR_DSET, 'processed', dsets_nm)
+        path = os.path.join(get_output_base(), PROJ_DIR, DSET_DIR, 'processed', dsets_nm)
         ic(path)
         dset = load_from_disk(path)
         te, vl = dset['train'], dset['test']
@@ -183,7 +191,7 @@ if __name__ == '__main__':
     # process_utcd_dataset(in_domain=False, join=False)
 
     def sanity_check_ln_eurlex():
-        path = os.path.join(get_output_base(), DIR_PROJ, DIR_DSET, 'processed', 'multi_eurlex')
+        path = os.path.join(get_output_base(), PROJ_DIR, DSET_DIR, 'processed', 'multi_eurlex')
         ic(path)
         dset = load_from_disk(path)
         ic(dset, len(dset))
@@ -193,7 +201,7 @@ if __name__ == '__main__':
     def output_utcd_info():
         df = get_utcd_info()
         ic(df)
-        df.to_csv(os.path.join(PATH_BASE, DIR_PROJ, DIR_DSET, 'utcd-info.csv'), float_format='%.3f')
+        df.to_csv(os.path.join(BASE_PATH, PROJ_DIR, DSET_DIR, 'utcd-info.csv'), float_format='%.3f')
     # output_utcd_info()
 
     def fix_amazon_polarity():
@@ -208,7 +216,7 @@ if __name__ == '__main__':
         #              "motion of tool, the ends of the little piece of sandpaper do all the work and the center does " \
         #              "nothing. "
         wicked_lb = {'positive', 'negative'}
-        path = os.path.join(PATH_BASE, DIR_PROJ, DIR_DSET, 'UTCD', 'out-of-domain', 'amazon_polarity.json')
+        path = os.path.join(BASE_PATH, PROJ_DIR, DSET_DIR, 'UTCD', 'out-of-domain', 'amazon_polarity.json')
         with open(path, 'r') as f:
             dset = json.load(f)
         wicked_txts = []

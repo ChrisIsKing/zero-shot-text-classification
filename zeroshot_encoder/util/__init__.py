@@ -1,6 +1,5 @@
-from .data_path import PATH_BASE, DIR_PROJ, PKG_NM, DIR_MDL, DIR_DSET
+from .data_path import BASE_PATH, PROJ_DIR, PKG_NM, MODEL_DIR, DSET_DIR
 from .util import *
-from .check_args import CheckArg, ca
 from . import train
 from .gpt2_train import CustomTrainer
 from . import utcd

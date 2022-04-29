@@ -1,17 +1,24 @@
-import gdown
-import random
-import spacy
-import gzip
+import os
 import csv
-from collections import Counter
-from tqdm import tqdm
-from numpy import argmax, argmin
+import json
+import time
+import gzip
+import random
+import itertools
 from os import listdir
 from os.path import isfile, join, basename
 from zipfile import ZipFile
+from collections import Counter
+from typing import List, Tuple
+
+from numpy import argmax, argmin
+import spacy
 from sentence_transformers.readers import InputExample
 from sentence_transformers import util
+import gdown
+from tqdm import tqdm
 
+from stefutil import *
 from zeroshot_encoder.util import *
 
 in_domain_url = 'https://drive.google.com/uc?id=1V7IzdZ9HQbFUQz9NzBDjmqYBdPd9Yfe3'
@@ -97,9 +104,9 @@ def binary_cls_format(data, name=None, sampling='rand', train=True, mode='vanill
         if mode in ['vanilla', 'implicit-on-text-encode-aspect', 'implicit-on-text-encode-sep']:
             label_list = data['labels']
             if mode == 'implicit-on-text-encode-aspect':
-                aspect_token = config('training.implicit-on-text.encode-aspect.aspect2aspect-token')[aspect]
+                aspect_token = sconfig('training.implicit-on-text.encode-aspect.aspect2aspect-token')[aspect]
             elif mode == 'implicit-on-text-encode-sep':
-                sep_token = config('training.implicit-on-text.encode-sep.aspect-sep-token')
+                sep_token = sconfig('training.implicit-on-text.encode-sep.aspect-sep-token')
         elif mode == 'implicit':
             label_list = ['{} {}'.format(label, data['aspect']) for label in data['labels']]
         else:
@@ -152,8 +159,8 @@ def binary_cls_format(data, name=None, sampling='rand', train=True, mode='vanill
                     examples.append(InputExample(texts=[text, other_labels[0]], label=float(0)))
 
     else:
-        aspect_token = config('training.implicit-on-text.encode-aspect.aspect2aspect-token')[aspect]
-        sep_token = config('training.implicit-on-text.encode-sep.aspect-sep-token')
+        aspect_token = sconfig('training.implicit-on-text.encode-aspect.aspect2aspect-token')[aspect]
+        sep_token = sconfig('training.implicit-on-text.encode-sep.aspect-sep-token')
         for text, labels in data['test'].items():
             for label in labels:
                 if mode == 'vanilla':

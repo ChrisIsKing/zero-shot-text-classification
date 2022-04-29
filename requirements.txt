@@ -85,6 +85,9 @@ tokenizers==0.11.4
 torch==1.10.2+cu113
 torchaudio==0.10.2+cu113
 torchvision==0.11.3+cu113
+# torch==1.10.2
+# torchaudio==0.10.2
+# torchvision==0.11.3
 tqdm==4.62.3
 transformers==4.16.2
 typer==0.4.0
