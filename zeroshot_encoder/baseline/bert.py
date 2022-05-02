@@ -113,7 +113,7 @@ if __name__ == "__main__":
         else:
             data = get_data(out_of_domain_data_path)
         
-        tokenizer = AutoTokenizer.from_pretrained(args.path)
+        tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased")
         model = BertForSequenceClassification.from_pretrained(args.path)
         model.to("cuda")
 
@@ -123,6 +123,7 @@ if __name__ == "__main__":
         dataset = data[args.dataset]
         train, test, labels = seq_cls_format(dataset)
         test_dataset = Dataset.from_pandas(pd.DataFrame(test))
+        test_dataset = test_dataset.map(tokenize_function, batched=True)
 
         output_path = './models/{}'.format(args.dataset)
 
