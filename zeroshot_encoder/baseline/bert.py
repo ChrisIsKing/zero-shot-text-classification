@@ -120,31 +120,42 @@ if __name__ == "__main__":
         def tokenize_function(examples):
                 return tokenizer(examples["text"], padding="max_length", truncation=True)
 
-        dataset = data[args.dataset]
-        train, test, labels = seq_cls_format(dataset)
-        test_dataset = Dataset.from_pandas(pd.DataFrame(test))
-        test_dataset = test_dataset.map(tokenize_function, batched=True)
+        if args.dataset == "all":
+            dataset = data
+            train, test, labels = seq_cls_format(dataset, all=True)
+        
+        index = 0
 
-        output_path = './models/{}'.format(args.dataset)
+        for name, dataset in data.items():
+            dataset_len = len(dataset['test'])
 
-        training_args = TrainingArguments(
-            output_dir=output_path,          # output directory
-            per_device_train_batch_size=16,  # batch size per device during training
-            per_device_eval_batch_size=32,   # batch size for evaluation
-            weight_decay=0.01,               # strength of weight decay
-            logging_dir='./logs',            # directory for storing logs
-            load_best_model_at_end=True,     # load the best model when finished training (default metric is loss)
-            # but you can specify `metric_for_best_model` argument to change to accuracy or other metric
-            logging_steps=100000,               # log & save weights each logging_steps
-            save_steps=100000,
-            evaluation_strategy="steps",     # evaluate each `logging_steps`
-        )
+            test_dataset = test[index:index+dataset_len]
+            index += dataset_len
 
-        trainer = Trainer(
-            model=model,                         # the instantiated Transformers model to be trained
-            args=training_args,                  # training arguments, defined above
-            eval_dataset=test_dataset,          # evaluation dataset
-            compute_metrics=compute_metrics,     # the callback that computes metrics of interest
-        )
+            test_dataset = Dataset.from_pandas(pd.DataFrame(test_dataset))
+            test_dataset = test_dataset.map(tokenize_function, batched=True)
 
-        print(trainer.evaluate())
+            output_path = './models/{}'.format(args.dataset)
+
+            training_args = TrainingArguments(
+                output_dir=output_path,          # output directory
+                per_device_train_batch_size=16,  # batch size per device during training
+                per_device_eval_batch_size=32,   # batch size for evaluation
+                weight_decay=0.01,               # strength of weight decay
+                logging_dir='./logs',            # directory for storing logs
+                load_best_model_at_end=True,     # load the best model when finished training (default metric is loss)
+                # but you can specify `metric_for_best_model` argument to change to accuracy or other metric
+                logging_steps=100000,               # log & save weights each logging_steps
+                save_steps=100000,
+                evaluation_strategy="steps",     # evaluate each `logging_steps`
+            )
+
+            trainer = Trainer(
+                model=model,                         # the instantiated Transformers model to be trained
+                args=training_args,                  # training arguments, defined above
+                eval_dataset=test_dataset,          # evaluation dataset
+                compute_metrics=compute_metrics,     # the callback that computes metrics of interest
+            )
+
+            print("Evaluation Metrics for {} dataset".format(name))
+            print(trainer.evaluate())
