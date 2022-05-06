@@ -107,7 +107,7 @@ if __name__ == "__main__":
         )
     if args.command == 'test':
         mode = args.mode
-        ca(domain=args.domain)
+        ca(dataset_domain=args.domain)
         pred_path = join(args.model_path, 'preds/{}/'.format(args.domain))
         result_path = join(args.model_path, 'results/{}/'.format(args.domain))
         Path(pred_path).mkdir(parents=True, exist_ok=True)

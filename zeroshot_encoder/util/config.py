@@ -118,18 +118,25 @@ config_dict = {
             finance_sentiment=dict(
                 path='UTCD/out-of-domain/finance_sentiment', aspect='sentiment', eval_labels_same=True, domain='out'),
             yelp=dict(path='UTCD/out-of-domain/yelp', aspect='sentiment', eval_labels_same=True, domain='out'),
-            # Removed for too many options blow up GPT2's 1024 token length; TODO: remove, keep now cos plotting
+            banking77=dict(path='UTCD/out-of-domain/banking77', aspect='intent', eval_labels_same=True, domain='out'),
+            snips=dict(path='UTCD/out-of-domain/snips', aspect='intent', eval_labels_same=True, domain='out'),
+            nlu_evaluation=dict(
+                path='UTCD/out-of-domain/nlu_evaluation', aspect='intent', eval_labels_same=True, domain='out'),
+            # Removed for too many options blow up GPT2's 1024 token length
             # arxiv=dict(path='UTCD/out-of-domain/arxiv', aspect='topic', eval_labels_same=True, domain='out'),
             multi_eurlex=dict(
               path='UTCD/out-of-domain/multi_eurlex', aspect='topic', eval_labels_same=True, domain='out'),
             patent=dict(path='UTCD/out-of-domain/patent', aspect='topic', eval_labels_same=True, domain='out'),
             consumer_finance=dict(
-                path='UTCD/out-of-domain/consumer_finance', aspect='topic', eval_labels_same=True, domain='out'),
-            banking77=dict(path='UTCD/out-of-domain/banking77', aspect='intent', eval_labels_same=True, domain='out'),
-            snips=dict(path='UTCD/out-of-domain/snips', aspect='intent', eval_labels_same=True, domain='out'),
-            nlu_evaluation=dict(
-                path='UTCD/out-of-domain/nlu_evaluation', aspect='intent', eval_labels_same=True, domain='out')
+                path='UTCD/out-of-domain/consumer_finance', aspect='topic', eval_labels_same=True, domain='out')
         ),
+        aspects=['sentiment', 'intent', 'topic'],
+        domains=['in', 'out'],
+        num_aspect=3,
+        num_dataset_per_aspect=6,
+        num_dataset_per_domain_per_aspect=3,
+        num_domain=2,
+        num_dataset_per_domain=9,
         dataset_ext='json'  # all in json
     ),
     'training': {
