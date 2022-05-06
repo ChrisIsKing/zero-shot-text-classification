@@ -9,6 +9,7 @@ from collections import Counter, namedtuple, defaultdict
 
 import numpy as np
 import pandas as pd
+import torch.cuda
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.manifold import TSNE
 from datasets import Value, Features, ClassLabel, Sequence, Dataset, DatasetDict
@@ -335,7 +336,8 @@ class VisualizeOverlap:
         Plot sample embeddings in lower dimension
         and hopefully the overlap between each dataset cluster lines up with performance
         """
-        model = SentenceTransformer('all-mpnet-base-v2')  # per SBert package, the one with the highest quality
+        # per SBert package, the one with the highest quality
+        model = SentenceTransformer('all-mpnet-base-v2', device='cuda' if torch.cuda.is_available() else 'cpu')
         in_dnms, out_dnms = VisualizeOverlap.in_dnms, VisualizeOverlap.out_dnms
         ret = dict()
         dnms = in_dnms + out_dnms
