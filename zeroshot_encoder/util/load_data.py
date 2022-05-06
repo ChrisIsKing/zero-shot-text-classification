@@ -393,5 +393,4 @@ def binary_explicit_format(dataset):
                     train.append(ExplicitInputExample(texts=[random_label[1], text], label=float(0), aspect=aspect_map[aspect]))
                 elif len(other_labels) > 0:
                     train.append(ExplicitInputExample(texts=[other_labels[0], text], label=float(0), aspect=aspect_map[aspect]))
-        break
     return train
