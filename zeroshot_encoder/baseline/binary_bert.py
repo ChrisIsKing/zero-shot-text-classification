@@ -14,9 +14,9 @@ from sentence_transformers.cross_encoder.evaluation import CESoftmaxAccuracyEval
 from tqdm import tqdm
 
 from stefutil import *
+from zeroshot_encoder.util.util import sconfig
 from zeroshot_encoder.util import *
 from zeroshot_encoder.util.load_data import get_data, binary_cls_format, in_domain_data_path, out_of_domain_data_path
-
 
 random.seed(42)  # for negative sampling
 
@@ -107,7 +107,6 @@ if __name__ == "__main__":
         )
     if args.command == 'test':
         mode = args.mode
-        ca(domain=args.domain)
         pred_path = join(args.model_path, 'preds/{}/'.format(args.domain))
         result_path = join(args.model_path, 'results/{}/'.format(args.domain))
         Path(pred_path).mkdir(parents=True, exist_ok=True)
