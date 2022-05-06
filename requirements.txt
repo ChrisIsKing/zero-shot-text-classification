@@ -41,7 +41,7 @@ icecream==2.1.2
 idna==3.3
 idna-ssl==1.1.0
 immutables==0.16
-importlib-metadata==4.11.3
+# importlib-metadata==4.11.3  # added by pip on macOS but becomes source of conflict in LINUX
 Janome==0.4.1
 Jinja2==3.0.3
 joblib==1.1.0
@@ -50,7 +50,7 @@ konoha==4.6.5
 langcodes==3.3.0
 langdetect==1.0.9
 lxml==4.7.1
-Markdown==3.3.7
+# Markdown==3.3.7
 MarkupSafe==2.0.1
 matplotlib==3.5.2
 more-itertools==8.8.0

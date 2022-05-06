@@ -618,13 +618,13 @@ if __name__ == '__main__':
         kd = 'text'
         # kd = 'label'
         # ic(vs.get_utcd_embeddings(kind=kd))
-        sv = False
-        # sv = True
+        # sv = False
+        sv = True
         cs = None
         # cs = sns.color_palette('husl', n_colors=18)
         # cs = sns.color_palette('hls', n_colors=18)
         # cs = sns.color_palette(n_colors=18)
-        vs.plot_utcd_embeddings(kind=kd, cs=cs, save=sv)
+        vs.plot_utcd_embeddings(kind=kd, cs=cs, save=sv, batch_size=64)
     plot_encoded_overlap()
 
     def plot_encoded_overlap_aspect():
