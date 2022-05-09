@@ -375,7 +375,7 @@ class VisualizeOverlap:
             desc = f'Encoding {dnm:>21} {kind:>5} {split:>5}'
             vects = np.empty(total, dtype=object)
             for i, sents in enumerate(tqdm(group_n(it, batch_size), total=total, desc=desc, unit='ba')):
-                vects[i] = model.encode(sents)
+                vects[i] = model.encode(sents, batch_size=batch_size)
             ret[dnm] = np.concatenate(vects)
         return ret
 
@@ -390,12 +390,12 @@ class VisualizeOverlap:
         :param save: If true, plot is saved
         :param aspect: If given, plot only one aspect
         :param cs: A list of colors for each cluster
-        :param mode: t-SNE mode, one of ['sklearn', 'multi-core', 'cuda']
+        :param mode: t-SNE mode, one of ['sklearn', 'cuda']
         :param n_sample: If given, plot a subset of each dataset randomly
         :param n_sample: If given, plot a subset of each dataset randomly
         """
         ca.check_mismatch('Sample Type', kind, ['label', 'text'])
-        ca.check_mismatch('t-SNE Mode', mode, ['sklearn', 'multi-core', 'cuda'])
+        ca.check_mismatch('t-SNE Mode', mode, ['sklearn', 'cuda'])
         if aspect is not None:
             ca.check_mismatch('Dataset Aspect', aspect, ['sentiment', 'intent', 'topic'])
         logger = get_logger('UTCD Embedding Plot')
@@ -421,9 +421,6 @@ class VisualizeOverlap:
         if mode == 'sklearn':
             cls = TSNE
             args['init'] = 'pca'
-        elif mode == 'multi-core':
-            cls = mcTSNE
-            args['init'] = 'random'  # PCA not supported
         else:
             cls = cuTSNE
             args['init'] = 'random'
