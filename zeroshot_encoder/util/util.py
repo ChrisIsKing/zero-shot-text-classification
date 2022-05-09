@@ -11,13 +11,14 @@ from zeroshot_encoder.util.data_path import BASE_PATH, PROJ_DIR, DSET_DIR, PKG_N
 from stefutil import ca, StefConfig, StefUtil
 
 
-__all__ = ['sconfig', 'save_fig', 'plot_points']
+__all__ = ['sconfig', 'u', 'save_fig', 'plot_points']
 
 
 sconfig = StefConfig(config_file=os_join(BASE_PATH, PROJ_DIR, PKG_NM, 'util', 'config.json')).__call__
 u = StefUtil(
     base_path=BASE_PATH, project_dir=PROJ_DIR, package_name=PKG_NM, dataset_dir=DSET_DIR, model_dir=MODEL_DIR
 )
+u.plot_path = os_join(BASE_PATH, PROJ_DIR, 'plot')
 save_fig = u.save_fig
 
 for d in sconfig('check-arg'):
