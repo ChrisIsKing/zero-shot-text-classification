@@ -1,6 +1,5 @@
 import math
 import random
-import logging
 import pandas as pd
 import numpy as np
 import torch
@@ -12,6 +11,7 @@ from typing import List, Type, Dict, Callable, Optional, Union, Tuple
 from torch.optim import Optimizer
 from torch.utils.data import DataLoader, Dataset
 from tqdm import trange
+from transformers.utils import logging
 from transformers import BertConfig, BertModel, BertPreTrainedModel, BertTokenizer
 from transformers import AdamW, get_scheduler
 from torch.nn import CrossEntropyLoss
@@ -23,7 +23,8 @@ from stefutil import *
 from zeroshot_encoder.util.util import sconfig
 from zeroshot_encoder.util import *
 
-logger = logging.getLogger(__name__)
+logging.set_verbosity_info()
+logger = logging.get_logger(__name__)
 torch.manual_seed(0)
 torch.cuda.manual_seed_all(0)
 
@@ -161,6 +162,7 @@ class ExplicitCrossEncoder:
 
         for epoch in trange(epochs, desc="Epoch", disable=not show_progress_bar):
             training_steps = 0
+            tr_loss=0
             self.model.zero_grad()
             self.model.train()
 
@@ -178,11 +180,14 @@ class ExplicitCrossEncoder:
                 torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_grad_norm)
                 optimizer.step()
             
-            optimizer.zero_grad()
+                optimizer.zero_grad()
 
-            lr_scheduler.step()
+                lr_scheduler.step()
 
-            training_steps += 1
+                training_steps += 1
+            
+            average_loss=tr_loss/training_steps
+            logging.info(f'Epoch: {epoch}\nAverage loss: {average_loss}\n Current Learning Rate: {lr_scheduler.get_lr()}')
     
         self.save(output_path)
 
