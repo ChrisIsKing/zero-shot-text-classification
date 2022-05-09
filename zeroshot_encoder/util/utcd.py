@@ -13,7 +13,6 @@ import pandas as pd
 import torch
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.manifold import TSNE
-# from MulticoreTSNE import MulticoreTSNE as mcTSNE
 from tsnecuda import TSNE as cuTSNE
 from datasets import Value, Features, ClassLabel, Sequence, Dataset, DatasetDict
 from sentence_transformers import SentenceTransformer
@@ -692,7 +691,7 @@ if __name__ == '__main__':
         # n = None
         n = 3072 * 32
         vs.plot_utcd_embeddings(kind=kd, cs=cs, save=sv, cache=cnm, batch_size=1024, mode=md, n_sample=n)
-    plot_encoded_overlap()
+    # plot_encoded_overlap()
 
     def plot_encoded_overlap_aspect():
         kd = 'label'

@@ -27,7 +27,7 @@ datasets==1.18.3
 Deprecated==1.2.13
 dill==0.3.4
 dpcpp-cpp-rt==2022.1.0
-en-core-web-md==3.2.0
+en-core-web-md @ https://github.com/explosion/spacy-models/releases/download/en_core_web_md-3.2.0/en_core_web_md-3.2.0-py3-none-any.whl
 executing==0.8.3
 fastapi==0.76.0
 filelock==3.4.1
@@ -67,7 +67,6 @@ mkl-random==1.2.2
 mkl-service==2.4.0
 more-itertools==8.8.0
 mpld3==0.3
-MulticoreTSNE==0.1
 multidict==5.2.0
 multiprocess==0.70.12.2
 murmurhash==1.0.6
