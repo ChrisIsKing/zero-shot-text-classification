@@ -385,12 +385,12 @@ def binary_explicit_format(dataset):
             
             # Generate label for true example
             for label in true_labels:
-                train.append(ExplicitInputExample(texts=[label, text], label=1, aspect=aspect_map[aspect]))
+                train.append(ExplicitInputExample(texts=[text, label], label=1, aspect=aspect_map[aspect]))
                 random.seed(i)
                 if len(other_labels) >= 2:
                     random_label = random.sample(other_labels, k=2)
-                    train.append(ExplicitInputExample(texts=[random_label[0], text], label=float(0), aspect=aspect_map[aspect]))
-                    train.append(ExplicitInputExample(texts=[random_label[1], text], label=float(0), aspect=aspect_map[aspect]))
+                    train.append(ExplicitInputExample(texts=[text, random_label[0]], label=0, aspect=aspect_map[aspect]))
+                    train.append(ExplicitInputExample(texts=[text, random_label[1]], label=0, aspect=aspect_map[aspect]))
                 elif len(other_labels) > 0:
-                    train.append(ExplicitInputExample(texts=[other_labels[0], text], label=float(0), aspect=aspect_map[aspect]))
+                    train.append(ExplicitInputExample(texts=[text, other_labels[0]], label=0, aspect=aspect_map[aspect]))
     return train

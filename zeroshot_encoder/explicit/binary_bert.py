@@ -8,12 +8,13 @@ from tqdm import tqdm
 from pathlib import Path
 from os.path import join
 from typing import List, Type, Dict, Callable, Optional, Union, Tuple
-from torch.optim import Optimizer
+from torch.optim import Optimizer, AdamW
 from torch.utils.data import DataLoader, Dataset
 from tqdm import trange
+from transformers import set_seed
 from transformers.utils import logging
 from transformers import BertConfig, BertModel, BertPreTrainedModel, BertTokenizer
-from transformers import AdamW, get_scheduler
+from transformers import get_scheduler
 from torch.nn import CrossEntropyLoss
 from argparse import ArgumentParser
 from os.path import join
@@ -25,15 +26,17 @@ from zeroshot_encoder.util import *
 
 logging.set_verbosity_info()
 logger = logging.get_logger(__name__)
-torch.manual_seed(0)
-torch.cuda.manual_seed_all(0)
+set_seed(42)
 
 class BertZeroShotExplicit(BertPreTrainedModel):
     def __init__(self, config):
         super().__init__(config)
         self.config = config
         self.bert = BertModel(config)
-        self.dropout = nn.Dropout(self.config.hidden_dropout_prob)
+        classifier_dropout = (
+            config.classifier_dropout if config.classifier_dropout is not None else config.hidden_dropout_prob
+        )
+        self.dropout = nn.Dropout(classifier_dropout)
         self.binary_cls = nn.Linear(self.config.hidden_size, 2)
         self.aspect_cls = nn.Linear(self.config.hidden_size, 3)
 
@@ -107,7 +110,7 @@ class ExplicitCrossEncoder:
 
         tokenized = self.tokenizer(*texts, padding=True, truncation='longest_first', return_tensors="pt", max_length=self.max_length)
         labels = torch.tensor(labels, dtype=torch.long).to(self.device)
-        aspects = torch.tensor(labels, dtype=torch.long).to(self.device)
+        aspects = torch.tensor(aspects, dtype=torch.long).to(self.device)
 
         for name in tokenized:
             tokenized[name] = tokenized[name].to(self.device)
@@ -173,21 +176,19 @@ class ExplicitCrossEncoder:
                 loss = None
                 loss_fct = CrossEntropyLoss()
 
-                task_loss_value = loss_fct(pooled_output['aspect'], aspects)
-                binary_loss_value = loss_fct(pooled_output['cls'], labels)
+                task_loss_value = loss_fct(pooled_output['aspect'].view(-1, 3), aspects.view(-1))
+                binary_loss_value = loss_fct(pooled_output['cls'].view(-1, 2), labels.view(-1))
                 loss = task_loss_value + binary_loss_value
                 loss.backward()
                 torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_grad_norm)
                 optimizer.step()
-            
-                optimizer.zero_grad()
-
                 lr_scheduler.step()
-
+                optimizer.zero_grad()
                 training_steps += 1
+                tr_loss += loss.item()
             
             average_loss=tr_loss/training_steps
-            logging.info(f'Epoch: {epoch}\nAverage loss: {average_loss}\n Current Learning Rate: {lr_scheduler.get_lr()}')
+            print(f'Epoch: {epoch+1}\nAverage loss: {average_loss:f}\n Current Learning Rate: {lr_scheduler.get_last_lr()}')
     
         self.save(output_path)
 
@@ -211,8 +212,8 @@ class ExplicitCrossEncoder:
                 model_predictions = self.model(**features, return_dict=True)
                 logits = model_predictions[1]['cls']
 
-                
-                logits = torch.nn.functional.softmax(logits, dim=1)
+                if len(logits[0]) > 1:
+                    logits = torch.nn.functional.softmax(logits, dim=1)
                 pred_scores.extend(logits)
 
         pred_scores = np.asarray([score.cpu().detach().numpy() for score in pred_scores])
@@ -252,7 +253,7 @@ def parse_args():
     parser_train.add_argument('--batch_size', type=int, default=16)
     parser_train.add_argument('--epochs', type=int, default=3)
     parser.add_argument("--learning_rate",
-                        default=0.00002,
+                        default=2e-5,
                         type=float,
                         help="The initial learning rate for Adam.")
 
