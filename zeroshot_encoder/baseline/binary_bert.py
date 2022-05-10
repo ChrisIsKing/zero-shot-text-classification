@@ -1,12 +1,15 @@
 import math
+import pickle
 import random
 import logging
 import datetime
-from typing import List
+from typing import List, Dict
 from os.path import join
 from argparse import ArgumentParser
 
 import pandas as pd
+import torch
+import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from sklearn.metrics import classification_report
 from sentence_transformers.cross_encoder import CrossEncoder
@@ -52,7 +55,7 @@ def parse_args():
 logger = logging.getLogger(__name__)
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     import os
 
     import numpy as np
@@ -114,7 +117,9 @@ if __name__ == "__main__":
     if args.command == 'test':
         mode, domain, model_path, bsz = args.mode, args.domain, args.model_path, args.batch_size
         domain_str = 'in-domain' if domain == 'in' else 'out-domain'
-        date = datetime.datetime.now().strftime('%Y%m.%d')
+        date = datetime.datetime.now().strftime('%m.%d.%Y')
+        date = date[:-4] + date[-2:]  # 2-digit year
+        # ic(date)
         out_path = join(model_path, 'eval', f'{domain_str}, {date}')
         os.makedirs(out_path, exist_ok=True)
 
@@ -125,20 +130,26 @@ if __name__ == "__main__":
 
         logger = get_logger('Binary Bert Eval')
         d_log = dict(mode=mode, domain=domain, batch_size=bsz, path=model_path)
-        logger.info(f'Evaluating Binary Bert with {log_dict(d_log)}... ')
+        logger.info(f'Evaluating Binary Bert with {log_dict(d_log)} and saving to {logi(out_path)}... ')
 
-        # loop through all datasets
-        for dnm, dset in data.items():
-            if 'amazon' not in dnm:
-                continue
+        eval_loss: Dict[str, np.array] = dict()  # a sense of how badly the model makes the prediction
+        dataset_names = [dnm for dnm, d_dset in sconfig('UTCD.datasets').items() if d_dset['domain'] == domain]
+
+        for dnm in dataset_names:  # loop through all datasets
+            dset = data[dnm]
+            # if 'yahoo' not in dnm:
+            #     continue
             split = 'test'
             txts, aspect = dset[split], dset['aspect']
-            label_options = sconfig(f'UTCD.datasets.{dnm}.splits.{split}.labels')
+            d_dset = sconfig(f'UTCD.datasets.{dnm}.splits.{split}')
+            label_options, multi_label = d_dset['labels'], d_dset['multi_label']
             n_options = len(label_options)
             label2id = {lbl: i for i, lbl in enumerate(label_options)}
             n_txt = sconfig(f'UTCD.datasets.{dnm}.splits.{split}.n_text')
-            logger.info(f'Evaluating {dnm} with {logi(n_txt)} texts...')
+            d_log = {'#text': n_txt, '#label': n_options}
+            logger.info(f'Evaluating {logi(dnm)} with {log_dict(d_log)}...')
             arr_preds, arr_labels = np.empty(n_txt, dtype=int), np.empty(n_txt, dtype=int)
+            arr_loss = torch.empty(n_txt, dtype=torch.float32)
 
             txt_n_lbs2query = None
             if mode == 'vanilla':
@@ -155,41 +166,42 @@ if __name__ == "__main__":
                     return [[f'{aspect} {sep_token} {txt}', lb] for lb in lbs]
 
             gen = group_n(txts.items(), n=bsz)
-            idxs_added = set()
-            # ic(model._target_device)
             # loop through each test example
             for i_grp, group in enumerate(tqdm(gen, desc=dnm, unit='group', total=math.ceil(n_txt/bsz))):
                 txts_, lst_labels = zip(*group)
-                # ic(txts_, lst_labels)
-                idxs = [i + i_grp*bsz for i in range(bsz)]
-                # ic(5420 in idxs)
+                lst_labels: List[List[int]] = [[label2id[lb] for lb in labels] for labels in lst_labels]
                 query = sum([txt_n_lbs2query(t, label_options) for t in txts_], start=[])  # (n_options x bsz, 2)
-                # ic(len(query))
                 # probability for positive class
-                logits = model.predict(query, apply_softmax=True, batch_size=bsz)[:, 1].reshape(-1, n_options)
-                # ic(logits.shape)
+                logits = model.predict(query, batch_size=bsz, apply_softmax=True, convert_to_tensor=True)[:, 1]
+                logits = logits.reshape(-1, n_options)
                 preds = logits.argmax(axis=1)
-                # ic(preds)
-                for i, pred, labels in zip(idxs, preds, lst_labels):
-                    ids_labels = [label2id[lb] for lb in labels]
+                trues = torch.empty_like(preds)
+                for i, pred, labels in zip(range(bsz), preds, lst_labels):
                     # if false prediction, pick one of the correct labels arbitrarily
-                    true = pred if pred in ids_labels else ids_labels[0]
-                    arr_preds[i], arr_labels[i] = pred, true
-                    idxs_added.add(i)
-                # exit(1)
-            # idxs_not_added = sorted(set(range(n_txt)) - idxs_added)
-            # ic(idxs_not_added)
-            assert np.all((0 <= arr_preds) & (arr_preds < n_options))  # sanity check
-            assert np.all((0 <= arr_labels) & (arr_labels < n_options))
+                    trues[i] = pred if pred in labels else labels[0]
+                idx_strt = i_grp*bsz
+                arr_preds[idx_strt:idx_strt+bsz], arr_labels[idx_strt:idx_strt+bsz] = preds.cpu(), trues.cpu()
+                if multi_label and any(len(lbs) > 1 for lbs in lst_labels):
+                    # in this case, vectorizing is complicated, run on each sample separately since edge case anyway
+                    for i, lbs in enumerate(lst_labels):
+                        target = torch.tensor(lbs, device=logits.device)
+                        if len(lbs) > 1:
+                            # ic(logits[i].repeat(1, len(lbs)).shape, target)
+                            loss = max(F.cross_entropy(logits[i].repeat(len(lbs), 1), target, reduction='none'))
+                        else:
+                            # ic(logits[None, i].shape)
+                            loss = F.cross_entropy(logits[None, i], target)  # dummy batch dimension
+                        arr_loss[idx_strt+i] = loss
+                else:
+                    arr_loss[idx_strt:idx_strt+bsz] = F.cross_entropy(logits, trues, reduction='none')
+            eval_loss[dnm] = arr_loss.numpy()
 
-            report = classification_report(
-                arr_labels, arr_preds, target_names=label_options,
-                output_dict=True
-            )
-            # ic(report)
-            # ic(np.sum(arr_preds == arr_labels) / arr_preds.size)
+            args = dict(zero_division=0, target_names=label_options, output_dict=True)  # disables warning
+            report = classification_report(arr_labels, arr_preds, **args)
             acc = f'{report["accuracy"]:.3f}'
             logger.info(f'{logi(dnm)} Classification Accuracy: {logi(acc)}')
             df = pd.DataFrame(report).transpose()
             df.to_csv(join(out_path, f'{dnm}.csv'))
-            exit(1)
+            # exit(1)
+        with open(join(out_path, 'eval_loss.pkl'), 'wb') as f:
+            pickle.dump(eval_loss, f)

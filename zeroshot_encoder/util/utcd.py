@@ -187,6 +187,13 @@ def _get_utcd_dnms() -> UtcdDatasetNames:
     )
 
 
+def get_dataset(dnm: str, split: str) -> Dict[str, List[str]]:
+    d = sconfig(f'UTCD.datasets.{dnm}')
+    path = os_join(BASE_PATH, PROJ_DIR, DSET_DIR, f'{d["path"]}.json')
+    with open(path) as fl:
+        return json.load(fl)[split]
+
+
 class VisualizeOverlap:
     path_dset = os_join(BASE_PATH, PROJ_DIR, DSET_DIR)
     in_dnms, out_dnms = _get_utcd_dnms()
