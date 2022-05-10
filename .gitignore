@@ -15,9 +15,7 @@ gpt2_training_sanitycheck.py
 language_modeling_from_scratch.ipynb
 gpt2-wikitext2/
 gdrive
-chore/
 trained-models/
-plot/
 plot/
 
 # Byte-compiled / optimized / DLL files
