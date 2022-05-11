@@ -1,32 +1,39 @@
+import os
 import math
-import random
-import pandas as pd
+from os.path import join
+from os.path import join as os_join
+from pathlib import Path
+from typing import List, Type, Dict, Optional, Union
+from argparse import ArgumentParser
+
 import numpy as np
+import pandas as pd
 import torch
 import torch.nn as nn
-from tqdm import tqdm
-from pathlib import Path
-from os.path import join
-from typing import List, Type, Dict, Callable, Optional, Union, Tuple
-from torch.optim import Optimizer, AdamW
-from torch.utils.data import DataLoader, Dataset
-from tqdm import trange
-from transformers import set_seed
-from transformers.utils import logging
-from transformers import BertConfig, BertModel, BertPreTrainedModel, BertTokenizer
-from transformers import get_scheduler
 from torch.nn import CrossEntropyLoss
-from argparse import ArgumentParser
-from os.path import join
+from torch.optim import Optimizer, AdamW
+from torch.utils.data import DataLoader
+from transformers import (
+    set_seed,
+    BertConfig, BertModel, BertPreTrainedModel, BertTokenizer,
+    get_scheduler
+)
+from transformers.utils import logging
 from sklearn.metrics import classification_report
-from zeroshot_encoder.util.load_data import get_data, binary_explicit_format, in_domain_data_path, out_of_domain_data_path
+from tqdm import tqdm, trange
+from torch.utils.tensorboard import SummaryWriter
+
+from zeroshot_encoder.util.load_data import (
+    get_data, binary_explicit_format, in_domain_data_path, out_of_domain_data_path
+)
 from stefutil import *
-from zeroshot_encoder.util.util import sconfig
 from zeroshot_encoder.util import *
+
 
 logging.set_verbosity_info()
 logger = logging.get_logger(__name__)
 set_seed(42)
+
 
 class BertZeroShotExplicit(BertPreTrainedModel):
     def __init__(self, config):
@@ -89,12 +96,15 @@ class BertZeroShotExplicit(BertPreTrainedModel):
 
 
 class ExplicitCrossEncoder:
-    def __init__(self, name="bert-base-uncased", device="cuda", max_length=None) -> None:
+    def __init__(self, name="bert-base-uncased", device: Union[str, torch.device] = 'cuda', max_length=None) -> None:
         self.config = BertConfig.from_pretrained(name)
         self.model = BertZeroShotExplicit(self.config)
         self.tokenizer = BertTokenizer.from_pretrained(name)
         self.device = device
         self.max_length = max_length
+
+        self.writer = None
+        self.model_meta = dict(model='BinaryBERT', mode='explicit')
     
     def smart_batching_collate(self, batch):
         texts = [[] for _ in range(len(batch[0].texts))]
@@ -131,17 +141,23 @@ class ExplicitCrossEncoder:
 
         return tokenized
 
-    def fit(self,
-        train_dataloader: DataLoader,
-        epochs: int = 1,
-        scheduler: str = 'linear',
-        warmup_steps: int = 10000,
-        optimizer_class: Type[Optimizer] = AdamW,
-        optimizer_params: Dict[str, object] = {'lr': 2e-5},
-        weight_decay: float = 0.01,
-        output_path: str = None,
-        max_grad_norm: float = 1,
-        show_progress_bar: bool = True):
+    def fit(
+            self,
+            train_dataloader: DataLoader,
+            epochs: int = 1,
+            scheduler: str = 'linear',
+            warmup_steps: int = 10000,
+            optimizer_class: Type[Optimizer] = AdamW,
+            optimizer_params: Dict[str, object] = {'lr': 2e-5},
+            weight_decay: float = 0.01,
+            output_path: str = None,
+            max_grad_norm: float = 1,
+            show_progress_bar: bool = True
+    ):
+        os.makedirs(output_path, exist_ok=True)
+        mdl, md = self.model_meta['model'], self.model_meta['mode']
+        log_fnm = f'{now(for_path=True)}, {mdl}, md={md}, #ep={epochs}'
+        self.writer = SummaryWriter(os_join(output_path, f'tb - {log_fnm}.log'))
 
         train_dataloader.collate_fn = self.smart_batching_collate
         self.model.to(self.device)
@@ -163,31 +179,43 @@ class ExplicitCrossEncoder:
             name=scheduler, optimizer=optimizer, num_warmup_steps=warmup_steps, num_training_steps=num_training_steps
         )
 
+        def _get_lr() -> float:
+            return lr_scheduler.get_last_lr()[0]
+
         for epoch in trange(epochs, desc="Epoch", disable=not show_progress_bar):
             training_steps = 0
-            tr_loss=0
+            tr_loss = 0
             self.model.zero_grad()
             self.model.train()
 
-            for features, labels, aspects in tqdm(train_dataloader, desc="Iteration", smoothing=0.05, disable=not show_progress_bar):
-                model_predictions = self.model(**features, return_dict=True)
+            # for features, labels, aspects in tqdm(train_dataloader, desc="Iteration", smoothing=0.05, disable=not show_progress_bar):
+            with tqdm(train_dataloader, desc="Iteration", smoothing=0.05, disable=not show_progress_bar) as it:
+                for features, lbs, aspects in it:
+                    model_predictions = self.model(**features, return_dict=True)
 
-                pooled_output = model_predictions[1]
-                loss = None
-                loss_fct = CrossEntropyLoss()
+                    pooled_output = model_predictions[1]
+                    loss_fct = CrossEntropyLoss()
 
-                task_loss_value = loss_fct(pooled_output['aspect'].view(-1, 3), aspects.view(-1))
-                binary_loss_value = loss_fct(pooled_output['cls'].view(-1, 2), labels.view(-1))
-                loss = task_loss_value + binary_loss_value
-                loss.backward()
-                torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_grad_norm)
-                optimizer.step()
-                lr_scheduler.step()
-                optimizer.zero_grad()
-                training_steps += 1
-                tr_loss += loss.item()
+                    task_loss_value = loss_fct(pooled_output['aspect'].view(-1, 3), aspects.view(-1))
+                    binary_loss_value = loss_fct(pooled_output['cls'].view(-1, 2), lbs.view(-1))
+
+                    cls_loss, asp_loss = binary_loss_value.detach().item(), task_loss_value.detach().item()
+                    it.set_postfix(cls_loss=cls_loss, asp_loss=asp_loss)
+                    step = training_steps
+                    self.writer.add_scalar('Train/learning rate', _get_lr(), step)
+                    self.writer.add_scalar('Train/Binary Classification Loss', cls_loss, step)
+                    self.writer.add_scalar('Train/Aspect Classification Loss', asp_loss, step)
+
+                    loss = task_loss_value + binary_loss_value
+                    loss.backward()
+                    torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_grad_norm)
+                    optimizer.step()
+                    lr_scheduler.step()
+                    optimizer.zero_grad()
+                    training_steps += 1
+                    tr_loss += loss.item()
             
-            average_loss=tr_loss/training_steps
+            average_loss = tr_loss/training_steps
             print(f'Epoch: {epoch+1}\nAverage loss: {average_loss:f}\n Current Learning Rate: {lr_scheduler.get_last_lr()}')
     
         self.save(output_path)
@@ -231,8 +259,8 @@ class ExplicitCrossEncoder:
         self.model.save_pretrained(path)
         self.tokenizer.save_pretrained(path)
 
-def parse_args():
 
+def parse_args():
     modes = [
         'vanilla',
         'implicit',
@@ -264,13 +292,17 @@ def parse_args():
     
     return parser.parse_args()
 
+
 if __name__ == "__main__":
+    from icecream import ic
+
     args = parse_args()
 
     if args.command == 'train':
-        device = torch.device("cuda")
+        dvc = 'cuda' if torch.cuda.is_available() else 'cpu'
 
-        data = get_data(in_domain_data_path)
+        n_sample = 1024  # TODO: debugging
+        data = get_data(in_domain_data_path, n_sample=n_sample)
         # get keys from data dict
         datasets = list(data.keys())
         train = binary_explicit_format(data)
@@ -280,18 +312,18 @@ if __name__ == "__main__":
         num_epochs = args.epochs
         model_save_path = join(args.output, args.sampling)
 
-        train_dataloader = DataLoader(train, shuffle=True, batch_size=train_batch_size)
+        dl = DataLoader(train, shuffle=True, batch_size=train_batch_size)
 
-        model = ExplicitCrossEncoder("bert-base-uncased", device=device)
+        model = ExplicitCrossEncoder('bert-base-uncased', device=dvc)
 
-        warmup_steps = math.ceil(len(train_dataloader) * num_epochs * 0.1)  # 10% of train data for warm-up
-        logger.info("Warmup-steps: {}".format(warmup_steps))
+        warmup_steps_ = math.ceil(len(dl) * num_epochs * 0.1)  # 10% of train data for warm-up
+        logger.info("Warmup-steps: {}".format(warmup_steps_))
 
         model.fit(
-            train_dataloader=train_dataloader,
+            train_dataloader=dl,
             epochs=num_epochs,
-            warmup_steps=warmup_steps,
-            optimizer_params= {'lr': lr},
+            warmup_steps=warmup_steps_,
+            optimizer_params={'lr': lr},
             output_path=model_save_path)
     
     if args.command == 'test':
@@ -314,7 +346,7 @@ if __name__ == "__main__":
         # loop through all datasets
         for dataset in datasets:
             examples = data[dataset]["test"]
-            labels = data[dataset]['labels']
+            label_options = data[dataset]['labels']
             aspect = data[dataset]['aspect']
             preds = []
             gold = []
@@ -341,12 +373,12 @@ if __name__ == "__main__":
 
             # loop through each test example
             print(f'Evaluating dataset: {logi(dataset)}')
-            for index, (text, gold_labels) in enumerate(tqdm(examples.items())):
-                query = txt_n_lbs2query(text, labels)
+            for index, (txt_, gold_labels) in enumerate(tqdm(examples.items())):
+                query = txt_n_lbs2query(txt_, label_options)
                 results = model.predict(query)
 
                 # compute which pred is higher
-                pred = labels[results[:, 1].argmax()]
+                pred = label_options[results[:, 1].argmax()]
                 preds.append(pred)
                
                 if pred in gold_labels:

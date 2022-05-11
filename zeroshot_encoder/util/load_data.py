@@ -9,8 +9,9 @@ from os import listdir
 from os.path import isfile, join, basename
 from zipfile import ZipFile
 from collections import Counter
-from typing import List, Tuple
+from typing import List, Tuple, Dict
 
+import numpy as np
 from numpy import argmax, argmin
 import spacy
 from sentence_transformers.readers import InputExample
@@ -19,8 +20,8 @@ import gdown
 from tqdm import tqdm
 
 from stefutil import *
-from zeroshot_encoder.util.util import sconfig
 from zeroshot_encoder.util import *
+
 
 in_domain_url = 'https://drive.google.com/uc?id=1V7IzdZ9HQbFUQz9NzBDjmqYBdPd9Yfe3'
 out_of_domain_url = 'https://drive.google.com/uc?id=1nd32_UrFbgoCgH4bDtFFD_YFZhzcts3x'
@@ -52,14 +53,32 @@ category_map = {
 }
 
 
-def get_data(path):
+def get_data(path, n_sample: int = None):
+    """
+    :param path: File system path to folder of UTCD dataset
+    :param n_sample: If given, a random sample of the entire dataset is selected
+        Intended for debugging
+    """
+    logger = get_logger('Get UTCD data')
     if not os.path.exists(path):
+        logger.info('Loading data from Google Drive...')
         download_data(path)
     paths = [join(path, f) for f in listdir(path) if isfile(join(path, f)) and f.endswith('.json')]
     data = {}
     for path in paths:
         dataset_name = basename(path).split('.')[0]
-        data[dataset_name] = json.load(open(path))
+        logger.info(f'Loading dataset {logi(dataset_name)}...')
+        dset = json.load(open(path))
+        if n_sample:
+            assert set(dset.keys()) == {'train', 'test', 'aspect', 'labels'}  # sanity check
+            for k in ['train', 'test']:
+                txt2lb: Dict[str, List[str]] = dset[k]
+                txts = np.empty(sconfig(f'UTCD.datasets.{dataset_name}.splits.{k}.n_text'), dtype=object)
+                for i, t in enumerate(txt2lb.keys()):
+                    txts[i] = t
+                txts = np.random.permutation(txts)[:n_sample]
+                dset[k] = {t: txt2lb[t] for t in txts}
+        data[dataset_name] = dset
     return data
 
 
@@ -322,6 +341,7 @@ def encoder_cls_format(
             examples.append(InputExample(texts=[element[1], element[0]], label=float(1)))
     return examples
 
+
 def seq_cls_format(data, all=False):
     train = []
     test = []
@@ -356,9 +376,8 @@ def seq_cls_format(data, all=False):
             # loop through each true label
             for label in v:
                 test.append({'text': k, 'label': label_map[label], 'label_name': label})
-
-
     return train, test, label_map
+
 
 class ExplicitInputExample:
     def __init__(self, texts, label, aspect) -> None:
@@ -368,6 +387,7 @@ class ExplicitInputExample:
     
     def __str__(self):
         return "<ExplicitInputExample> label: {}, text: {}".format(str(self.label), self.text)
+
 
 def binary_explicit_format(dataset):
     aspect_map = {"sentiment": 0, "intent": 1, "topic": 2}
