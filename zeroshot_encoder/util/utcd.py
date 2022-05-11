@@ -13,7 +13,8 @@ import pandas as pd
 import torch
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.manifold import TSNE
-from tsnecuda import TSNE as cuTSNE
+if torch.cuda.is_available():
+    from tsnecuda import TSNE as cuTSNE
 from datasets import Value, Features, ClassLabel, Sequence, Dataset, DatasetDict
 from sentence_transformers import SentenceTransformer
 import spacy

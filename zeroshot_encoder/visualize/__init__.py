@@ -1,1 +1,1 @@
-from . import visualize_text_sample_loss
+from .visualize_text_sample_loss import AttentionVisualizer
