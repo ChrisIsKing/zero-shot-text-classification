@@ -1,5 +1,6 @@
 import os
 import math
+import logging
 from os.path import join
 from os.path import join as os_join
 from pathlib import Path
@@ -18,7 +19,7 @@ from transformers import (
     BertConfig, BertModel, BertPreTrainedModel, BertTokenizer,
     get_scheduler
 )
-from transformers.utils import logging
+# from transformers.utils import logging
 from sklearn.metrics import classification_report
 from tqdm import tqdm, trange
 from torch.utils.tensorboard import SummaryWriter
@@ -30,8 +31,9 @@ from stefutil import *
 from zeroshot_encoder.util import *
 
 
-logging.set_verbosity_info()
-logger = logging.get_logger(__name__)
+# logging.set_verbosity_info()
+# logger = logging.get_logger(__name__)
+logger = logging.getLogger(__name__)
 set_seed(42)
 
 
@@ -188,25 +190,26 @@ class ExplicitCrossEncoder:
             self.model.zero_grad()
             self.model.train()
 
-            # for features, labels, aspects in tqdm(train_dataloader, desc="Iteration", smoothing=0.05, disable=not show_progress_bar):
             with tqdm(train_dataloader, desc="Iteration", smoothing=0.05, disable=not show_progress_bar) as it:
-                for features, lbs, aspects in it:
+                for features, labels, aspects in it:
                     model_predictions = self.model(**features, return_dict=True)
 
                     pooled_output = model_predictions[1]
                     loss_fct = CrossEntropyLoss()
 
                     task_loss_value = loss_fct(pooled_output['aspect'].view(-1, 3), aspects.view(-1))
-                    binary_loss_value = loss_fct(pooled_output['cls'].view(-1, 2), lbs.view(-1))
+                    binary_loss_value = loss_fct(pooled_output['cls'].view(-1, 2), labels.view(-1))
 
                     cls_loss, asp_loss = binary_loss_value.detach().item(), task_loss_value.detach().item()
                     it.set_postfix(cls_loss=cls_loss, asp_loss=asp_loss)
-                    step = training_steps
+                    step = training_steps + epoch * len(train_dataloader)
                     self.writer.add_scalar('Train/learning rate', _get_lr(), step)
                     self.writer.add_scalar('Train/Binary Classification Loss', cls_loss, step)
                     self.writer.add_scalar('Train/Aspect Classification Loss', asp_loss, step)
+                    # ic(step, cls_loss, asp_loss)
 
-                    loss = task_loss_value + binary_loss_value
+                    # loss = task_loss_value + binary_loss_value
+                    loss = binary_loss_value
                     loss.backward()
                     torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_grad_norm)
                     optimizer.step()
@@ -294,38 +297,50 @@ def parse_args():
 
 
 if __name__ == "__main__":
+    import transformers
     from icecream import ic
 
+    transformers.logging.set_verbosity_error()  # disables `longest_first` warning
+
     args = parse_args()
+    mode = args.mode
+    assert mode == 'explicit'
 
     if args.command == 'train':
+
+        bsz, lr, n_ep = args.batch_size, args.learning_rate, args.epochs
+        sampling = args.sampling
+        dirs = args.output.split(os.sep)
+        dir_nm_last = f'{now(for_path=True)}-{dirs[-1]}-{sampling}-{args.mode}'
+        save_path = os_join(*dirs[:-1], dir_nm_last)
+        _logger = get_logger('BinaryBERT Explicit Training')
+        d_log = dict(mode=mode, sampling=sampling, batch_size=bsz, epochs=n_ep, learning_rate=lr, save_path=save_path)
+        _logger.info(f'Running training on {log_dict(d_log)}.. ')
+
         dvc = 'cuda' if torch.cuda.is_available() else 'cpu'
 
-        n_sample = 1024  # TODO: debugging
+        _logger.info('Loading data & model... ')
+        # n_sample = 1024 * 8  # TODO: debugging
+        n_sample = None
         data = get_data(in_domain_data_path, n_sample=n_sample)
         # get keys from data dict
         datasets = list(data.keys())
         train = binary_explicit_format(data)
 
-        train_batch_size = args.batch_size
-        lr = args.learning_rate
-        num_epochs = args.epochs
-        model_save_path = join(args.output, args.sampling)
-
-        dl = DataLoader(train, shuffle=True, batch_size=train_batch_size)
+        dl = DataLoader(train, shuffle=True, batch_size=bsz)
 
         model = ExplicitCrossEncoder('bert-base-uncased', device=dvc)
 
-        warmup_steps_ = math.ceil(len(dl) * num_epochs * 0.1)  # 10% of train data for warm-up
-        logger.info("Warmup-steps: {}".format(warmup_steps_))
+        warmup_steps_ = math.ceil(len(dl) * n_ep * 0.1)  # 10% of train data for warm-up
+        _logger.info(f'Launched training on {logi(len(train))} samples and {logi(warmup_steps_)} warmup steps... ')
 
         model.fit(
             train_dataloader=dl,
-            epochs=num_epochs,
+            epochs=n_ep,
             warmup_steps=warmup_steps_,
             optimizer_params={'lr': lr},
-            output_path=model_save_path)
-    
+            output_path=save_path
+        )
     if args.command == 'test':
         mode = args.mode
         pred_path = join(args.model_path, 'preds/{}/'.format(args.domain))
@@ -352,7 +367,8 @@ if __name__ == "__main__":
             gold = []
             correct = 0
 
-            if mode == 'vanilla':
+            txt_n_lbs2query = None
+            if mode in ['vanilla', 'explicit']:
                 def txt_n_lbs2query(txt: str, lbs: List[str]) -> List[List[str]]:
                     return [[txt, lb] for lb in lbs]
             elif mode == 'implicit':
@@ -368,8 +384,6 @@ if __name__ == "__main__":
 
                 def txt_n_lbs2query(txt: str, lbs: List[str]) -> List[List[str]]:
                     return [[f'{aspect} {sep_token} {txt}', lb] for lb in lbs]
-            else:
-                raise NotImplementedError(f'{logi(mode)} not supported yet')
 
             # loop through each test example
             print(f'Evaluating dataset: {logi(dataset)}')

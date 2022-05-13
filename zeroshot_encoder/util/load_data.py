@@ -398,7 +398,7 @@ def binary_explicit_format(dataset):
         aspect = data['aspect']
         label_list = data['labels']
 
-        for i, (text, labels) in enumerate(tqdm(data['train'].items())):
+        for i, (text, labels) in enumerate(tqdm(data['train'].items(), desc=name)):
                 
             true_labels = labels
             other_labels = [label for label in label_list if label not in true_labels]

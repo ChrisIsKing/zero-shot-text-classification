@@ -12,7 +12,6 @@ from collections import defaultdict
 import numpy as np
 import torch
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
-from bertviz import head_view
 
 from stefutil import *
 from zeroshot_encoder.util import *
@@ -61,6 +60,7 @@ class AttentionVisualizer:
 
         Should be called in a notebook only per `bertviz`
         """
+        from bertviz import head_view
         split = 'test'
         if dataset_name not in self.dataset_cache:
             self.dataset_cache[dataset_name] = utcd.get_dataset(dataset_name, split)
