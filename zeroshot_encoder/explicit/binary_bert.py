@@ -51,6 +51,12 @@ class BertZeroShotExplicit(BertPreTrainedModel):
 
         # Initialize weights and apply final processing
         self.post_init()
+
+    @classmethod
+    def from_pretrained(cls, pretrained_model_name_or_path, *model_args, **kwargs):
+        # calls `from_pretrained` from class `PreTrainedModel`
+        obj = super().from_pretrained(pretrained_model_name_or_path, *model_args, **kwargs)
+        return obj
     
     def forward(
         self,
@@ -107,6 +113,12 @@ class ExplicitCrossEncoder:
 
         self.writer = None
         self.model_meta = dict(model='BinaryBERT', mode='explicit')
+
+    @classmethod
+    def from_pretrained(cls, pretrained_model_name_or_path, *model_args, **kwargs):
+        obj = cls()
+        obj.model = BertZeroShotExplicit.from_pretrained(pretrained_model_name_or_path, *model_args, **kwargs)
+        return obj
     
     def smart_batching_collate(self, batch):
         texts = [[] for _ in range(len(batch[0].texts))]
@@ -343,8 +355,12 @@ if __name__ == "__main__":
         )
     if args.command == 'test':
         mode = args.mode
+        split = 'test'
+        # split = 'train'  # todo: debugging
         pred_path = join(args.model_path, 'preds/{}/'.format(args.domain))
         result_path = join(args.model_path, 'results/{}/'.format(args.domain))
+        if split == 'train':
+            result_path = join(args.model_path, 'results/{}, train/'.format(args.domain))
         Path(pred_path).mkdir(parents=True, exist_ok=True)
         Path(result_path).mkdir(parents=True, exist_ok=True)
         if args.domain == 'in':
@@ -354,13 +370,13 @@ if __name__ == "__main__":
         # get keys from data dict
         datasets = list(data.keys())
 
-        model = ExplicitCrossEncoder(args.model_path)
+        model = ExplicitCrossEncoder.from_pretrained(args.model_path)
 
         label_map = ["false", "true"]
 
         # loop through all datasets
         for dataset in datasets:
-            examples = data[dataset]["test"]
+            examples = data[dataset][split]
             label_options = data[dataset]['labels']
             aspect = data[dataset]['aspect']
             preds = []
@@ -394,7 +410,13 @@ if __name__ == "__main__":
                 # compute which pred is higher
                 pred = label_options[results[:, 1].argmax()]
                 preds.append(pred)
-               
+
+                # ic(txt_, gold_labels)
+                # ic(results[:, 1], label_options)
+                #
+                # if index >= 10:
+                #     exit(1)
+
                 if pred in gold_labels:
                     correct += 1
                     gold.append(pred)
@@ -402,6 +424,6 @@ if __name__ == "__main__":
                     gold.append(gold_labels[0])
             
             print(f'{logi(dataset)} Dataset Accuracy: {logi(correct/len(examples))}')
-            report = classification_report(gold, preds, output_dict=True)
+            report = classification_report(gold, preds, output_dict=True, zero_division=0)
             df = pd.DataFrame(report).transpose()
             df.to_csv('{}/{}.csv'.format(result_path, dataset))
