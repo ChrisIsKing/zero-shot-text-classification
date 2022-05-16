@@ -655,7 +655,7 @@ def get_all_setup(
         model=model_, args=train_args_, data_collator=data_collator_,
         train_dataset=dset_tr_, eval_dataset=dset_vl_, compute_metrics=compute_metrics
     )
-    trainer_ = CustomTrainer(
+    trainer_ = MyTrainer(
         tokenizer=tokenizer_, custom_logging=custom_logging, compute_cls_acc=model_name != 'debug-gpt-ori',
         is_ddp=is_ddp,
         **trainer_args

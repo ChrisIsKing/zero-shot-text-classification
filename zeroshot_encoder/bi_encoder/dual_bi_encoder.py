@@ -1,9 +1,18 @@
-from sklearn.metrics import classification_report
+import os
+import math
+import itertools
+from typing import List, Tuple, Dict, Iterable
+from collections import OrderedDict
+
+import pandas as pd
+import torch
 from torch.utils.data import DataLoader
 from transformers import BertTokenizer
 from sentence_transformers.readers import InputExample
+from sklearn.metrics import classification_report
 from tqdm import tqdm
 
+from stefutil import *
 from zeroshot_encoder.util import *
 import zeroshot_encoder.util.utcd as utcd_util
 from zeroshot_encoder.util.load_data import get_data, encoder_cls_format, in_domain_data_path, out_of_domain_data_path
@@ -271,7 +280,7 @@ if __name__ == '__main__':
     import transformers
     from icecream import ic
 
-    seed = config('random-seed')
+    seed = sconfig('random-seed')
     js_bi.set_seed(seed)
     transformers.set_seed(seed)
 

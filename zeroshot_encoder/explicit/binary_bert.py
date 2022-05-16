@@ -171,7 +171,7 @@ class ExplicitCrossEncoder:
         os.makedirs(output_path, exist_ok=True)
         mdl, md = self.model_meta['model'], self.model_meta['mode']
         log_fnm = f'{now(for_path=True)}, {mdl}, md={md}, #ep={epochs}'
-        self.writer = SummaryWriter(os_join(output_path, f'tb - {log_fnm}.log'))
+        self.writer = SummaryWriter(os_join(output_path, f'tb - {log_fnm}'))
 
         train_dataloader.collate_fn = self.smart_batching_collate
         self.model.to(self.device)
