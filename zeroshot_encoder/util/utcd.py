@@ -75,7 +75,7 @@ def process_utcd_dataset(domain: str = 'in', join=False):
     Save processed datasets to disk
     """
     logger = get_logger('Process UTCD')
-    ca(domain=domain)
+    ca(dataset_domain=domain)
     output_dir = 'UTCD-in' if domain == 'in' else 'UTCD-out'
     ext = sconfig('UTCD.dataset_ext')
     path_dsets = os_join(BASE_PATH, PROJ_DIR, DSET_DIR)
@@ -136,16 +136,19 @@ def process_utcd_dataset(domain: str = 'in', join=False):
             # The string labels **may overlap** across the datasets
             # Keep internal feature label ordering same as dataset id
             lbs_dset = sorted(dnm2id, key=dnm2id.get)
+            ic(dnm2id, lbs_dset)
             features = Features(text=Value(dtype='string'), labels=lbs_global, dataset_id=ClassLabel(names=lbs_dset))
             return Dataset.from_pandas(df, features=features)
         tr = dfs2dset([prep_single(dnm, dsets['train']) for dnm, dsets in d_dsets.items()])
         vl = dfs2dset([prep_single(dnm, dsets['test']) for dnm, dsets in d_dsets.items()])
         dsets = DatasetDict(train=tr, test=vl)
-        dsets.save_to_disk(os_join(path_out, output_dir))
+        path = os_join(path_out, output_dir)
+        dsets.save_to_disk(path)
+        logger.info(f'{logi("Joined")} Dataset saved to {logi(path)} ')
     else:
         for dnm, dsets in d_dsets.items():
             dsets.save_to_disk(os_join(path_out, dnm))
-    logger.info(f'Dataset(s) saved to {logi(path_out)}')
+            logger.info(f'Dataset {logi(dnm)} saved to {logi(path_out)}')
 
 
 def map_ag_news():
@@ -592,9 +595,9 @@ if __name__ == '__main__':
     # sanity_check('UTCD-in')
 
     def get_utcd_in():
-        process_utcd_dataset(domain='in', join=False)
+        process_utcd_dataset(domain='in', join=True)
         sanity_check('UTCD-in')
-    # get_utcd_in()
+    get_utcd_in()
 
     # get_utcd_from_gdrive(domain='out')
 
@@ -602,9 +605,6 @@ if __name__ == '__main__':
         process_utcd_dataset(domain='out', join=False)
         sanity_check('UTCD-out')
     # get_utcd_out()
-
-    # process_utcd_dataset(in_domain=True, join=False)
-    # process_utcd_dataset(in_domain=False, join=False)
 
     def sanity_check_ln_eurlex():
         path = os_join(get_output_base(), PROJ_DIR, DSET_DIR, 'processed', 'multi_eurlex')

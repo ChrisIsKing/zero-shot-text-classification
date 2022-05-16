@@ -648,7 +648,7 @@ def get_all_setup(
     dset_tr_, dset_vl_ = get_dataset(
         dataset_name=dataset_name,
         map_func=dict(train=tr_map_func, test=vl_map_func), remove_columns=['text', 'labels'],
-        n_sample=n_sample, random_seed=random_seed,
+        n_sample=n_sample, shuffle_seed=random_seed,
         fast='debug' not in model_name, **dataset_args
     )
     trainer_args = dict(

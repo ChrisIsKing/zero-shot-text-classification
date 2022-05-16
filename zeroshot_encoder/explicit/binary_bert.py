@@ -209,7 +209,12 @@ class ExplicitCrossEncoder:
                     pooled_output = model_predictions[1]
                     loss_fct = CrossEntropyLoss()
 
-                    task_loss_value = loss_fct(pooled_output['aspect'].view(-1, 3), aspects.view(-1))
+                    cls_loss_only = True  # TODO: debugging
+                    if cls_loss_only:
+                        with torch.no_grad():
+                            task_loss_value = loss_fct(pooled_output['aspect'].view(-1, 3), aspects.view(-1))
+                    else:
+                        task_loss_value = loss_fct(pooled_output['aspect'].view(-1, 3), aspects.view(-1))
                     binary_loss_value = loss_fct(pooled_output['cls'].view(-1, 2), labels.view(-1))
 
                     cls_loss, asp_loss = binary_loss_value.detach().item(), task_loss_value.detach().item()
@@ -218,10 +223,10 @@ class ExplicitCrossEncoder:
                     self.writer.add_scalar('Train/learning rate', _get_lr(), step)
                     self.writer.add_scalar('Train/Binary Classification Loss', cls_loss, step)
                     self.writer.add_scalar('Train/Aspect Classification Loss', asp_loss, step)
-                    # ic(step, cls_loss, asp_loss)
-
-                    # loss = task_loss_value + binary_loss_value
-                    loss = binary_loss_value
+                    if cls_loss_only:
+                        loss = binary_loss_value
+                    else:
+                        loss = task_loss_value + binary_loss_value
                     loss.backward()
                     torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_grad_norm)
                     optimizer.step()
@@ -377,6 +382,8 @@ if __name__ == "__main__":
         dataset_names = [dnm for dnm, d_dset in sconfig('UTCD.datasets').items() if d_dset['domain'] == domain]
 
         for dnm in dataset_names:  # loop through all datasets
+            # if 'consumer' not in dnm:
+            #     continue
             dset = data[dnm]
             split = 'test'
             txts, aspect = dset[split], dset['aspect']
@@ -426,76 +433,3 @@ if __name__ == "__main__":
             logger.info(f'{logi(dnm)} Classification Accuracy: {logi(acc)}')
             df = pd.DataFrame(report).transpose()
             df.to_csv(join(out_path, f'{dnm}.csv'))
-        # mode = args.mode
-        # split = 'test'
-        # # split = 'train'  # todo: debugging
-        # pred_path = join(args.model_path, 'preds/{}/'.format(args.domain))
-        # result_path = join(args.model_path, 'results/{}/'.format(args.domain))
-        # if split == 'train':
-        #     result_path = join(args.model_path, 'results/{}, train/'.format(args.domain))
-        # Path(pred_path).mkdir(parents=True, exist_ok=True)
-        # Path(result_path).mkdir(parents=True, exist_ok=True)
-        # if args.domain == 'in':
-        #     data = get_data(in_domain_data_path)
-        # else:  # out
-        #     data = get_data(out_of_domain_data_path)
-        # # get keys from data dict
-        # datasets = list(data.keys())
-        #
-        # model = ExplicitCrossEncoder.from_pretrained(args.model_path)
-        #
-        # label_map = ["false", "true"]
-        #
-        # # loop through all datasets
-        # for dataset in datasets:
-        #     examples = data[dataset][split]
-        #     label_options = data[dataset]['labels']
-        #     aspect = data[dataset]['aspect']
-        #     preds = []
-        #     gold = []
-        #     correct = 0
-        #
-        #     txt_n_lbs2query = None
-        #     if mode in ['vanilla', 'explicit']:
-        #         def txt_n_lbs2query(txt: str, lbs: List[str]) -> List[List[str]]:
-        #             return [[txt, lb] for lb in lbs]
-        #     elif mode == 'implicit':
-        #         def txt_n_lbs2query(txt: str, lbs: List[str]) -> List[List[str]]:
-        #             return [[txt, f'{lb} {aspect}'] for lb in lbs]
-        #     elif mode == 'implicit-on-text-encode-aspect':
-        #         aspect_token = sconfig('training.implicit-on-text.encode-aspect.aspect2aspect-token')[aspect]
-        #
-        #         def txt_n_lbs2query(txt: str, lbs: List[str]) -> List[List[str]]:
-        #             return [[f'{aspect_token} {txt}', lb] for lb in lbs]
-        #     elif mode == 'implicit-on-text-encode-sep':
-        #         sep_token = sconfig('training.implicit-on-text.encode-sep.aspect-sep-token')
-        #
-        #         def txt_n_lbs2query(txt: str, lbs: List[str]) -> List[List[str]]:
-        #             return [[f'{aspect} {sep_token} {txt}', lb] for lb in lbs]
-        #
-        #     # loop through each test example
-        #     print(f'Evaluating dataset: {logi(dataset)}')
-        #     for index, (txt_, gold_labels) in enumerate(tqdm(examples.items())):
-        #         query = txt_n_lbs2query(txt_, label_options)
-        #         results = model.predict(query)
-        #
-        #         # compute which pred is higher
-        #         pred = label_options[results[:, 1].argmax()]
-        #         preds.append(pred)
-        #
-        #         # ic(txt_, gold_labels)
-        #         # ic(results[:, 1], label_options)
-        #         #
-        #         # if index >= 10:
-        #         #     exit(1)
-        #
-        #         if pred in gold_labels:
-        #             correct += 1
-        #             gold.append(pred)
-        #         else:
-        #             gold.append(gold_labels[0])
-        #
-        #     print(f'{logi(dataset)} Dataset Accuracy: {logi(correct/len(examples))}')
-        #     report = classification_report(gold, preds, output_dict=True, zero_division=0)
-        #     df = pd.DataFrame(report).transpose()
-        #     df.to_csv('{}/{}.csv'.format(result_path, dataset))

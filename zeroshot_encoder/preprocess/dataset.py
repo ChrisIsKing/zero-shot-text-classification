@@ -11,7 +11,7 @@ def get_dataset(
         dataset_name='ag_news',
         map_func: Union[Dict[str, Callable], Callable] = None, filter_func: Callable = None,
         remove_columns: Union[str, List[str]] = None,
-        n_sample: int = None, random_seed: int = None, fast=True, from_disk=True,
+        n_sample: int = None, shuffle_seed: int = None, fast=True, from_disk=True,
         splits: Union[str, List[str], Tuple[str]] = ('train', 'test')
 ) -> List[datasets.Dataset]:
     if from_disk:
@@ -30,8 +30,8 @@ def get_dataset(
     # ordering of filter, shuffle, then select determined for debugging
     if filter_func is not None:
         dsets = [dset.filter(filter_func, num_proc=num_proc) for dset in dsets]
-    if random_seed:
-        dsets = [dset.shuffle(seed=random_seed) for dset in dsets]
+    if shuffle_seed:
+        dsets = [dset.shuffle(seed=shuffle_seed) for dset in dsets]
     if n_sample is not None:
         dsets = [d.select(range(min(n_sample, len(d)))) for d in dsets]
     if map_func is not None:
