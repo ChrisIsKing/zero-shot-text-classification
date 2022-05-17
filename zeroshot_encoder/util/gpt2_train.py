@@ -411,7 +411,7 @@ def get_accs(
     return d_ret
 
 
-class CustomTrainer(Trainer):
+class MyTrainer(Trainer):
     def __init__(
             self, tokenizer: GPT2TokenizerFast = None, custom_logging=True, compute_cls_acc=True,
             is_ddp: Union[bool, int] = False, **kwargs
