@@ -115,7 +115,7 @@ spacy-loggers==1.0.1
 sqlitedict==1.7.0
 srsly==2.4.2
 starlette==0.18.0
-stefutils==0.3.0
+stefutils==0.4.1
 sty==1.0.4
 tabulate==0.8.9
 tbb==2021.6.0

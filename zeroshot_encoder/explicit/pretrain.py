@@ -10,9 +10,10 @@ from os.path import join as os_join
 from typing import List, Tuple, Dict, Any
 
 import numpy as np
+
 from transformers import (
     AutoTokenizer, AutoModelForSequenceClassification,
-    Trainer, TrainingArguments, SchedulerType
+    TrainingArguments, SchedulerType
 )
 from transformers.training_args import OptimizerNames
 from datasets import Dataset, ClassLabel, load_metric
@@ -53,46 +54,11 @@ def get_dataset(**kwargs) -> Tuple[Dataset, Dataset]:
     return trn, tst
 
 
-class MyTrainer(Trainer):
-    """
-    Override `compute_loss` for getting training stats
-    """
-    def compute_loss(self, model, inputs, return_outputs=False):
-        """
-        How the loss is computed by Trainer. By default, all models return the loss in the first element.
-
-        Subclass and override for custom behavior.
-        """
-        if self.label_smoother is not None and "labels" in inputs:
-            labels = inputs.pop("labels")
-        else:
-            labels = None
-        outputs = model(**inputs)
-
-        # ========================== Begin of added ==========================
-        # if model.training:
-        #     ic(outputs.keys())
-        # ========================== End of added ==========================
-
-        # Save past state if it exists
-        # TODO: this needs to be fixed and made cleaner later.
-        if self.args.past_index >= 0:
-            self._past = outputs[self.args.past_index]
-
-        if labels is not None:
-            loss = self.label_smoother(outputs, labels)
-        else:
-            # We don't use .loss here since the model may return tuples instead of ModelOutput.
-            loss = outputs["loss"] if isinstance(outputs, dict) else outputs[0]
-
-        return (loss, outputs) if return_outputs else loss
-
-
-def get_train_args() -> TrainingArguments:
+def get_train_args(**kwargs) -> TrainingArguments:
     debug = True
     if debug:
         args = dict(
-            batch_size=4,
+            batch_size=16,
             learning_rate=1e-4,
             weight_decay=0,
             lr_scheduler_type=SchedulerType.CONSTANT,
@@ -112,8 +78,9 @@ def get_train_args() -> TrainingArguments:
         bsz = args.pop('batch_size')
         args['per_device_train_batch_size'] = bsz
         args['per_device_eval_batch_size'] = bsz
+    md_nm = MODEL_NAME.replace(' ', '-')
     args.update(dict(
-        output_dir=os_join(utcd_util.get_output_base(), PROJ_DIR, MODEL_DIR, MODEL_NAME, now(for_path=True)),
+        output_dir=os_join(utcd_util.get_output_base(), PROJ_DIR, MODEL_DIR, md_nm, now(for_path=True)),
         do_train=True, do_eval=True,
         evaluation_strategy='epoch',
         eval_accumulation_steps=128,  # Saves GPU memory
@@ -123,7 +90,9 @@ def get_train_args() -> TrainingArguments:
         logging_steps=1,
         save_strategy='epoch',
         optim=OptimizerNames.ADAMW_TORCH,
+        report_to='none'  # I have my own tensorboard logging
     ))
+    args.update(kwargs)
     return TrainingArguments(**args)
 
 
@@ -147,7 +116,7 @@ if __name__ == '__main__':
     logger = get_logger(MODEL_NAME)
     logger.info('Setting up training... ')
 
-    n = 4096
+    n = 128
     # n = None
     logger.info('Loading tokenizer & model... ')
     tokenizer = AutoTokenizer.from_pretrained(HF_MODEL_NAME)
@@ -157,8 +126,16 @@ if __name__ == '__main__':
     tr, ts = get_dataset(n_sample=n, shuffle_seed=seed)
     logger.info(f'Loaded {logi(len(tr))} training samples, {logi(len(ts))} eval samples')
 
-    trainer = MyTrainer(
-        model=mdl, args=get_train_args(), train_dataset=tr, eval_dataset=ts, compute_metrics=compute_metrics
-    )
+    DEBUG = True
+    if DEBUG:
+        with_tqdm = False
+        args = get_train_args(
+            # save_strategy='no'
+        )
+    else:
+        with_tqdm = True
+        args = get_train_args()
+    trainer_args = dict(model=mdl, args=args, train_dataset=tr, eval_dataset=ts, compute_metrics=compute_metrics)
+    trainer_ = ExplicitBinBertTrainer(name=f'{MODEL_NAME} Training', with_tqdm=with_tqdm, **trainer_args)
     logger.info('Launching Training... ')
-    trainer.train()
+    trainer_.train()
