@@ -23,7 +23,6 @@ from zeroshot_encoder.util import *
 import zeroshot_encoder.util.utcd as utcd_util
 from zeroshot_encoder.preprocess import get_dataset as get_dset
 
-
 MODEL_NAME = 'Pretrain Aspect BinBERT'
 HF_MODEL_NAME = 'bert-base-uncased'
 
