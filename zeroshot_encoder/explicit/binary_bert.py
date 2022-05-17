@@ -37,6 +37,9 @@ logger = logging.getLogger(__name__)
 set_seed(42)
 
 
+CLS_LOSS_ONLY = True  # TODO: debugging
+
+
 class BertZeroShotExplicit(BertPreTrainedModel):
     def __init__(self, config):
         super().__init__(config)
@@ -90,7 +93,11 @@ class BertZeroShotExplicit(BertPreTrainedModel):
 
         pooled_output = self.dropout(pooled_output)
         binary_logits = self.binary_cls(pooled_output)
-        aspect_logits = self.aspect_cls(pooled_output)
+        if CLS_LOSS_ONLY:
+            with torch.no_grad():
+                aspect_logits = self.aspect_cls(pooled_output)
+        else:
+            aspect_logits = self.aspect_cls(pooled_output)
         
         loss = None
         
@@ -209,8 +216,7 @@ class ExplicitCrossEncoder:
                     pooled_output = model_predictions[1]
                     loss_fct = CrossEntropyLoss()
 
-                    cls_loss_only = True  # TODO: debugging
-                    if cls_loss_only:
+                    if CLS_LOSS_ONLY:
                         with torch.no_grad():
                             task_loss_value = loss_fct(pooled_output['aspect'].view(-1, 3), aspects.view(-1))
                     else:
@@ -223,7 +229,7 @@ class ExplicitCrossEncoder:
                     self.writer.add_scalar('Train/learning rate', _get_lr(), step)
                     self.writer.add_scalar('Train/Binary Classification Loss', cls_loss, step)
                     self.writer.add_scalar('Train/Aspect Classification Loss', asp_loss, step)
-                    if cls_loss_only:
+                    if CLS_LOSS_ONLY:
                         loss = binary_loss_value
                     else:
                         loss = task_loss_value + binary_loss_value

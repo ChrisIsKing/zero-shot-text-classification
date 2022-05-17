@@ -12,7 +12,7 @@ from typing import List, Tuple, Dict, Any
 import numpy as np
 
 from transformers import (
-    AutoTokenizer, AutoModelForSequenceClassification,
+    BertTokenizer, AutoModelForSequenceClassification,
     TrainingArguments, SchedulerType
 )
 from transformers.training_args import OptimizerNames
@@ -23,20 +23,19 @@ from zeroshot_encoder.util import *
 import zeroshot_encoder.util.utcd as utcd_util
 from zeroshot_encoder.preprocess import get_dataset as get_dset
 
-
 MODEL_NAME = 'Pretrain Aspect BinBERT'
 HF_MODEL_NAME = 'bert-base-uncased'
 
 
-def get_dataset(**kwargs) -> Tuple[Dataset, Dataset]:
+def get_dataset(tokenizer: BertTokenizer, **kwargs) -> Tuple[Dataset, Dataset]:
     """
     override text classification labels to be aspect labels
     """
     dnm = 'UTCD-in'  # concatenated 9 in-domain datasets in UTCD
     # perform preprocessing outside `get_dataset` as feature from the dataset is needed
-    dset = get_dset(dnm, **kwargs)
-    trn: Dataset = dset[0]
-    tst: Dataset = dset[1]
+    trn, tst = get_dset(dnm, **kwargs)
+    trn: Dataset
+    tst: Dataset
 
     aspects: List[str] = sconfig('UTCD.aspects')
     aspect2id = {a: i for i, a in enumerate(aspects)}
@@ -55,7 +54,7 @@ def get_dataset(**kwargs) -> Tuple[Dataset, Dataset]:
 
 
 def get_train_args(**kwargs) -> TrainingArguments:
-    debug = True
+    debug = False
     if debug:
         args = dict(
             batch_size=16,
@@ -68,8 +67,8 @@ def get_train_args(**kwargs) -> TrainingArguments:
         # TODO: Keep those the same as in other approaches?; See `zeroshot_encoder.bi_encoder.dual_bi_encoder.py`
         args = dict(
             learning_rate=2e-5,
-            train_batch_size=16,
-            eval_batch_size=64,
+            per_device_train_batch_size=16,
+            per_device_eval_batch_size=64,
             weight_decay=1e-2,
             num_train_epochs=3,
             lr_scheduler_type=SchedulerType.COSINE,
@@ -113,29 +112,35 @@ if __name__ == '__main__':
     seed = 42
     transformers.set_seed(seed)
 
-    logger = get_logger(MODEL_NAME)
-    logger.info('Setting up training... ')
+    def train():
+        logger = get_logger(MODEL_NAME)
+        logger.info('Setting up training... ')
 
-    n = 128
-    # n = None
-    logger.info('Loading tokenizer & model... ')
-    tokenizer = AutoTokenizer.from_pretrained(HF_MODEL_NAME)
-    mdl = AutoModelForSequenceClassification.from_pretrained(HF_MODEL_NAME, num_labels=len(sconfig('UTCD.aspects')))
+        # n = 128
+        n = None
+        logger.info('Loading tokenizer & model... ')
+        tokenizer = BertTokenizer.from_pretrained(HF_MODEL_NAME)
+        mdl = AutoModelForSequenceClassification.from_pretrained(HF_MODEL_NAME, num_labels=len(sconfig('UTCD.aspects')))
 
-    logger.info('Loading data... ')
-    tr, ts = get_dataset(n_sample=n, shuffle_seed=seed)
-    logger.info(f'Loaded {logi(len(tr))} training samples, {logi(len(ts))} eval samples')
+        logger.info('Loading data... ')
+        tr, ts = get_dataset(tokenizer=tokenizer, n_sample=n, shuffle_seed=seed)
+        logger.info(f'Loaded {logi(len(tr))} training samples, {logi(len(ts))} eval samples')
 
-    DEBUG = True
-    if DEBUG:
-        with_tqdm = False
-        args = get_train_args(
-            # save_strategy='no'
-        )
-    else:
-        with_tqdm = True
-        args = get_train_args()
-    trainer_args = dict(model=mdl, args=args, train_dataset=tr, eval_dataset=ts, compute_metrics=compute_metrics)
-    trainer_ = ExplicitBinBertTrainer(name=f'{MODEL_NAME} Training', with_tqdm=with_tqdm, **trainer_args)
-    logger.info('Launching Training... ')
-    trainer_.train()
+        debug = True
+        if debug:
+            # with_tqdm = False
+            with_tqdm = True
+            args = get_train_args(
+                # save_strategy='no'
+            )
+        else:
+            with_tqdm = True
+            args = get_train_args(
+                per_device_eval_batch_size=128
+            )
+        trainer_args = dict(model=mdl, args=args, train_dataset=tr, eval_dataset=ts, compute_metrics=compute_metrics)
+        trainer_ = ExplicitBinBertTrainer(name=f'{MODEL_NAME} Training', with_tqdm=with_tqdm, **trainer_args)
+        logger.info('Launching Training... ')
+        trainer_.train()
+    train()
+
