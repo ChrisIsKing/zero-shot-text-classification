@@ -278,4 +278,14 @@ if __name__ == '__main__':
             labels = torch.cat(lst_labels, dim=0)
             acc__ = (preds == labels).float().mean().item()
             ic(dnm, n_sample, acc__)
-    evaluate(domain='out', batch_size=32)
+    # evaluate(domain='out', batch_size=32)
+
+    def fix_save_tokenizer():
+        """
+        To adhere to CrossEncoder API, save Bert tokenizer to the same directory
+        """
+        dir_nm = '2022-05-19_23-33-50/checkpoint-411132'
+        path = os_join(utcd_util.get_output_base(), PROJ_DIR, MODEL_DIR, MODEL_NAME.replace(' ', '-'), dir_nm)
+        tokenizer = BertTokenizer.from_pretrained(HF_MODEL_NAME)  # TODO: should add eot token as in updated training
+        tokenizer.save_pretrained(path)
+    fix_save_tokenizer()

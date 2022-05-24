@@ -84,8 +84,9 @@ if __name__ == '__main__':
 
         # in case of loading from explicit pre-training,
         # the classification head would be ignored for classifying 3 classes
-        ic(args.base_model)
-        model = CrossEncoder(args.base_model, num_labels=2, automodel_args=dict(ignore_mismatched_sizes=True))
+        ic(args.model_init)
+        ic(os.listdir(args.model_init))
+        model = CrossEncoder(args.model_init, num_labels=2, automodel_args=dict(ignore_mismatched_sizes=True))
         spec_tok_args = dict(eos_token='[eot]')  # Add end of turn token for sgd
         add_spec_toks = None
         if args.mode == 'implicit-on-text-encode-aspect':
