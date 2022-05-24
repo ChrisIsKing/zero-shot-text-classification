@@ -38,6 +38,8 @@ def parse_args():
     # set train arguments
     parser_train.add_argument('--output', type=str, required=True)
     parser_train.add_argument('--sampling', type=str, choices=['rand', 'vect'], required=True)
+    # model to initialize weights from, intended for loading weights from local explicit training
+    parser_train.add_argument('--model_init', type=str, default='bert-base-uncased')
     parser_train.add_argument('--mode', type=str, choices=modes, default='vanilla')
     parser_train.add_argument('--batch_size', type=int, default=16)
     parser_train.add_argument('--epochs', type=int, default=3)
@@ -80,7 +82,10 @@ if __name__ == '__main__':
         num_epochs = args.epochs
         model_save_path = join(args.output, args.sampling)
 
-        model = CrossEncoder('bert-base-uncased', num_labels=2)
+        # in case of loading from explicit pre-training,
+        # the classification head would be ignored for classifying 3 classes
+        ic(args.base_model)
+        model = CrossEncoder(args.base_model, num_labels=2, automodel_args=dict(ignore_mismatched_sizes=True))
         spec_tok_args = dict(eos_token='[eot]')  # Add end of turn token for sgd
         add_spec_toks = None
         if args.mode == 'implicit-on-text-encode-aspect':

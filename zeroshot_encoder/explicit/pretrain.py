@@ -134,7 +134,7 @@ if __name__ == '__main__':
     seed = 42
     transformers.set_seed(seed)
 
-    def train():
+    def train(resume_from_checkpoint: str = None):
         logger = get_logger(MODEL_NAME)
         logger.info('Setting up training... ')
 
@@ -143,15 +143,15 @@ if __name__ == '__main__':
         logger.info('Loading tokenizer & model... ')
         tokenizer = BertTokenizer.from_pretrained(HF_MODEL_NAME)
         mdl = AutoModelForSequenceClassification.from_pretrained(HF_MODEL_NAME, num_labels=len(sconfig('UTCD.aspects')))
-        tokenizer.add_special_tokens(dict(eos_token='[eot]'))  # end-of-turn for SGD
-        mdl.resize_token_embeddings(len(tokenizer))
+        # tokenizer.add_special_tokens(dict(eos_token='[eot]'))  # end-of-turn for SGD
+        # mdl.resize_token_embeddings(len(tokenizer))
 
         logger.info('Loading data... ')
         dnm = 'UTCD-in'  # concatenated 9 in-domain datasets in UTCD
         tr, vl = get_dataset(dataset_name=dnm, tokenizer=tokenizer, n_sample=n, shuffle_seed=seed)
         logger.info(f'Loaded {logi(len(tr))} training samples, {logi(len(vl))} eval samples')
 
-        sanity_check_speed = True
+        sanity_check_speed = False
         ic(sanity_check_speed)
         if sanity_check_speed:
             import torch.nn as nn
@@ -225,13 +225,20 @@ if __name__ == '__main__':
             trainer_args = dict(model=mdl, args=args, train_dataset=tr, eval_dataset=vl, compute_metrics=compute_metrics)
             trainer_ = ExplicitBinBertTrainer(name=f'{MODEL_NAME} Training', with_tqdm=with_tqdm, **trainer_args)
             logger.info('Launching Training... ')
-            trainer_.train()
+            if resume_from_checkpoint:
+                trainer_.train(resume_from_checkpoint=resume_from_checkpoint)
+            else:
+                trainer_.train()
     # train()
+    dir_nm_ = '2022-05-16_21-25-30/checkpoint-274088'
+    ckpt_path = os_join(utcd_util.get_output_base(), PROJ_DIR, MODEL_DIR, MODEL_NAME.replace(' ', '-'), dir_nm_)
+    # train(resume_from_checkpoint=ckpt_path)
 
     def evaluate(domain: str = 'in', batch_size: int = 32):
         ca(dataset_domain=domain)
 
-        dir_nm = '2022-05-16_21-25-30/checkpoint-274088'
+        # dir_nm = '2022-05-16_21-25-30/checkpoint-274088'
+        dir_nm = '2022-05-19_23-33-50/checkpoint-411132'
         path = os_join(utcd_util.get_output_base(), PROJ_DIR, MODEL_DIR, MODEL_NAME.replace(' ', '-'), dir_nm)
         ic(path)
         tokenizer = BertTokenizer.from_pretrained(HF_MODEL_NAME)  # TODO: should add eot token as in updated training
@@ -253,7 +260,7 @@ if __name__ == '__main__':
         for dnm in dnms:
             vl = get_dataset(dataset_name=dnm, tokenizer=tokenizer, n_sample=n, splits='test')[0]
             n_sample = len(vl)
-            dl = DataLoader(vl, batch_size=32, shuffle=False, pin_memory=True, collate_fn=collate_fn)
+            dl = DataLoader(vl, batch_size=batch_size, shuffle=False, pin_memory=True, collate_fn=collate_fn)
             lst_preds, lst_labels = [], []
             with tqdm(dl, desc=f'Eval {dnm}', unit='ba') as it:
                 for inputs in it:
@@ -271,4 +278,4 @@ if __name__ == '__main__':
             labels = torch.cat(lst_labels, dim=0)
             acc__ = (preds == labels).float().mean().item()
             ic(dnm, n_sample, acc__)
-    evaluate(domain='out', batch_size=128)
+    evaluate(domain='out', batch_size=32)

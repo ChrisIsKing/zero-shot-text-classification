@@ -17,6 +17,7 @@ gpt2-wikitext2/
 gdrive
 trained-models/
 plot/
+test-lang.py
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
