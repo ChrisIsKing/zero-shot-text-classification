@@ -48,7 +48,6 @@ def parse_args():
     parser_test.add_argument('--domain', type=str, choices=['in', 'out'], required=True)
     parser_test.add_argument('--mode', type=str, choices=modes, default='vanilla')
     parser_test.add_argument('--batch_size', type=int, default=32)  # #of texts to do inference in a single forward pass
-    # parser_test.add_argument('--group_size', type=int, default=16)
     parser_test.add_argument('--model_path', type=str, required=True)
     
     return parser.parse_args()
@@ -70,8 +69,11 @@ if __name__ == '__main__':
     args = parse_args()
     if args.command == 'train':
         data = get_data(in_domain_data_path)
-        # get keys from data dict
-        dataset_names = list(data.keys())
+        dataset_names = [
+            dnm for dnm, d_dset in sconfig('UTCD.datasets').items()
+            if d_dset['domain'] == 'in' and d_dset['aspect'] == 'intent'
+        ]
+        ic(dataset_names)
         train = []
         test = []
         for dataset in dataset_names:
@@ -84,8 +86,6 @@ if __name__ == '__main__':
 
         # in case of loading from explicit pre-training,
         # the classification head would be ignored for classifying 3 classes
-        ic(args.model_init)
-        ic(os.listdir(args.model_init))
         model = CrossEncoder(args.model_init, num_labels=2, automodel_args=dict(ignore_mismatched_sizes=True))
         spec_tok_args = dict(eos_token='[eot]')  # Add end of turn token for sgd
         add_spec_toks = None
@@ -94,15 +94,15 @@ if __name__ == '__main__':
         elif args.mode == 'implicit-on-text-encode-sep':
             add_spec_toks = [sconfig('training.implicit-on-text.encode-sep.aspect-sep-token')]
         if add_spec_toks:
-            spec_tok_args |= dict(additional_special_tokens=add_spec_toks)
+            spec_tok_args.update(dict(additional_special_tokens=add_spec_toks))
         model.tokenizer.add_special_tokens(spec_tok_args)
         model.model.resize_token_embeddings(len(model.tokenizer))
 
         new_shuffle = True
+        random.shuffle(train)  # TODO: always need this?
         if new_shuffle:
             train_dataloader = DataLoader(train, shuffle=True, batch_size=train_batch_size)
         else:
-            random.shuffle(train)
             train_dataloader = DataLoader(train, shuffle=False, batch_size=train_batch_size)
         ic(new_shuffle)
 

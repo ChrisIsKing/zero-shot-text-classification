@@ -140,8 +140,8 @@ def binary_cls_format(data, name=None, sampling='rand', train=True, mode='vanill
             vects = list(nlp.pipe(example_list, n_process=4, batch_size=128))
             print('Time Elapsed {} ms'.format((time.time() - start)*1000))
         
-        print('Generating {} examples'.format(name))
-        for i, (text, labels) in enumerate(tqdm(data['train'].items())):
+        print(f'Generating {logi(name)} examples')
+        for i, (text, labels) in enumerate(tqdm(data['train'].items(), desc=name)):
             if label_un_modified:
                 true_labels = labels
             else:
