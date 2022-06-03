@@ -8,8 +8,8 @@ import itertools
 from os import listdir
 from os.path import isfile, join, basename
 from zipfile import ZipFile
-from collections import Counter
-from typing import List, Tuple, Dict
+from collections import Counter, defaultdict
+from typing import List, Tuple, Set, Dict, Union
 
 import numpy as np
 from numpy import argmax, argmin
@@ -22,6 +22,12 @@ from tqdm import tqdm
 from stefutil import *
 from zeroshot_encoder.util import *
 
+__all__ = [
+    'in_domain_url', 'out_of_domain_url', 'in_domain_data_path', 'out_of_domain_data_path',
+    'get_data', 'sample_data',
+    'get_nli_data', 'binary_cls_format', 'nli_cls_format', 'encoder_cls_format', 'seq_cls_format',
+    'binary_explicit_format'
+]
 
 in_domain_url = 'https://drive.google.com/uc?id=1V7IzdZ9HQbFUQz9NzBDjmqYBdPd9Yfe3'
 out_of_domain_url = 'https://drive.google.com/uc?id=1nd32_UrFbgoCgH4bDtFFD_YFZhzcts3x'
@@ -53,22 +59,26 @@ category_map = {
 }
 
 
-def get_data(path, n_sample: int = None):
+def get_data(path: str, n_sample: int = None, normalize_aspect: Union[bool, int] = False) -> Dict[str, Dict]:
     """
     :param path: File system path to folder of UTCD dataset
     :param n_sample: If given, a random sample of the entire dataset is selected
         Intended for debugging
+    :param normalize_aspect: If true, # of training samples for each aspect is normalized
+        via subsampling datasets in the larger aspect
+        If int given, used as seed for sampling
     """
     logger = get_logger('Get UTCD data')
     if not os.path.exists(path):
         logger.info('Loading data from Google Drive...')
         download_data(path)
     paths = [join(path, f) for f in listdir(path) if isfile(join(path, f)) and f.endswith('.json')]
-    data = {}
+    data = dict()
     for path in paths:
         dataset_name = basename(path).split('.')[0]
         logger.info(f'Loading dataset {logi(dataset_name)}...')
         dset = json.load(open(path))
+
         if n_sample:
             assert set(dset.keys()) == {'train', 'test', 'aspect', 'labels'}  # sanity check
             for k in ['train', 'test']:
@@ -79,6 +89,57 @@ def get_data(path, n_sample: int = None):
                 txts = np.random.permutation(txts)[:n_sample]
                 dset[k] = {t: txt2lb[t] for t in txts}
         data[dataset_name] = dset
+    if normalize_aspect:
+        seed = None if isinstance(normalize_aspect, bool) else normalize_aspect
+        data = sample_data(data, seed=seed)
+    return data
+
+
+def sample_data(data: Dict[str, Dict], seed: int = None) -> Dict[str, Dict]:
+    """
+    Sample the `train` split of the 9 in-domain datasets so that each `aspect` contains same # of samples
+
+    Maintain class distribution
+    """
+    if seed:
+        from icecream import ic
+        ic(seed)
+        random.seed(seed)
+    aspect2n_txt = defaultdict(int)
+    for dnm, d_dset in sconfig('UTCD.datasets').items():
+        if d_dset['domain'] == 'in':
+            aspect2n_txt[d_dset['aspect']] += d_dset['splits']['train']['n_text']
+    asp_min = min(aspect2n_txt, key=aspect2n_txt.get)
+
+    def sample_dset(d: Dict[str, List[str]], dnm_: str, n_text: int) -> Dict[str, List[str]]:
+        """
+        Sample texts from text-labels pairs to `n_sample` while maintaining class distribution
+        """
+        cls2txt: Dict[str, Set[str]] = defaultdict(set)
+        for txt, lbs in d.items():
+            for lb in lbs:  # the same text may be added to multiple classes & hence sampled multiple times, see below
+                cls2txt[lb].add(txt)
+        cls2count = {cls: len(txts) for cls, txts in cls2txt.items()}
+        # normalize by #pair instead of #text for keeping output #text close to `n_sample`
+        ratio = n_text / sconfig(f'UTCD.datasets.{dnm_}.splits.train.n_pair')
+        cls2count = {cls: round(c * ratio) for cls, c in cls2count.items()}  # goal count for output
+        out = dict()
+        for cls, c in cls2count.items():
+            to_sample = c
+            while to_sample > 0:
+                txts = random.sample(cls2txt[cls], to_sample)
+                for t in txts:
+                    if t not in out:  # ensure no-duplication in # samples added, since multi-label
+                        out[t] = d[t]
+                        to_sample -= 1
+                        cls2txt[cls].remove(t)
+        return out
+
+    for dnm, d_dset in data.items():
+        asp = sconfig(f'UTCD.datasets.{dnm}.aspect')
+        if asp != asp_min:
+            n_normed = sconfig(f'UTCD.datasets.{dnm}.splits.train.n_text') * aspect2n_txt[asp_min] / aspect2n_txt[asp]
+            d_dset['train'] = sample_dset(d_dset['train'], dnm, n_text=round(n_normed))
     return data
 
 
@@ -138,8 +199,8 @@ def binary_cls_format(data, name=None, sampling='rand', train=True, mode='vanill
             label_vectors = {label: nlp(label) for label in label_list}
             start = time.time()
             vects = list(nlp.pipe(example_list, n_process=4, batch_size=128))
-            print('Time Elapsed {} ms'.format((time.time() - start)*1000))
-        
+            print('Time Elapsed {} ms'.format((time.time() - start) * 1000))
+
         print(f'Generating {logi(name)} examples')
         for i, (text, labels) in enumerate(tqdm(data['train'].items(), desc=name)):
             if label_un_modified:
@@ -152,7 +213,7 @@ def binary_cls_format(data, name=None, sampling='rand', train=True, mode='vanill
                 text = f'{aspect_token} {text}'
             elif mode == 'implicit-on-text-encode-sep':
                 text = f'{aspect} {sep_token} {text}'
-            
+
             # Generate label for true example
             for label in true_labels:
                 examples.append(InputExample(texts=[text, label], label=1))
@@ -216,13 +277,13 @@ def nli_cls_format(data, name=None, sampling='rand', train=True):
             label_vectors = {label: nlp(label) for label in label_list}
             start = time.time()
             vects = list(nlp.pipe(example_list, n_process=4, batch_size=128))
-            print('Time Elapsed {} ms'.format((time.time() - start)*1000))
-        
+            print('Time Elapsed {} ms'.format((time.time() - start) * 1000))
+
         print('Generating {} examples'.format(name))
         for i, (text, labels) in enumerate(tqdm(data['train'].items())):
             true_labels = labels
             other_labels = [label for label in label_list if label not in true_labels]
-            
+
             # Generate label for true example
             for label in true_labels:
                 examples.append(InputExample(texts=[text, nli_template(label, data['aspect'])], label=1))
@@ -281,8 +342,8 @@ def encoder_cls_format(
         if sampling == 'vect':
             start = time.time()
             vects = list(nlp.pipe(example_list, n_process=4, batch_size=128))
-            print('Time Elapsed {} ms'.format((time.time() - start)*1000))
-        
+            print('Time Elapsed {} ms'.format((time.time() - start) * 1000))
+
         # count instances
         count = Counter(example_list)
         has_multi_label = any((c > 1) for c in count.values())
@@ -295,7 +356,7 @@ def encoder_cls_format(
         for i, element in enumerate(tqdm(arr)):
             true_label = element[1]
             other_labels = [label for label in label_list if label != element[1]]
-            
+
             # Generate label for true example
             examples.append(InputExample(texts=[true_label, element[0]], label=float(1)))
 
@@ -352,27 +413,27 @@ def seq_cls_format(data, all=False):
             for label in item['labels']:
                 if label not in label_map:
                     label_map[label] = len(label_map)
-            
-            for k,v in item['train'].items():
+
+            for k, v in item['train'].items():
                 # loop through each true label
                 for label in v:
                     train.append({'text': k, 'label': label_map[label], 'label_name': label})
-    
-            for k,v in item['test'].items():
+
+            for k, v in item['test'].items():
                 # loop through each true label
                 for label in v:
                     test.append({'text': k, 'label': label_map[label], 'label_name': label})
-            
+
     else:
 
-        label_map = {k:i for i, k in enumerate(data['labels'])}
+        label_map = {k: i for i, k in enumerate(data['labels'])}
 
-        for k,v in data['train'].items():
+        for k, v in data['train'].items():
             # loop through each true label
             for label in v:
                 train.append({'text': k, 'label': label_map[label], 'label_name': label})
-        
-        for k,v in data['test'].items():
+
+        for k, v in data['test'].items():
             # loop through each true label
             for label in v:
                 test.append({'text': k, 'label': label_map[label], 'label_name': label})
@@ -384,7 +445,7 @@ class ExplicitInputExample:
         self.texts = texts
         self.label = label
         self.aspect = aspect
-    
+
     def __str__(self):
         return "<ExplicitInputExample> label: {}, text: {}".format(str(self.label), self.text)
 
@@ -399,18 +460,40 @@ def binary_explicit_format(dataset):
         label_list = data['labels']
 
         for i, (text, labels) in enumerate(tqdm(data['train'].items(), desc=name)):
-                
+
             true_labels = labels
             other_labels = [label for label in label_list if label not in true_labels]
-            
+
             # Generate label for true example
             for label in true_labels:
                 train.append(ExplicitInputExample(texts=[text, label], label=1, aspect=aspect_map[aspect]))
                 random.seed(i)
                 if len(other_labels) >= 2:
                     random_label = random.sample(other_labels, k=2)
-                    train.append(ExplicitInputExample(texts=[text, random_label[0]], label=0, aspect=aspect_map[aspect]))
-                    train.append(ExplicitInputExample(texts=[text, random_label[1]], label=0, aspect=aspect_map[aspect]))
+                    train.append(
+                        ExplicitInputExample(texts=[text, random_label[0]], label=0, aspect=aspect_map[aspect]))
+                    train.append(
+                        ExplicitInputExample(texts=[text, random_label[1]], label=0, aspect=aspect_map[aspect]))
                 elif len(other_labels) > 0:
-                    train.append(ExplicitInputExample(texts=[text, other_labels[0]], label=0, aspect=aspect_map[aspect]))
+                    train.append(
+                        ExplicitInputExample(texts=[text, other_labels[0]], label=0, aspect=aspect_map[aspect]))
     return train
+
+
+if __name__ == '__main__':
+    from icecream import ic
+
+    ic.lineWrapWidth = 512
+
+    random.seed(sconfig('random-seed'))
+
+    def check_sampling():
+        data = get_data(in_domain_data_path)
+        data = sample_data(data)
+        for dnm, d_dset in data.items():
+            ic(dnm, len(d_dset['train']))
+            c = Counter()
+            for txt, lbs in d_dset['train'].items():
+                c.update(lbs)
+            ic(c, len(c))
+    check_sampling()

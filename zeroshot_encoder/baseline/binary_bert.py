@@ -64,9 +64,10 @@ if __name__ == '__main__':
 
     from icecream import ic
 
-    transformers.set_seed(42)
+    seed = sconfig('random-seed')
 
-    INTENT_ONLY = True
+    # INTENT_ONLY = True
+    INTENT_ONLY = False
     if INTENT_ONLY:
         def filt(d, dom):
             return d['domain'] == dom and d['aspect'] == 'intent'
@@ -76,7 +77,8 @@ if __name__ == '__main__':
 
     args = parse_args()
     if args.command == 'train':
-        data = get_data(in_domain_data_path)
+        data = get_data(in_domain_data_path, normalize_aspect=seed)
+        ic(sum(len(d['train']) for d in data.values()))
         dataset_names = [dnm for dnm, d_dset in sconfig('UTCD.datasets').items() if filt(d_dset, 'in')]
         ic(dataset_names)
         train = []
@@ -103,6 +105,7 @@ if __name__ == '__main__':
         model.tokenizer.add_special_tokens(spec_tok_args)
         model.model.resize_token_embeddings(len(model.tokenizer))
 
+        transformers.set_seed(seed)
         new_shuffle = True
         random.shuffle(train)  # TODO: always need this?
         if new_shuffle:

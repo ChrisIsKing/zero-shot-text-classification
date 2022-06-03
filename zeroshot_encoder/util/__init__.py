@@ -4,3 +4,4 @@ from . import train
 from .gpt2_train import MyTrainer as GPT2Trainer
 from .explicit_bin_bert_train import MyTrainer as ExplicitBinBertTrainer
 from . import utcd
+from . import load_data

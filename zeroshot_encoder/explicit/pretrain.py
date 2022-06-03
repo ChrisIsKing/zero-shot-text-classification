@@ -5,9 +5,8 @@ For now just train with linear CLS objective
 
 TODO: consider +MLM?
 """
-import os
 from os.path import join as os_join
-from typing import List, Tuple, Dict, Any
+from typing import List, Dict, Any, Union
 
 import numpy as np
 import torch
@@ -31,12 +30,29 @@ MODEL_NAME = 'Pretrain Aspect BinBERT'
 HF_MODEL_NAME = 'bert-base-uncased'
 
 
-def get_dataset(dataset_name: str = 'UTCD-in', tokenizer: BertTokenizer = None, **kwargs) -> Tuple[Dataset, Dataset]:
+def get_dataset(
+        dataset_name: str = 'UTCD-in', tokenizer: BertTokenizer = None, normalize_aspect: Union[bool, int] = False,
+        **kwargs
+) -> List[Dataset]:
     """
     override text classification labels to be aspect labels
     """
     # perform preprocessing outside `get_dataset` as feature from the dataset is needed
     dsets = get_dset(dataset_name, **kwargs)  # by split
+
+    if normalize_aspect:  # TODO: ugly but works
+        _data = load_data.get_data(load_data.in_domain_data_path, normalize_aspect=normalize_aspect)
+        ic(sum(len(d['train']) for d in _data.values()))
+        txts = set().union(*[d_dset['train'] for d_dset in _data.values()])
+        ic(dsets, len(dsets))
+        ic(len(txts))
+        # apply #sample normalization to the training set
+        id2nm = sconfig('UTCD.dataset_id2name')
+        # dsets[0] = dsets[0].filter(lambda example: example['text'] in txts)
+        # cos the same text may appear in multiple datasets
+        dsets[0] = dsets[0].filter(lambda example: example['text'] in _data[id2nm[example['dataset_id']]]['train'])
+        ic(len(dsets[0]))
+        # exit(1)
     # trn: Dataset
     # tst: Dataset
 
@@ -130,9 +146,7 @@ if __name__ == '__main__':
 
     ic.lineWrapWidth = 512
 
-    # seed = sconfig('random-seed')
-    seed = 42
-    transformers.set_seed(seed)
+    seed = sconfig('random-seed')
 
     def train(resume_from_checkpoint: str = None):
         logger = get_logger(MODEL_NAME)
@@ -148,8 +162,11 @@ if __name__ == '__main__':
 
         logger.info('Loading data... ')
         dnm = 'UTCD-in'  # concatenated 9 in-domain datasets in UTCD
-        tr, vl = get_dataset(dataset_name=dnm, tokenizer=tokenizer, n_sample=n, shuffle_seed=seed)
+        tr, vl = get_dataset(
+            dataset_name=dnm, tokenizer=tokenizer, normalize_aspect=seed, n_sample=n, shuffle_seed=seed
+        )
         logger.info(f'Loaded {logi(len(tr))} training samples, {logi(len(vl))} eval samples')
+        transformers.set_seed(seed)
 
         sanity_check_speed = False
         ic(sanity_check_speed)
@@ -210,7 +227,8 @@ if __name__ == '__main__':
                         lr = scheduler.get_last_lr()[0]
                         t_dl.set_postfix(loss=loss_scalar, lr=lr)
         else:
-            debug = True
+            # debug = True
+            debug = False
             if debug:
                 # with_tqdm = False
                 with_tqdm = True
@@ -229,9 +247,9 @@ if __name__ == '__main__':
                 trainer_.train(resume_from_checkpoint=resume_from_checkpoint)
             else:
                 trainer_.train()
-    # train()
-    dir_nm_ = '2022-05-16_21-25-30/checkpoint-274088'
-    ckpt_path = os_join(utcd_util.get_output_base(), PROJ_DIR, MODEL_DIR, MODEL_NAME.replace(' ', '-'), dir_nm_)
+    train()
+    # dir_nm_ = '2022-05-16_21-25-30/checkpoint-274088'
+    # ckpt_path = os_join(utcd_util.get_output_base(), PROJ_DIR, MODEL_DIR, MODEL_NAME.replace(' ', '-'), dir_nm_)
     # train(resume_from_checkpoint=ckpt_path)
 
     def evaluate(domain: str = 'in', batch_size: int = 32):
@@ -288,4 +306,4 @@ if __name__ == '__main__':
         path = os_join(utcd_util.get_output_base(), PROJ_DIR, MODEL_DIR, MODEL_NAME.replace(' ', '-'), dir_nm)
         tokenizer = BertTokenizer.from_pretrained(HF_MODEL_NAME)  # TODO: should add eot token as in updated training
         tokenizer.save_pretrained(path)
-    fix_save_tokenizer()
+    # fix_save_tokenizer()
