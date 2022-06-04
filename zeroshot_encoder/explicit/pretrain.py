@@ -247,7 +247,7 @@ if __name__ == '__main__':
                 trainer_.train(resume_from_checkpoint=resume_from_checkpoint)
             else:
                 trainer_.train()
-    train()
+    # train()
     # dir_nm_ = '2022-05-16_21-25-30/checkpoint-274088'
     # ckpt_path = os_join(utcd_util.get_output_base(), PROJ_DIR, MODEL_DIR, MODEL_NAME.replace(' ', '-'), dir_nm_)
     # train(resume_from_checkpoint=ckpt_path)
@@ -302,8 +302,9 @@ if __name__ == '__main__':
         """
         To adhere to CrossEncoder API, save Bert tokenizer to the same directory
         """
-        dir_nm = '2022-05-19_23-33-50/checkpoint-411132'
+        # dir_nm = '2022-05-19_23-33-50/checkpoint-411132'
+        dir_nm = '2022-06-03_17-02-19/checkpoint-23988'
         path = os_join(utcd_util.get_output_base(), PROJ_DIR, MODEL_DIR, MODEL_NAME.replace(' ', '-'), dir_nm)
         tokenizer = BertTokenizer.from_pretrained(HF_MODEL_NAME)  # TODO: should add eot token as in updated training
         tokenizer.save_pretrained(path)
-    # fix_save_tokenizer()
+    fix_save_tokenizer()

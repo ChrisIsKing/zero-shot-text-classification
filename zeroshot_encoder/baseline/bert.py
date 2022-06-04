@@ -4,13 +4,13 @@ import pandas as pd
 from transformers import AutoTokenizer
 from datasets import Dataset
 from transformers import BertForSequenceClassification
-from transformers import AdamW
 from transformers import TrainingArguments, Trainer
 from sklearn.metrics import accuracy_score
 from argparse import ArgumentParser
 from zeroshot_encoder.util.load_data import get_data, seq_cls_format, in_domain_data_path, out_of_domain_data_path
 
 logger = logging.getLogger(__name__)
+
 
 def parse_args():
     parser = ArgumentParser()
@@ -30,24 +30,27 @@ def parse_args():
 
 
 def compute_metrics(pred):
-  labels = pred.label_ids
-  preds = pred.predictions.argmax(-1)
-  # calculate accuracy using sklearn's function
-  acc = accuracy_score(labels, preds)
-  return {
-      'accuracy': acc,
-  }
-
+    labels = pred.label_ids
+    preds = pred.predictions.argmax(-1)
+    # calculate accuracy using sklearn's function
+    acc = accuracy_score(labels, preds)
+    return {'accuracy': acc}
 
 
 if __name__ == "__main__":
+    import transformers
+
+    from zeroshot_encoder.util import *
+
     args = parse_args()
+
+    seed = sconfig('random-seed')
 
     if args.command == 'train':
         if args.dataset:
 
             if args.domain == "in":
-                data = get_data(in_domain_data_path)
+                data = get_data(in_domain_data_path, normalize_aspect=seed)
             else:
                 data = get_data(out_of_domain_data_path)
 
@@ -77,7 +80,7 @@ if __name__ == "__main__":
 
             output_path = './models/{}'.format(args.dataset)
             num_epochs = 3
-            warmup_steps = math.ceil(len(train_dataset) * num_epochs * 0.1) #10% of train data for warm-up
+            warmup_steps = math.ceil(len(train_dataset) * num_epochs * 0.1)  # 10% of train data for warm-up
             logger.info("Warmup-steps: {}".format(warmup_steps))
 
             training_args = TrainingArguments(
@@ -103,6 +106,7 @@ if __name__ == "__main__":
                 compute_metrics=compute_metrics,     # the callback that computes metrics of interest
             )
 
+            transformers.set_seed(seed)
             trainer.train()
             print(trainer.evaluate())
     
