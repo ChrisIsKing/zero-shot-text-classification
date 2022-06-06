@@ -1,16 +1,21 @@
+from typing import Tuple
+
 import torch
 import torch.nn as nn
-from transformers import BertConfig, BertTokenizer, BertForSequenceClassification
+from transformers import BertTokenizer, BertConfig, BertForSequenceClassification
 
 from stefutil import *
 
 
-def load_binary_bert(model_name: str = 'bert-base-uncased', max_position_embeddings: int = 512):
+def load_sliced_binary_bert(
+        model_name: str = 'bert-base-uncased', max_position_embeddings: int = 512
+) -> Tuple[BertTokenizer, nn.Module]:
     """
     :param model_name: A hugging face model name
     :param max_position_embeddings: Max model token size
 
-    Intended for loading a pretrained 512-token BERT model, with smaller token length by chopping off later tokens
+    Intended for loading a pretrained 512-token BERT model,
+        with smaller max token length by chopping off later positional embeddings
     """
     conf = BertConfig.from_pretrained(model_name)
     n_tok_ori = conf.max_position_embeddings
@@ -20,7 +25,6 @@ def load_binary_bert(model_name: str = 'bert-base-uncased', max_position_embeddi
     conf.max_position_embeddings = max_position_embeddings
     tokenizer = BertTokenizer.from_pretrained(model_name, model_max_length=max_position_embeddings)
     model = BertForSequenceClassification.from_pretrained(model_name, config=conf, ignore_mismatched_sizes=True)
-    ic(type(model))
     # Should observe 2 warnings, one expected warning for initializing BertSeqCls from pre-trained Bert
     # One is for the mismatched position embedding
 
@@ -32,16 +36,13 @@ def load_binary_bert(model_name: str = 'bert-base-uncased', max_position_embeddi
     assert weight_pretrained.shape == (n_tok_ori, conf.hidden_size)
     del model_dummy
     del state_d
-    ic(weight_pretrained.shape)
 
     with torch.no_grad():
         # Keep the first tokens
-        ic(model.bert.embeddings.position_embeddings)
-        # model.bert.embeddings.position_embeddings.weight = nn.Parameter(weight_pretrained[:max_position_embeddings])
         model.bert.embeddings.position_embeddings.weight[:] = weight_pretrained[:max_position_embeddings]
-    return model
+    return tokenizer, model
 
 
 if __name__ == '__main__':
     from icecream import ic
-    load_binary_bert(max_position_embeddings=256)
+    load_sliced_binary_bert(max_position_embeddings=256)

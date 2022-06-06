@@ -102,8 +102,6 @@ def sample_data(data: Dict[str, Dict], seed: int = None) -> Dict[str, Dict]:
     Maintain class distribution
     """
     if seed:
-        from icecream import ic
-        ic(seed)
         random.seed(seed)
     aspect2n_txt = defaultdict(int)
     for dnm, d_dset in sconfig('UTCD.datasets').items():

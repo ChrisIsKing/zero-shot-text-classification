@@ -19,6 +19,7 @@ from tqdm import tqdm
 from stefutil import *
 from zeroshot_encoder.util import *
 from zeroshot_encoder.util.load_data import get_data, binary_cls_format, in_domain_data_path, out_of_domain_data_path
+from zeroshot_encoder.baseline.architecture import load_sliced_binary_bert
 
 
 def parse_args():
@@ -27,7 +28,7 @@ def parse_args():
         'implicit',
         'implicit-on-text-encode-aspect',  # encode each of the 3 aspects as 3 special tokens, followed by text
         'implicit-on-text-encode-sep',  # encode aspects normally, but add special token between aspect and text
-        # see `zeroshot_encoder.explicit.binary_bert.py` for explicit training
+        'explicit'  # see `zeroshot_encoder.explicit.binary_bert.py` for explicit training
     ]
 
     parser = ArgumentParser()
@@ -36,6 +37,7 @@ def parse_args():
     parser_test = subparser.add_parser('test')
 
     # set train arguments
+    parser_train.add_argument('--max_sequence_length', type=int, default=512)
     parser_train.add_argument('--output', type=str, required=True)
     parser_train.add_argument('--sampling', type=str, choices=['rand', 'vect'], required=True)
     # model to initialize weights from, intended for loading weights from local explicit training
@@ -68,6 +70,8 @@ if __name__ == '__main__':
 
     # INTENT_ONLY = True
     INTENT_ONLY = False
+    NORMALIZE_ASPECT = False
+    # NORMALIZE_ASPECT = True
     if INTENT_ONLY:
         def filt(d, dom):
             return d['domain'] == dom and d['aspect'] == 'intent'
@@ -77,8 +81,9 @@ if __name__ == '__main__':
 
     args = parse_args()
     if args.command == 'train':
-        data = get_data(in_domain_data_path, normalize_aspect=seed)
-        ic(sum(len(d['train']) for d in data.values()))
+        model_init, seq_len = args.model_init, args.max_sequence_length
+        dset_args = dict(normalize_aspect=seed) if NORMALIZE_ASPECT else dict()
+        data = get_data(in_domain_data_path, **dset_args)
         dataset_names = [dnm for dnm, d_dset in sconfig('UTCD.datasets').items() if filt(d_dset, 'in')]
         ic(dataset_names)
         train = []
@@ -93,7 +98,9 @@ if __name__ == '__main__':
 
         # in case of loading from explicit pre-training,
         # the classification head would be ignored for classifying 3 classes
-        model = CrossEncoder(args.model_init, num_labels=2, automodel_args=dict(ignore_mismatched_sizes=True))
+        model = CrossEncoder(model_init, num_labels=2, automodel_args=dict(ignore_mismatched_sizes=True))
+        if seq_len != 512:  # Intended for `bert-base-uncased` only
+            model.tokenizer, model.model = load_sliced_binary_bert(model_init, seq_len)
         spec_tok_args = dict(eos_token='[eot]')  # Add end of turn token for sgd
         add_spec_toks = None
         if args.mode == 'implicit-on-text-encode-aspect':
@@ -105,6 +112,7 @@ if __name__ == '__main__':
         model.tokenizer.add_special_tokens(spec_tok_args)
         model.model.resize_token_embeddings(len(model.tokenizer))
 
+        transformers.logging.set_verbosity_error()  # disables `longest_first` warning
         transformers.set_seed(seed)
         new_shuffle = True
         random.shuffle(train)  # TODO: always need this?
@@ -164,7 +172,7 @@ if __name__ == '__main__':
             arr_loss = torch.empty(n_txt, dtype=torch.float32) if WITH_EVAL_LOSS else None
 
             txt_n_lbs2query = None
-            if mode == 'vanilla':
+            if mode in ['vanilla', 'explicit']:
                 def txt_n_lbs2query(txt: str, lbs: List[str]) -> List[List[str]]:
                     return [[txt, lb] for lb in lbs]
             elif mode == 'implicit':
