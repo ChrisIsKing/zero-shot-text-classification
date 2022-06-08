@@ -7,6 +7,7 @@ from argparse import ArgumentParser
 
 import numpy as np
 import pandas as pd
+import torch.cuda
 from sklearn.metrics import classification_report
 from torch.utils.data import DataLoader
 import transformers
@@ -16,6 +17,8 @@ from tqdm import tqdm
 from stefutil import *
 from zeroshot_classifier.util import u, sconfig
 from zeroshot_classifier.util.load_data import get_data, binary_cls_format, in_domain_data_path, out_of_domain_data_path
+import zeroshot_classifier.util.utcd as utcd_util
+
 
 MODEL_NAME = 'Bi-Encoder'
 
@@ -70,8 +73,7 @@ if __name__ == "__main__":
 
         # seq length for consistency w/ `binary_bert` & `sgd`
         word_embedding_model = models.Transformer('bert-base-uncased', max_seq_length=512)
-        # Add end of turn token for sgd
-        word_embedding_model.tokenizer.add_special_tokens({'eos_token': '[eot]'})
+        word_embedding_model.tokenizer.add_special_tokens(dict(eos_token=utcd_util.EOT_TOKEN))
         word_embedding_model.auto_model.resize_token_embeddings(len(word_embedding_model.tokenizer))
         # default to mean-pooling
         pooling_model = models.Pooling(

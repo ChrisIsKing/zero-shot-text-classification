@@ -19,6 +19,7 @@ from tqdm import tqdm
 from stefutil import *
 from zeroshot_classifier.util import *
 from zeroshot_classifier.util.load_data import get_data, binary_cls_format, in_domain_data_path, out_of_domain_data_path
+import zeroshot_classifier.util.utcd as utcd_util
 from zeroshot_classifier.models.architecture import load_sliced_binary_bert
 
 
@@ -102,7 +103,7 @@ if __name__ == '__main__':
         model = CrossEncoder(model_init, num_labels=2, automodel_args=dict(ignore_mismatched_sizes=True))
         if seq_len != 512:  # Intended for `bert-base-uncased` only
             model.tokenizer, model.model = load_sliced_binary_bert(model_init, seq_len)
-        spec_tok_args = dict(eos_token='[eot]')  # Add end of turn token for sgd
+        spec_tok_args = dict(eos_token=utcd_util.EOT_TOKEN)  # Add end of turn token for sgd
         add_spec_toks = None
         if args.mode == 'implicit-on-text-encode-aspect':
             add_spec_toks = list(sconfig('training.implicit-on-text.encode-aspect.aspect2aspect-token').values())

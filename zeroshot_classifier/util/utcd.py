@@ -33,6 +33,10 @@ from zeroshot_classifier.util.util import *
 from zeroshot_classifier.util.data_path import BASE_PATH, PROJ_DIR, DSET_DIR
 
 
+
+EOT_TOKEN = '[eot]'  # end of turn token for sgd
+
+
 def get_output_base():
     # For remote machines, save heavy-duty data somewhere else to save `/home` disk space
     hnm = get_hostname()
