@@ -1,3 +1,4 @@
+import os
 import configparser
 from os.path import join as os_join
 from typing import Dict
@@ -11,7 +12,7 @@ from zeroshot_classifier.util.data_path import BASE_PATH, PROJ_DIR, DSET_DIR, PK
 from stefutil import ca, StefConfig, StefUtil
 
 
-__all__ = ['sconfig', 'u', 'save_fig', 'plot_points']
+__all__ = ['sconfig', 'u', 'save_fig', 'plot_points', 'map_model_output_path']
 
 
 sconfig = StefConfig(config_file=os_join(BASE_PATH, PROJ_DIR, PKG_NM, 'util', 'config.json')).__call__
@@ -38,6 +39,33 @@ def plot_points(arr, **kwargs):
 
 def config_parser2dict(conf: configparser.ConfigParser) -> Dict:
     return {sec: dict(conf[sec]) for sec in conf.sections()}
+
+
+def map_model_dir_nm(
+        model_name: str = None, name: str = None, mode: str = 'vanilla', sampling: str = 'rand',
+        normalize_aspect: bool = False
+) -> str:
+    out = f'{now(for_path=True)}_{model_name}'
+    if name:
+        out = f'{out}-{name}'
+    out = f'{out}-{mode}-{sampling}'
+    if normalize_aspect:
+        out = f'{out}-aspect-norm'
+    return out
+
+
+def map_model_output_path(
+        model_name: str = None, output_path: str = None, mode: str = 'vanilla', sampling: str = 'rand',
+        normalize_aspect: bool = False
+) -> str:
+    def _map(dir_nm):
+        return map_model_dir_nm(model_name, dir_nm, mode, sampling, normalize_aspect)
+    if output_path:
+        paths = output_path.split(os.sep)
+        output_dir = _map(paths[-1])
+        return os_join(*paths[:-1], output_dir)
+    else:
+        return os_join(u.model_path, _map(None))
 
 
 if __name__ == '__main__':

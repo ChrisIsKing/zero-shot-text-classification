@@ -1,7 +1,6 @@
 import math
 import pickle
 import random
-import logging
 import datetime
 from typing import List, Dict
 from os.path import join
@@ -21,6 +20,9 @@ from zeroshot_classifier.util import *
 from zeroshot_classifier.util.load_data import get_data, binary_cls_format, in_domain_data_path, out_of_domain_data_path
 import zeroshot_classifier.util.utcd as utcd_util
 from zeroshot_classifier.models.architecture import load_sliced_binary_bert
+
+
+MODEL_NAME = 'Binary BERT'
 
 
 def parse_args():
@@ -56,16 +58,11 @@ def parse_args():
     return parser.parse_args()
 
 
-logger = logging.getLogger(__name__)
-
-
 if __name__ == '__main__':
     import os
 
     import numpy as np
     import transformers
-
-    from icecream import ic
 
     seed = sconfig('random-seed')
 
@@ -81,22 +78,23 @@ if __name__ == '__main__':
             return d['domain'] == dom
 
     args = parse_args()
+    logger = get_logger(f'{MODEL_NAME} {args.command.capitalize()}')
+
+    # TODO: verify
+
     if args.command == 'train':
+        output_path, sampling, mode, bsz, n_ep = args.output, args.sampling, args.mode, args.batch_size, args.epochs
         model_init, seq_len = args.model_init, args.max_sequence_length
         dset_args = dict(normalize_aspect=seed) if NORMALIZE_ASPECT else dict()
         data = get_data(in_domain_data_path, **dset_args)
         dataset_names = [dnm for dnm, d_dset in sconfig('UTCD.datasets').items() if filt(d_dset, 'in')]
-        ic(dataset_names)
+        logger.info(f'Loading datasets {logi(dataset_names)} for training... ')
         train = []
         test = []
         for dataset_name in dataset_names:
             dset = data[dataset_name]
             train += binary_cls_format(dset, name=dataset_name, sampling=args.sampling, mode=args.mode)
             test += binary_cls_format(dset, train=False, mode=args.mode)
-
-        train_batch_size = args.batch_size
-        num_epochs = args.epochs
-        model_save_path = join(args.output, args.sampling)
 
         # in case of loading from explicit pre-training,
         # the classification head would be ignored for classifying 3 classes
@@ -116,28 +114,29 @@ if __name__ == '__main__':
 
         transformers.logging.set_verbosity_error()  # disables `longest_first` warning
         random.seed(seed)
-        new_shuffle = True
-        random.shuffle(train)  # TODO: always need this?
-        if new_shuffle:
-            train_dataloader = DataLoader(train, shuffle=True, batch_size=train_batch_size)
-        else:
-            train_dataloader = DataLoader(train, shuffle=False, batch_size=train_batch_size)
-        ic(new_shuffle)
+        random.shuffle(train)
+        train_dataloader = DataLoader(train, shuffle=True, batch_size=bsz)
 
         evaluator = CESoftmaxAccuracyEvaluator.from_input_examples(test, name='UTCD-test')
 
-        warmup_steps = math.ceil(len(train_dataloader) * num_epochs * 0.1)  # 10% of train data for warm-up
-        logger.info("Warmup-steps: {}".format(warmup_steps))
+        warmup_steps = math.ceil(len(train_dataloader) * n_ep * 0.1)  # 10% of train data for warm-up
+        d_log = {'#data': len(train), 'batch size': bsz, 'epochs': n_ep, 'warmup steps': warmup_steps}
+        logger.info(f'Launched training with {log_dict(d_log)}... ')
+
+        output_path = map_model_output_path(
+            model_name=MODEL_NAME, output_path=output_path,
+            mode=mode, sampling=sampling, normalize_aspect=NORMALIZE_ASPECT
+        )
+        logger.info(f'Model will be saved to {logi(output_path)}')
 
         transformers.set_seed(seed)
-        # Train the model
         model.fit(
             train_dataloader=train_dataloader,
             evaluator=evaluator,
-            epochs=num_epochs,
+            epochs=n_ep,
             evaluation_steps=100000,
             warmup_steps=warmup_steps,
-            output_path=model_save_path
+            output_path=output_path
         )
     if args.command == 'test':
         WITH_EVAL_LOSS = False

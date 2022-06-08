@@ -14,7 +14,7 @@ from sentence_transformers import SentenceTransformer, models, losses, evaluatio
 from tqdm import tqdm
 
 from stefutil import *
-from zeroshot_classifier.util import u, sconfig
+from zeroshot_classifier.util import u, sconfig, map_model_output_path
 from zeroshot_classifier.util.load_data import get_data, binary_cls_format, in_domain_data_path, out_of_domain_data_path
 import zeroshot_classifier.util.utcd as utcd_util
 
@@ -92,21 +92,12 @@ if __name__ == "__main__":
         d_log = {'#data': len(train), 'batch size': bsz, 'epochs': n_ep, 'warmup steps': warmup_steps}
         logger.info(f'Launched training with {log_dict(d_log)}... ')
 
-        def dir_nm2dir_nm(nm: str = None):
-            out = f'{now(for_path=True)}_{MODEL_NAME}'
-            if nm:
-                out = f'{out}-{nm}'
-            out = f'{out}-{mode}-{sampling}'
-            if NORMALIZE_ASPECT:
-                out = f'{out}-aspect-norm'
-            return out
-        if output_path:
-            paths = args.output.split(os.sep)
-            output_dir = dir_nm2dir_nm(paths[-1])
-            output_path = join(*paths[:-1], output_dir)
-        else:
-            output_path = join(u.model_path, dir_nm2dir_nm())
+        output_path = map_model_output_path(
+            model_name=MODEL_NAME, output_path=output_path,
+            mode=mode, sampling=sampling, normalize_aspect=NORMALIZE_ASPECT
+        )
         logger.info(f'Model will be saved to {logi(output_path)}')
+
         transformers.set_seed(seed)
         model.fit(
             train_objectives=[(train_dataloader, train_loss)],

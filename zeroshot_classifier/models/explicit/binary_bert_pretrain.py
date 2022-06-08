@@ -8,7 +8,7 @@ TODO: consider +MLM?
 """
 import os
 from os.path import join as os_join
-from typing import List, Dict, Any, Union
+from typing import List, Dict, Any
 
 import numpy as np
 import torch
@@ -32,10 +32,7 @@ MODEL_NAME = 'Pretrain Aspect BinBERT'
 HF_MODEL_NAME = 'bert-base-uncased'
 
 
-def get_dataset(
-        dataset_name: str = 'UTCD-in', tokenizer: BertTokenizer = None,
-        **kwargs
-) -> List[Dataset]:
+def get_dataset(dataset_name: str = 'UTCD-in', tokenizer: BertTokenizer = None, **kwargs) -> List[Dataset]:
     """
     override text classification labels to be aspect labels
     """
@@ -91,8 +88,9 @@ def get_train_args(**kwargs) -> TrainingArguments:
         args['per_device_train_batch_size'] = bsz
         args['per_device_eval_batch_size'] = bsz
     md_nm = MODEL_NAME.replace(' ', '-')
+    dir_nm = f'{now(for_path=True)}_{md_nm}'
     args.update(dict(
-        output_dir=os_join(utcd_util.get_output_base(), PROJ_DIR, MODEL_DIR, md_nm, now(for_path=True)),
+        output_dir=os_join(utcd_util.get_output_base(), PROJ_DIR, MODEL_DIR, dir_nm),
         do_train=True, do_eval=True,
         evaluation_strategy='epoch',
         eval_accumulation_steps=128,  # Saves GPU memory
@@ -119,13 +117,13 @@ def compute_metrics(eval_pred):
 
 if __name__ == '__main__':
     import transformers
-    from icecream import ic
-
-    ic.lineWrapWidth = 512
 
     seed = sconfig('random-seed')
 
-    def train(resume_from_checkpoint: str = None):
+    NORMALIZE_ASPECT = True
+    mic(NORMALIZE_ASPECT)
+
+    def train(resume: str = None):
         logger = get_logger(MODEL_NAME)
         logger.info('Setting up training... ')
 
@@ -134,14 +132,15 @@ if __name__ == '__main__':
         logger.info('Loading tokenizer & model... ')
         tokenizer = BertTokenizer.from_pretrained(HF_MODEL_NAME)
         mdl = AutoModelForSequenceClassification.from_pretrained(HF_MODEL_NAME, num_labels=len(sconfig('UTCD.aspects')))
-        tokenizer.add_special_tokens(dict(eos_token='[eot]'))  # end-of-turn for SGD
+        tokenizer.add_special_tokens(dict(eos_token=utcd_util.EOT_TOKEN))  # end-of-turn for SGD
         mdl.resize_token_embeddings(len(tokenizer))
 
         logger.info('Loading data... ')
         dnm = 'UTCD-in'  # concatenated 9 in-domain datasets in UTCD
-        tr, vl = get_dataset(
-            dataset_name=dnm, tokenizer=tokenizer, normalize_aspect=seed, n_sample=n, shuffle_seed=seed
-        )
+        dset_args = dict(dataset_name=dnm, tokenizer=tokenizer, n_sample=n, shuffle_seed=seed)
+        if NORMALIZE_ASPECT:
+            dset_args['normalize_aspect'] = seed
+        tr, vl = get_dataset(**dset_args)
         logger.info(f'Loaded {logi(len(tr))} training samples, {logi(len(vl))} eval samples')
         transformers.set_seed(seed)
 
@@ -155,7 +154,7 @@ if __name__ == '__main__':
             bsz = 32
             lr, decay = 2e-5, 1e-2
             num_train_epoch = 3
-            ic(bsz, lr, decay, num_train_epoch)
+            mic(bsz, lr, decay, num_train_epoch)
 
             def collate_fn(batch):
                 ret = {k: torch.stack([torch.tensor(b[k]) for b in batch]) for k in batch[0] if k != 'labels'}
@@ -219,8 +218,8 @@ if __name__ == '__main__':
             trainer_args = dict(model=mdl, args=args, train_dataset=tr, eval_dataset=vl, compute_metrics=compute_metrics)
             trainer_ = ExplicitBinBertTrainer(name=f'{MODEL_NAME} Training', with_tqdm=with_tqdm, **trainer_args)
             logger.info('Launching Training... ')
-            if resume_from_checkpoint:
-                trainer_.train(resume_from_checkpoint=resume_from_checkpoint)
+            if resume:
+                trainer_.train(resume_from_checkpoint=resume)
             else:
                 trainer_.train()
             save_path = os_join(trainer_.args.output_dir, 'trained')
@@ -276,7 +275,7 @@ if __name__ == '__main__':
             preds = torch.cat(lst_preds, dim=0)
             labels = torch.cat(lst_labels, dim=0)
             acc__ = (preds == labels).float().mean().item()
-            ic(dnm, n_sample, acc__)
+            mic(dnm, n_sample, acc__)
     # evaluate(domain='out', batch_size=32)
 
     def fix_save_tokenizer():
