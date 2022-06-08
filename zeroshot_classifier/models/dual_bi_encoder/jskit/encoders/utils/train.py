@@ -5,7 +5,8 @@ import time
 from tqdm import tqdm
 from transformers.optimization import AdamW, get_linear_schedule_with_warmup
 # ========================== Begin of modified ==========================
-from zeroshot_classifier.bi_encoder.jskit.encoders.utils import CONFIG_PATH, tokenizer as token_util
+from zeroshot_classifier.models.dual_bi_encoder.jskit.encoders.utils import CONFIG_PATH
+from zeroshot_classifier.models.dual_bi_encoder.jskit.encoders.utils import tokenizer as token_util
 # ========================== End of modified ==========================
 import configparser
 
@@ -50,7 +51,7 @@ def config_setup():
 
 
 output_dir = "log_output"
-train_dir = "."
+train_dir = ""
 model = None
 global_step, tr_loss, nb_tr_steps, epoch, device, basepath, shared = None, None, \
     None, None, None, None, None

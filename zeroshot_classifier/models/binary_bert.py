@@ -19,7 +19,7 @@ from tqdm import tqdm
 from stefutil import *
 from zeroshot_classifier.util import *
 from zeroshot_classifier.util.load_data import get_data, binary_cls_format, in_domain_data_path, out_of_domain_data_path
-from zeroshot_classifier.baseline.architecture import load_sliced_binary_bert
+from zeroshot_classifier.models.architecture import load_sliced_binary_bert
 
 
 def parse_args():

@@ -77,7 +77,7 @@ def get_train_args(**kwargs) -> TrainingArguments:
             num_train_epochs=4
         )
     else:
-        # TODO: Keep those the same as in other approaches?; See `zeroshot_classifier.bi_encoder.dual_bi_encoder.py`
+        # TODO: Keep those the same as in other approaches?; See `zeroshot_classifier.dual_bi_encoder.dual_bi_encoder.py`
         args = dict(
             learning_rate=2e-5,
             per_device_train_batch_size=16,

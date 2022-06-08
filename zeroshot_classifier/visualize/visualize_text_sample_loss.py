@@ -1,7 +1,7 @@
 """
 Get the text samples that models perform the worst on, and look for insights
 
-See `zeroshot_classifier.baseline.binary_bert` in test mode
+See `zeroshot_classifier.models.binary_bert` in test mode
 """
 
 import json

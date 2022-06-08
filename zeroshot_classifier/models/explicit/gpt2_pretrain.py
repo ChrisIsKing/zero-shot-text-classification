@@ -1,6 +1,6 @@
 from transformers import GPT2TokenizerFast, GPT2ForSequenceClassification
 
-from zeroshot_classifier.baseline.gpt2 import MODEL_NAME, HF_MODEL_NAME
+from zeroshot_classifier.models.gpt2 import MODEL_NAME, HF_MODEL_NAME
 
 
 if __name__ == '__main__':

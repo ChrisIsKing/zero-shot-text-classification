@@ -1,5 +1,4 @@
 from . import util
-from . import baseline
-from . import explicit
-from . import bi_encoder
+from . import models
+from .models import dual_bi_encoder
 from . import visualize

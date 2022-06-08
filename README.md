@@ -31,6 +31,6 @@ UTCD Datasets:
 e.g. On GPT2 zero shot classification: 
 ```bash
 export PYTHONPATH=$PATHONPATH:`pwd`
-python zeroshot_encoder/baseline/gpt2.py
+python zeroshot_encoder/models/gpt2.py
 ```
 

@@ -1,7 +1,8 @@
 import torch
 from torch.utils.data import DataLoader
 # ========================== Begin of modified ==========================
-from zeroshot_classifier.bi_encoder.jskit.encoders.utils import CONFIG_PATH, tokenizer as token_util
+from zeroshot_classifier.models.dual_bi_encoder.jskit.encoders.utils import CONFIG_PATH
+from zeroshot_classifier.models.dual_bi_encoder.jskit.encoders.utils import tokenizer as token_util
 # ========================== End of modified ==========================
 import configparser
 config = configparser.ConfigParser()

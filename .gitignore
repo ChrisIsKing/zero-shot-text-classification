@@ -5,6 +5,7 @@ dataset/
 .vscode/
 .DS_Store
 models/
+!zeroshot_classifier/models
 test_lang*
 examples/
 logs/

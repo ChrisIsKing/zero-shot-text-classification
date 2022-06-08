@@ -5,14 +5,14 @@ from typing import List
 from fastapi import HTTPException
 from transformers import BertModel, BertConfig, BertTokenizer
 # ========================== Begin of modified ==========================
-from zeroshot_classifier.bi_encoder.jskit.encoders.utils import CONFIG_PATH
-from zeroshot_classifier.bi_encoder.jskit.encoders.utils.evaluate import get_embeddings, get_inference
-from zeroshot_classifier.bi_encoder.jskit.encoders.utils.models import BiEncoder
+from zeroshot_classifier.models.dual_bi_encoder.jskit.encoders.utils import CONFIG_PATH
+from zeroshot_classifier.models.dual_bi_encoder.jskit.encoders.utils.evaluate import get_embeddings, get_inference
+from zeroshot_classifier.models.dual_bi_encoder.jskit.encoders.utils.models import BiEncoder
 # ========================== End of modified ==========================
 import traceback
 import numpy as np
 # ========================== Begin of modified ==========================
-from zeroshot_classifier.bi_encoder.jskit.encoders.utils.train import train_model
+from zeroshot_classifier.models.dual_bi_encoder.jskit.encoders.utils.train import train_model
 # import jaseci.actions.remote_actions as jra
 # ========================== End of modified ==========================
 import random

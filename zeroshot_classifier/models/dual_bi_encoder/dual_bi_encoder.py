@@ -16,8 +16,8 @@ from stefutil import *
 from zeroshot_classifier.util import *
 import zeroshot_classifier.util.utcd as utcd_util
 from zeroshot_classifier.util.load_data import get_data, encoder_cls_format, in_domain_data_path, out_of_domain_data_path
-import zeroshot_classifier.bi_encoder.jskit.encoders.bi as js_bi
-import zeroshot_classifier.bi_encoder.jskit.encoders.utils as js_util
+import zeroshot_classifier.models.dual_bi_encoder.jskit.encoders.bi as js_bi
+
 # Cannot import like this cos `bi.py` already imported, could cause duplicate `config_setup` call, loading 2 models
 
 
@@ -26,7 +26,7 @@ MD_NM_OUT = 'Dual Bi-encoder'
 
 
 def get_train_args() -> Dict:
-    # Keep the same as in `zeroshot_classifier.baseline.bi-encoder`
+    # Keep the same as in `zeroshot_classifier.models.bi-encoder`
     return dict(  # To override `jskit.encoders.bi` defaults
         output_dir=os.path.join(utcd_util.get_output_base(), PROJ_DIR, MODEL_DIR, MODEL_NAME, now(for_path=True)),
         train_batch_size=16,  # pe `bi-encoder.py` default
@@ -122,7 +122,7 @@ def run_train(sampling: str = 'rand'):
     train_args |= dict(n_step=n_step, gradient_accumulation_steps=gas)
     logger.info(f'Starting training on model {log_dict(d_model)} with training args: {log_dict(train_args)}, '
                 f'dataset size: {logi(n_tr)}... ')
-    model_ = js_util.train.train_model(
+    model_ = zeroshot_classifier.models.dual_bi_encoder.jskit.encoders.utils.train.train_model(
         model_train=js_bi.model,
         tokenizer=js_bi.tokenizer,
         contexts=conts_tr,
@@ -132,13 +132,13 @@ def run_train(sampling: str = 'rand'):
     )
 
 
-def load_model() -> Tuple[BertTokenizer, js_util.models.BiEncoder]:
+def load_model() -> Tuple[BertTokenizer, zeroshot_classifier.models.dual_bi_encoder.jskit.encoders.utils.models.BiEncoder]:
     path = os.path.join(utcd_util.get_output_base(), PROJ_DIR, MODEL_DIR, MODEL_NAME, '2022-03-21_15-46-17')
     js_bi.load_model(path)
     return js_bi.tokenizer, js_bi.model
 
 
-class MyEvalDataset(js_util.tokenizer.EvalDataset):
+class MyEvalDataset(zeroshot_classifier.models.dual_bi_encoder.jskit.encoders.utils.tokenizer.EvalDataset):
     def __init__(self, return_text=False, **kwargs):
         super().__init__(**kwargs)
         self.txt = kwargs['texts']
@@ -156,10 +156,10 @@ class EncoderWrapper:
     reference: `js_util.evaluate.py`
     """
 
-    def __init__(self, model: js_util.models.BiEncoder, tokenizer: BertTokenizer):
+    def __init__(self, model: zeroshot_classifier.models.dual_bi_encoder.jskit.encoders.utils.models.BiEncoder, tokenizer: BertTokenizer):
         self.tokenizer, self.model = tokenizer, model
-        self.max_cont_length = js_util.evaluate.max_contexts_length
-        self.max_cand_length = js_util.evaluate.max_candidate_length
+        self.max_cont_length = zeroshot_classifier.models.dual_bi_encoder.jskit.encoders.utils.evaluate.max_contexts_length
+        self.max_cand_length = zeroshot_classifier.models.dual_bi_encoder.jskit.encoders.utils.evaluate.max_candidate_length
 
     def __call__(
             self, texts: List[str], embed_type: str, batch_size: int = 32, device: str = None, return_text=False
@@ -170,11 +170,11 @@ class EncoderWrapper:
         assert embed_type in ['context', 'candidate']
 
         if embed_type == "context":
-            dset_args = dict(context_transform=js_util.tokenizer.SelectionJoinTransform(
+            dset_args = dict(context_transform=zeroshot_classifier.models.dual_bi_encoder.jskit.encoders.utils.tokenizer.SelectionJoinTransform(
                 tokenizer=self.tokenizer, max_len=self.max_cont_length
             ))
         else:
-            dset_args = dict(candidate_transform=js_util.tokenizer.SelectionSequentialTransform(
+            dset_args = dict(candidate_transform=zeroshot_classifier.models.dual_bi_encoder.jskit.encoders.utils.tokenizer.SelectionSequentialTransform(
                 tokenizer=self.tokenizer, max_len=self.max_cand_length
             ))
         dset = MyEvalDataset(texts=texts, **dset_args, mode=embed_type, return_text=return_text)
@@ -219,8 +219,8 @@ def evaluate_trained(domain: str = 'in', candidate_batch_size: int = 256, contex
     model_cnm = model.__class__.__qualname__
     d_model = OrderedDict([
         ('model name', model_cnm), ('trained #epoch', 3),
-        ('context limit', js_util.evaluate.max_contexts_length),
-        ('candidate limit', js_util.evaluate.max_candidate_length),
+        ('context limit', zeroshot_classifier.models.dual_bi_encoder.jskit.encoders.utils.evaluate.max_contexts_length),
+        ('candidate limit', zeroshot_classifier.models.dual_bi_encoder.jskit.encoders.utils.evaluate.max_candidate_length),
     ])
     d_eval = OrderedDict([
         ('datasets', dataset_names),
@@ -285,7 +285,7 @@ if __name__ == '__main__':
     transformers.set_seed(seed)
 
     def import_check():
-        from zeroshot_classifier.bi_encoder.jskit.encoders.bi import (
+        from zeroshot_classifier.models.dual_bi_encoder.jskit.encoders.bi import (
             config as bi_enc_config, set_seed,
             tokenizer, model
         )
