@@ -7,7 +7,6 @@ from argparse import ArgumentParser
 
 import numpy as np
 import pandas as pd
-import torch.cuda
 from sklearn.metrics import classification_report
 from torch.utils.data import DataLoader
 import transformers
