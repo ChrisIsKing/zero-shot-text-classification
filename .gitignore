@@ -18,6 +18,8 @@ gdrive
 trained-models/
 plot/
 test-lang.py
+cache/
+eval/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
