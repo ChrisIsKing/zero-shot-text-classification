@@ -128,6 +128,8 @@ class ZsGPT2Tokenizer(GPT2TokenizerFast):
 
         self.warned_desc = set()  # Warning for each dataset happens once    @property
 
+        self.logger = get_logger(self.__class__.__qualname__)
+
     @property
     def max_len_single_sentence(self) -> int:
         return self.model_max_length - 2 * 3  # 3 pairs of (special start token, eos token)
@@ -240,8 +242,10 @@ class ZsGPT2Tokenizer(GPT2TokenizerFast):
                     # Crop the text portion so that the longest label can be generated
                     ln_t_ = room - ((1+ln_q+1) + (1+1) + 1)
                     assert ln_t_ > 0
-                    warn(f'Sample without answer longer than model max sequence length and dataset {dset_nm} labels: '
-                         f'{ln_cont} > {self.model_max_length} - Text portion cropped: {ln_t} > {ln_t_} for inference')
+                    self.logger.warning(f'Sample without answer longer than model max sequence length and '
+                                        f'dataset {logi(dset_nm)} labels: '
+                                        f'{logi(ln_cont)} > {logi(self.model_max_length)} - '
+                                        f'Text portion cropped: {logi(ln_t)} > {logi(ln_t_)} for inference')
                     ids_text = ids_text[:ln_t_]
             elif mode == 'train':
                 ln_ids = ln_q + ln_t + ln_a
@@ -250,8 +254,9 @@ class ZsGPT2Tokenizer(GPT2TokenizerFast):
                     # i.e., ensure no classification label is cropped
                     ln_t_ = self.max_len_single_sentence - (ln_q + ln_a)
                     assert ln_t_ > 0
-                    warn(f'Sample with answer longer than model max sequence length for dataset {dset_nm}: '
-                         f'{ln_ids+6} > {self.model_max_length} - Text portion cropped: {ln_t} > {ln_t_} for training')
+                    self.logger.warning(f'Sample with answer longer than model max sequence length for '
+                                        f'dataset {logi(dset_nm)}: {logi(ln_ids+6)} > {logi(self.model_max_length)} - '
+                                        f'Text portion cropped: {logi(ln_t)} > {logi(ln_t_)} for training')
                     ids_text = ids_text[:ln_t_]
             # else, `stats`, no truncation
             # Number of contex tokens, up until answer token, inclusive

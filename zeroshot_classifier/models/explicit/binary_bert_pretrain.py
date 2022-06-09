@@ -227,8 +227,8 @@ if __name__ == '__main__':
                 trainer_.train()
             save_path = os_join(trainer_.args.log_output_dir, 'trained')
             trainer_.save_model(save_path)
-            mic(os.listdir(save_path))
             tokenizer.save_pretrained(save_path)
+            mic(save_path)
             mic(os.listdir(save_path))
     train()
     # dir_nm_ = '2022-05-16_21-25-30/checkpoint-274088'

@@ -32,6 +32,7 @@ def parse_args():
     # set train arguments
     parser_train.add_argument('--output', type=str, default=None)
     parser_train.add_argument('--sampling', type=str, choices=['rand', 'vect'], default='rand')
+    parser_train.add_argument('--model_init', type=str, default='bert-base-uncased')
     parser_train.add_argument('--mode', type=str, choices=modes, default='vanilla')
     parser_train.add_argument('--batch_size', type=int, default=16)
     parser_train.add_argument('--epochs', type=int, default=3)
@@ -56,6 +57,7 @@ if __name__ == "__main__":
 
     if args.command == 'train':
         output_path, sampling, mode, bsz, n_ep = args.output, args.sampling, args.mode, args.batch_size, args.epochs
+        model_init = args.model_init
 
         dset_args = dict(normalize_aspect=seed) if NORMALIZE_ASPECT else dict()
         data = get_data(in_domain_data_path, **dset_args)
@@ -70,10 +72,12 @@ if __name__ == "__main__":
             test += binary_cls_format(dset, train=False, mode=mode)
 
         # seq length for consistency w/ `binary_bert` & `sgd`
-        word_embedding_model = models.Transformer('bert-base-uncased', max_seq_length=512)
-        word_embedding_model.tokenizer.add_special_tokens(dict(eos_token=utcd_util.EOT_TOKEN))
-        word_embedding_model.auto_model.resize_token_embeddings(len(word_embedding_model.tokenizer))
-        # default to mean-pooling
+        word_embedding_model = models.Transformer(model_init, max_seq_length=512)
+        add_tok_arg = utcd_util.add_special_tokens(word_embedding_model.tokenizer, train_strategy=mode)
+        if add_tok_arg:
+            logger.info(f'Adding special tokens {log_dict(add_tok_arg)} to tokenizer... ')
+            word_embedding_model.tokenizer.add_special_tokens(special_tokens_dict=add_tok_arg)
+            word_embedding_model.auto_model.resize_token_embeddings(len(word_embedding_model.tokenizer))
         pooling_model = models.Pooling(
             word_embedding_dimension=word_embedding_model.get_word_embedding_dimension(),
             pooling_mode_mean_tokens=True

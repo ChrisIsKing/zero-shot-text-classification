@@ -181,7 +181,7 @@ def binary_cls_format(data, name=None, sampling='rand', train=True, mode='vanill
     if train:
         aspect_token, sep_token = None, None
         label_un_modified = mode != 'implicit'
-        ca.check_mismatch(training_strategy=mode)
+        ca(training_strategy=mode)
         if mode in ['vanilla', 'implicit-on-text-encode-aspect', 'implicit-on-text-encode-sep', 'explicit']:
             label_list = data['labels']
             if mode == 'implicit-on-text-encode-aspect':

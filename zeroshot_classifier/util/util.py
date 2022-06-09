@@ -9,10 +9,8 @@ import pandas as pd
 import sklearn
 import matplotlib.pyplot as plt
 
+from stefutil import *
 from zeroshot_classifier.util.data_path import BASE_PATH, PROJ_DIR, DSET_DIR, PKG_NM, MODEL_DIR
-
-
-from stefutil import ca, StefConfig, StefUtil
 
 
 __all__ = [

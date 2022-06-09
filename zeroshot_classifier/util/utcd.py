@@ -33,7 +33,6 @@ from zeroshot_classifier.util.util import *
 from zeroshot_classifier.util.data_path import BASE_PATH, PROJ_DIR, DSET_DIR
 
 
-
 EOT_TOKEN = '[eot]'  # end of turn token for sgd
 
 
@@ -200,6 +199,31 @@ def get_dataset(dnm: str, split: str) -> Dict[str, List[str]]:
     path = os_join(BASE_PATH, PROJ_DIR, DSET_DIR, f'{d["path"]}.json')
     with open(path) as fl:
         return json.load(fl)[split]
+
+
+def add_special_tokens(tokenizer, train_strategy: str = 'vanilla') -> Dict:
+    """
+    :return: If need to modify tokenizer & model, `Tokenizer.add_special_tokens` arg; otherwise None
+    """
+    ca(training_strategy=train_strategy)
+    modify = False
+    if train_strategy == 'explicit':  # sanity check, SGD EOT should be added already
+        added_vocab = tokenizer.get_added_vocab()
+        assert list(added_vocab.keys()) == [EOT_TOKEN]
+        spec_tok_args = dict()
+    else:
+        spec_tok_args = dict(eos_token=EOT_TOKEN)  # Add end of turn token for sgd
+        modify = True
+    add_spec_toks = None
+    if train_strategy == 'implicit-on-text-encode-aspect':
+        add_spec_toks = list(sconfig('training.implicit-on-text.encode-aspect.aspect2aspect-token').values())
+    elif train_strategy == 'implicit-on-text-encode-sep':
+        add_spec_toks = [sconfig('training.implicit-on-text.encode-sep.aspect-sep-token')]
+    if add_spec_toks:
+        spec_tok_args['additional_special_tokens'] = add_spec_toks
+        modify = True
+    if modify:
+        return spec_tok_args
 
 
 class VisualizeOverlap:

@@ -20,6 +20,7 @@ from zeroshot_classifier.models.architecture import load_sliced_binary_bert
 
 
 MODEL_NAME = 'Binary BERT'
+HF_MODEL_NAME = 'bert-base-uncased'
 
 
 def parse_args():
@@ -35,7 +36,7 @@ def parse_args():
     parser_train.add_argument('--output', type=str, default=None)
     parser_train.add_argument('--sampling', type=str, choices=['rand', 'vect'], default='rand')
     # model to initialize weights from, intended for loading weights from local explicit training
-    parser_train.add_argument('--model_init', type=str, default='bert-base-uncased')
+    parser_train.add_argument('--model_init', type=str, default=HF_MODEL_NAME)
     parser_train.add_argument('--mode', type=str, choices=modes, default='vanilla')
     parser_train.add_argument('--batch_size', type=int, default=16)
     parser_train.add_argument('--epochs', type=int, default=3)
@@ -94,22 +95,11 @@ if __name__ == '__main__':
         model = CrossEncoder(model_init, num_labels=2, automodel_args=dict(ignore_mismatched_sizes=True))
         if seq_len != 512:  # Intended for `bert-base-uncased` only; TODO: binary bert seems to support this already?
             model.tokenizer, model.model = load_sliced_binary_bert(model_init, seq_len)
-        if mode == 'explicit':  # sanity check, SGD EOT should be added already
-            mic(model.tokenizer.get_added_vocab())  # TODO
-            exit(1)
-            spec_tok_args = dict()
-        else:
-            spec_tok_args = dict(eos_token=utcd_util.EOT_TOKEN)  # Add end of turn token for sgd
-        add_spec_toks = None
-        if args.mode == 'implicit-on-text-encode-aspect':
-            add_spec_toks = list(sconfig('training.implicit-on-text.encode-aspect.aspect2aspect-token').values())
-        elif args.mode == 'implicit-on-text-encode-sep':
-            add_spec_toks = [sconfig('training.implicit-on-text.encode-sep.aspect-sep-token')]
-        if add_spec_toks:
-            spec_tok_args['additional_special_tokens'] = add_spec_toks
-        if len(spec_tok_args) > 0:
-            logger.info(f'Adding special tokens {log_dict(spec_tok_args)} to tokenizer... ')
-            model.tokenizer.add_special_tokens(special_tokens_dict=spec_tok_args)
+
+        add_tok_arg = utcd_util.add_special_tokens(model.tokenizer, train_strategy=mode)
+        if add_tok_arg:
+            logger.info(f'Adding special tokens {log_dict(add_tok_arg)} to tokenizer... ')
+            model.tokenizer.add_special_tokens(special_tokens_dict=add_tok_arg)
             model.model.resize_token_embeddings(len(model.tokenizer))
 
         transformers.logging.set_verbosity_error()  # disables `longest_first` warning
