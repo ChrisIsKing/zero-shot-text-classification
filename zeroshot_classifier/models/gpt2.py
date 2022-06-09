@@ -8,6 +8,7 @@ import os
 import re
 import math
 import itertools
+from os.path import join as os_join
 from typing import List, Tuple, Dict, Union, Any
 from warnings import warn
 from collections import defaultdict, OrderedDict
@@ -29,8 +30,10 @@ from transformers.training_args import OptimizerNames
 import datasets
 import matplotlib.pyplot as plt
 import seaborn as sns
+from tqdm.auto import tqdm
 
 from stefutil import *
+from zeroshot_classifier.util import *
 from zeroshot_classifier.util.train import MyEvalPrediction
 import zeroshot_classifier.util.utcd as utcd_util
 from zeroshot_classifier.preprocess import get_dataset
@@ -75,7 +78,7 @@ class ZsGPT2Tokenizer(GPT2TokenizerFast):
             dataset_name, split = key
             key = f'{dataset_name}-{split}'
             if key not in self:
-                path = os.path.join(utcd_util.get_output_base(), PROJ_DIR, DSET_DIR, 'processed', dataset_name)
+                path = os_join(utcd_util.get_output_base(), PROJ_DIR, DSET_DIR, 'processed', dataset_name)
                 dset = datasets.load_from_disk(path)[split]
                 # See `zeroshot_classifier.util.util.py::process_utcd_dataset`
                 feats = dset.features['labels'].feature
@@ -97,6 +100,7 @@ class ZsGPT2Tokenizer(GPT2TokenizerFast):
         # Pad token cannot be `self.eos_token`
         # cos otherwise `DataCollatorForLanguageModeling` would override normal eos tokens
         spec_toks = list(ZsGPT2Tokenizer.SPEC_TOKS.values())
+        spec_toks.append(utcd_util.EOT_TOKEN)
         ca.check_mismatch('Formalization mode', form, ['vanilla', 'implicit'])
         self.form = form
         self.did2aspect, aspect_sep_token = None, None
@@ -182,7 +186,7 @@ class ZsGPT2Tokenizer(GPT2TokenizerFast):
                 n_cls = len(descs)
                 # `label` is shared across all datasets, map to local label within dataset
                 if self.cache_utcd is None:
-                    path = os.path.join(utcd_util.get_output_base(), PROJ_DIR, DSET_DIR, 'processed', dataset_name)
+                    path = os_join(utcd_util.get_output_base(), PROJ_DIR, DSET_DIR, 'processed', dataset_name)
                     # cos `Sequential`; each split, the label is the same
                     self.cache_utcd = datasets.load_from_disk(path)[split].features['labels'].feature
                 # The ordering indicates int<=>str label mapping, i.e., index is int label,
@@ -358,8 +362,8 @@ class ZsGPT2LMHeadModel(GPT2LMHeadModel):
     def forward(self, dataset_id=None, **kwargs):
         # Function override to ignore `dataset_id`, not need in learning; Just need to pass value for evaluation
         # if torch.any(kwargs['input_ids'] == self.tokenizer.encode(self.tokenizer.ques_sep_token)[0]):
-        pprint_gpt2_input(self.tokenizer, d={**kwargs, **dict(dataset_id=dataset_id)})
-        exit(1)
+        # pprint_gpt2_input(self.tokenizer, d={**kwargs, **dict(dataset_id=dataset_id)})
+        # exit(1)
         return super().forward(**kwargs)
 
     @classmethod
@@ -565,9 +569,8 @@ def get_train_setup(
     else:
         bsz_tr = bsz_vl = bsz
     dir_nm = f'{now(for_path=True)}_{MODEL_NAME}-{model_name}'
-    mic(os.path.join(utcd_util.get_output_base(), PROJ_DIR, MODEL_DIR, dir_nm))
     args = dict(
-        output_dir=os.path.join(utcd_util.get_output_base(), PROJ_DIR, MODEL_DIR, dir_nm),
+        output_dir=os_join(utcd_util.get_output_base(), PROJ_DIR, MODEL_DIR, dir_nm),
         do_train=True,
         do_eval=do_eval,
         evaluation_strategy='steps' if do_eval else 'no',
@@ -704,7 +707,7 @@ def plot_dataset_token_length_stats(domain: str = 'in'):
     # discard training set for out-of-domain
     dset = datasets.concatenate_datasets([dset_tr, dset_vl]) if domain == 'in' else dset_tr
     df = pd.DataFrame(dset[:])
-    ic(df)
+    mic(df)
 
     fig, axes = plt.subplots(2, 2, figsize=(16, 9))
     args_bar = dict(kde=True, kde_kws=dict(bw_adjust=0.5, gridsize=2048))
@@ -727,29 +730,37 @@ def plot_dataset_token_length_stats(domain: str = 'in'):
     plt.suptitle(title)
     fig.supylabel('density')
 
-    output_dir = os.path.join(BASE_PATH, PROJ_DIR, 'plot')
+    output_dir = os_join(BASE_PATH, PROJ_DIR, 'plot')
     os.makedirs(output_dir, exist_ok=True)
-    plt.savefig(os.path.join(output_dir, f'{title}, {now(for_path=True)}.png'), dpi=300)
+    plt.savefig(os_join(output_dir, f'{title}, {now(for_path=True)}.png'), dpi=300)
 
 
-def load_trained(epoch: int = 3) -> ZsGPT2LMHeadModel:
-    assert epoch in [2, 3]
-    if not hasattr(load_trained, 'epoch2path'):
-        load_trained.epoch2path = {
-            # 2: os.path.join('2022-03-04 21-33-12', 'checkpoint-37066'),
-            # 3: os.path.join('2022-03-04 21-33-12', 'checkpoint-55599'),
-            3: os.path.join('2022-04-02_11-51-19', 'checkpoint-51390'),
-        }
-    path = os.path.join(BASE_PATH, PROJ_DIR, 'trained-models', 'gpt2-nvidia', load_trained.epoch2path[epoch])
-    return ZsGPT2LMHeadModel.from_pretrained(path, is_zs_gpt2=True).to('cuda')  # with caching
+def load_trained(form: str = 'vanilla', epoch: int = 3, normalize_aspect: bool = False) -> ZsGPT2LMHeadModel:
+    if normalize_aspect:
+        assert epoch == 3
+        if form == 'vanilla':
+            dir_nm = '2022-06-08_18-19-27_NVIDIA-GPT2-gpt2-medium'
+        else:
+            raise NotImplementedError('TODO')
+        path = os_join(u.proj_path, u.model_dir, dir_nm, 'trained')
+    else:
+        assert epoch in [2, 3]
+        if not hasattr(load_trained, 'epoch2path'):
+            load_trained.epoch2path = {
+                # 2: os_join('2022-03-04 21-33-12', 'checkpoint-37066'),
+                # 3: os_join('2022-03-04 21-33-12', 'checkpoint-55599'),
+                3: os_join('2022-04-02_11-51-19', 'checkpoint-51390'),
+            }
+        path = os_join(BASE_PATH, PROJ_DIR, 'trained-models', 'gpt2-nvidia', load_trained.epoch2path[epoch])
+    return ZsGPT2LMHeadModel.from_pretrained(path, is_zs_gpt2=True)  # with caching
 
 
-def evaluate_trained(domain: str = 'in', batch_size: int = 48, n_ep: int = 3):
+def evaluate_trained(domain: str = 'in', batch_size: int = 48, load_model_args: Dict = None):
     """
     Run evaluation, on potentially multi-label datasets
     """
-    ca(domain=domain)
-    model = load_trained(epoch=n_ep).to('cuda')
+    ca(dataset_domain=domain)
+    model = load_trained(**(load_model_args or dict())).to('cuda')
     conf, model_cnm = model.config, model.__class__.__qualname__
     # To disable warning `Setting `pad_token_id` to `eos_token_id` for open-end generation.`
     model_size = conf.max_length = conf.n_ctx
@@ -759,13 +770,11 @@ def evaluate_trained(domain: str = 'in', batch_size: int = 48, n_ep: int = 3):
     model.tokenizer = tkzer  # See ZsGPT2LMHeadModel.forward() sanity check`
 
     split = 'test'
-    path_dir = os.path.join(BASE_PATH, PROJ_DIR, 'evaluations', MODEL_NAME, now(for_path=True))
+    output_path = os_join(u.eval_path, MODEL_NAME, domain2eval_dir_nm(domain))
+    os.makedirs(output_path, exist_ok=True)
 
-    dataset_names = [
-        dnm for dnm in sconfig('UTCD.datasets').keys()
-        if (sconfig(f'UTCD.datasets.{dnm}.domain') == domain)
-    ]
-    d_model = OrderedDict([('model name', model_cnm), ('trained #epoch', n_ep), ('model size', model_size)])
+    dataset_names = get_dataset_names(domain)
+    d_model = OrderedDict([('model name', model_cnm), ('model size', model_size)])
     d_eval = OrderedDict([
         ('max batch size', batch_size),
         ('datasets', dataset_names)
@@ -775,7 +784,7 @@ def evaluate_trained(domain: str = 'in', batch_size: int = 48, n_ep: int = 3):
     logger = get_logger(logger_name, typ='stdout')
     logger_fl = get_logger(
         f'{logger_name} file-write', typ='file-write',
-        file_path=os.path.join(path_dir, f'{logger_name}, bsz={batch_size}, {domain}.log')
+        file_path=os_join(output_path, f'{now(for_path=True)}_{logger_name}, bsz={batch_size}, {domain}.log')
     )
     logger.info(f'Running evaluation {logi(domain)} on model {log_dict(d_model)}, with {log_dict(d_eval)}... ')
     logger_fl.info(f'Running evaluation {domain} on model {log_dict_nc(d_model)}, with {log_dict_nc(d_eval)}... ')
@@ -805,13 +814,14 @@ def evaluate_trained(domain: str = 'in', batch_size: int = 48, n_ep: int = 3):
             start=[]
         )
         n_bch = len(idxs_batches)
-        logger.info(f'Running evaluation on dataset {logi(dnm_)}, with labels {log_dict(lb2id)}, '
+        logger.info(f'Running evaluation on dataset {logi(dnm_)}, with labels {logi(labels)}, '
                     f'of {logi(len(dset))} unique texts in {logi(n_bch)} batches... ')
-        logger_fl.info(f'Running evaluation on dataset {dnm_}, with labels {log_dict_nc(lb2id)}, '
+        logger_fl.info(f'Running evaluation on dataset {dnm_}, with labels {labels}, '
                        f'of {len(dset)} unique texts in {n_bch} batches... ')
 
         n_computed = 0
-        for step, idxs in enumerate(idxs_batches):  # Each batch has input samples of the same token length
+        it = tqdm(idxs_batches, desc='ba')
+        for step, idxs in enumerate(it):  # Each batch has input samples of the same token length
             idxs = [int(idx) for idx in idxs]  # `Dataset.select` works with `int` indices only
             inputs = {  # No need to pad; Don't need to the labels to complicate forward pass
                 k: torch.tensor(v, device='cuda') for k, v in dset[idxs].items()
@@ -849,16 +859,11 @@ def evaluate_trained(domain: str = 'in', batch_size: int = 48, n_ep: int = 3):
                     for i, idx in enumerate(idxs_sep[:-1]):
                         answers.append(answer[idx + len(tkzer.ques_sep_token):idxs_sep[i+1]])
                     answers.append(answer[idxs_sep[-1] + len(tkzer.ques_sep_token):])
-                    ic(answer, answers)
-                    # exit(1)
                 else:
                     answers = [answer]
                 ids_pred = [lb2id[a] for a in answers]
                 ids_true: List[int] = dset[i_sample]['labels']
                 matched = set(ids_pred) & set(ids_true)
-                if len(idxs_sep) > 0:
-                    ic(ids_pred, ids_true, matched)
-                    # exit(1)
                 if len(matched) > 0:
                     # predicted label is one of the correct labels, pick that label so that prediction is correct
                     id_true = id_pred = next(iter(matched))
@@ -871,29 +876,34 @@ def evaluate_trained(domain: str = 'in', batch_size: int = 48, n_ep: int = 3):
             preds_batch, trues_batch = zip(*[
                 set_pred_n_true(out, i_sample) for out, i_sample in zip(outputs_str, idxs)
             ])
-            d_log = dict(
-                step=f'{step+1:>{len(str(n_bch))}}/{n_bch}', progress=f'{n_computed:>{len(str(n_dset))}}/{n_dset}',
+            d_log: Dict[str, Any] = dict(
+                progress=f'{n_computed:>{len(str(n_dset))}}/{n_dset}',
                 sequence_length=len(inputs['input_ids'][0]),
                 batch_size=f'{len(idxs):>{len(str(batch_size))}}/{batch_size}',
-                n_acc=sum(p == t for p, t in zip(preds_batch, trues_batch)),
-                ids_pred=list(preds_batch), ids_true=list(trues_batch)
+                n_acc=sum(p == t for p, t in zip(preds_batch, trues_batch))
             )
-            logger.info(log_dict(d_log, with_color=True))
-            logger_fl.info(log_dict(d_log, with_color=False))
+            it.set_postfix(d_log)
+            d_log.update(dict(ids_pred=list(preds_batch), ids_true=list(trues_batch)))
+            logger_fl.info(log_dict_nc(d_log))
 
         def check_labels_filled(lbs):  # sanity check, every index is assigned a label
             return np.all((-1 <= lbs) & (lbs < len(labels)))
         assert check_labels_filled(trues) and check_labels_filled(preds)
-        df = pd.DataFrame(
-            # note `-1` is not actual label, support of 0 - included for full label specification per sklearn
-            # **note** cos the -1 label, the `macro avg` row is not accurate;
-            # included it for getting global accuracy
-            classification_report(
-                trues, preds, labels=[-1, *range(len(labels))], target_names=['Label not in dataset', *labels],
-                output_dict=True
-            )
-        ).transpose()
-        path = os.path.join(path_dir, f'{dnm_}.csv')
+
+        # note `-1` is not actual label, support of 0 - included for full label specification per sklearn
+        # **note** cos the -1 label, the `macro avg` row is not accurate;
+        # included it for getting global accuracy
+        args = dict(
+            labels=[-1, *range(len(labels))], target_names=['Label not in dataset', *labels],
+            zero_division=0, output_dict=True  # disables warning
+        )
+        report = classification_report(trues, preds, **args)
+        acc = f'{report["accuracy"]:.3f}'
+        logger.info(f'{logi(dnm_)} Classification Accuracy: {logi(acc)}')
+        logger_fl.info(f'{dnm_} Classification Accuracy: {acc}')
+
+        df = pd.DataFrame(report).transpose()
+        path = os_join(output_path, f'{dnm_}.csv')
         df.to_csv(path)
         logger.info(f'Evaluation on {logi(dnm_)} written to CSV at {logi(path)}')
         logger_fl.info(f'Evaluation on {dnm_} written to CSV at {path}')
@@ -916,10 +926,6 @@ def gpt2_inference(text: str, label_options: List[str]) -> str:
 
 
 if __name__ == '__main__':
-    from icecream import ic
-
-    from zeroshot_classifier.util import *
-
     seed = sconfig('random-seed')
     transformers.set_seed(seed)
 
@@ -928,23 +934,28 @@ if __name__ == '__main__':
             profile_runtime(lambda: evaluate_trained(domain='in', batch_size=48), sleep=2)
         # profile_evaluation()
 
-        evaluate_trained(domain='out', batch_size=48)
-    # evaluate()
+        model_args = dict(form='vanilla', normalize_aspect=True)
+
+        # dom = 'in'
+        dom = 'out'
+        evaluate_trained(domain=dom, batch_size=48, load_model_args=model_args)
+    evaluate()
 
     def train():
         dnm = 'UTCD-in'
         # md_nm = 'debug'
         md_nm = 'gpt2-medium'
 
-        form = 'vanilla'
-        # form = 'implicit'
+        # form = 'vanilla'?
+        form = 'implicit'
 
         # n = 32
         # n = 128
-        n = 256
-        # n = None
+        # n = 256
+        n = None
 
         asp_norm = True
+        dataset_args = dict(normalize_aspect=seed) if asp_norm else dict()
 
         if 'debug' in md_nm:
             # train_args = dict(  # overfit small
@@ -956,24 +967,25 @@ if __name__ == '__main__':
             #     gradient_accumulation_steps=8,
             #     save_strategy='no',
             # )
-            dataset_args = dict(  # debugging
+            dataset_args.update(dict(  # debugging
                 # filter_func=lambda sample: sample['dataset_id'] == config('UTCD.dataset_name2id')['dbpedia'],
                 # filter_func=lambda sample: len(sample['labels']) > 1,
-            )
+            ))
             train_args = dict(
                 num_train_epochs=3,
                 per_device_train_batch_size=4
             )
             ddp = False
         else:
-            dataset_args = dict(normalize_aspect=asp_norm)
+            # dataset_args = dict()
             train_args = dict(  # Distribute among GPUs & fit in memory; Effectively batch size 128 as in paper
                 num_train_epochs=3,
-                # per_device_train_batch_size=4,
-                per_device_train_batch_size=16,
+                per_device_train_batch_size=4,
+                # per_device_train_batch_size=16,
                 gradient_accumulation_steps=8
             )
-            ddp = 4
+            ddp = False
+            # ddp = 4
         md, tkzer, dset_tr, dset_vl, trainer = get_all_setup(  # eval set is too large
             model_name=md_nm, dataset_name=dnm, form=form, do_eval=False, custom_logging=True, n_sample=n,
             random_seed=seed,
@@ -982,7 +994,9 @@ if __name__ == '__main__':
             is_ddp=ddp
         )
         trainer.train()
-    train()
+        trainer.save_model(os_join(trainer.log_output_dir, 'trained'))
+        os.listdir(os_join(trainer.log_output_dir, 'trained'))
+    # train()
 
     def sanity_check_trained_generate():
         text = 'hello world'

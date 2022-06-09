@@ -65,21 +65,19 @@ class MyLoggingCallback(TrainerCallback):
             self.bsz *= self.trainer.args.n_gpu
         seq_max_len = len(dset_tr__[0]['input_ids'])
         n_data, md_sz = len(dset_tr__), md_.config.n_positions
+        from stefutil import mic
+        mic(n_data, self.bsz, n_ep)
+        exit(1)
         self.n_step = max(math.ceil(n_data / self.bsz), 1) * n_ep  # #step/epoch at least 1
         self.train_meta = OrderedDict([
             ('#data', n_data), ('model size', md_sz),
             ('learning rate', lr), ('batch shape', (self.bsz, seq_max_len)), ('#epochs', n_ep), ('#steps', self.n_step),
-            ('DDP', self.is_ddp)
         ])
         self.called_val_init = False
 
         self.save_time = now(for_path=True)
         self.logger, self.logger_fl, self.tb_writer = None, None, None
         self.log_fnm = f'{name}, n={n_data}, l={md_sz}, a={lr}, bsz={self.bsz}, n_ep={n_ep}, {self.save_time}'
-        paths_ = self.trainer.args.output_dir.split(os.sep)
-        path_proj = paths_[paths_.index(PROJ_DIR):]
-        # Keep the logging & plotting inside project directory, not potentially in `scratch`
-        self.output_dir = os.path.join(BASE_PATH, *path_proj)
 
         self.train_begin, self.train_end = None, None
         self.t_strt, self.t_end = None, None
@@ -87,10 +85,11 @@ class MyLoggingCallback(TrainerCallback):
     def on_train_begin(self, args: TrainingArguments, state, control, **kwargs):
         if self.trainer.is_local_process_zero():  # For distributed training; TODO: support multi machine?
             self.logger: logging.Logger = get_logger(self.name)
+            log_output_dir = self.trainer.log_output_dir
             self.logger_fl = get_logger(
-                name=self.name, typ='file-write', file_path=os.path.join(self.output_dir, f'{self.log_fnm}.log')
+                name=self.name, typ='file-write', file_path=os.path.join(log_output_dir, f'{self.log_fnm}.log')
             )
-            self.tb_writer = SummaryWriter(os.path.join(self.output_dir, f'tb - {self.log_fnm}'))
+            self.tb_writer = SummaryWriter(os.path.join(log_output_dir, f'tb - {self.log_fnm}'))
             conf = self.trainer.model.config.to_dict()
             args = self.trainer.args.to_dict()
             sleep(2)  # otherwise, logging messages missing
@@ -428,6 +427,11 @@ class MyTrainer(Trainer):
         self.post_init()
         # Sanity check for distributed training
         print(f'Trainer instantiated with is_local_process_zero: {logi(self.is_local_process_zero())}')
+
+        paths_ = self.args.output_dir.split(os.sep)
+        path_proj = paths_[paths_.index(PROJ_DIR):]
+        # Keep the logging & plotting inside project directory, not potentially in `scratch`
+        self.log_output_dir = os.path.join(BASE_PATH, *path_proj)
 
     def post_init(self):
         callbacks = self.callback_handler.callbacks

@@ -1,7 +1,6 @@
 import math
 import pickle
 import random
-import datetime
 from typing import List, Dict
 from os.path import join
 from argparse import ArgumentParser
@@ -26,13 +25,7 @@ MODEL_NAME = 'Binary BERT'
 
 
 def parse_args():
-    modes = [
-        'vanilla',
-        'implicit',
-        'implicit-on-text-encode-aspect',  # encode each of the 3 aspects as 3 special tokens, followed by text
-        'implicit-on-text-encode-sep',  # encode aspects normally, but add special token between aspect and text
-        'explicit'  # see `zeroshot_classifier.explicit.binary_bert.py` for explicit training
-    ]
+    modes = sconfig('training.strategies')
 
     parser = ArgumentParser()
     subparser = parser.add_subparsers(dest='command')
@@ -41,8 +34,8 @@ def parse_args():
 
     # set train arguments
     parser_train.add_argument('--max_sequence_length', type=int, default=512)
-    parser_train.add_argument('--output', type=str, required=True)
-    parser_train.add_argument('--sampling', type=str, choices=['rand', 'vect'], required=True)
+    parser_train.add_argument('--output', type=str, default=None)
+    parser_train.add_argument('--sampling', type=str, choices=['rand', 'vect'], default='rand')
     # model to initialize weights from, intended for loading weights from local explicit training
     parser_train.add_argument('--model_init', type=str, default='bert-base-uncased')
     parser_train.add_argument('--mode', type=str, choices=modes, default='vanilla')
@@ -68,8 +61,8 @@ if __name__ == '__main__':
 
     # INTENT_ONLY = True
     INTENT_ONLY = False
-    NORMALIZE_ASPECT = False
-    # NORMALIZE_ASPECT = True
+    # NORMALIZE_ASPECT = False
+    NORMALIZE_ASPECT = True
     if INTENT_ONLY:
         def filt(d, dom):
             return d['domain'] == dom and d['aspect'] == 'intent'
@@ -85,6 +78,8 @@ if __name__ == '__main__':
     if args.command == 'train':
         output_path, sampling, mode, bsz, n_ep = args.output, args.sampling, args.mode, args.batch_size, args.epochs
         model_init, seq_len = args.model_init, args.max_sequence_length
+        mic(model_init)
+        mic(os.listdir(model_init))
         dset_args = dict(normalize_aspect=seed) if NORMALIZE_ASPECT else dict()
         data = get_data(in_domain_data_path, **dset_args)
         dataset_names = [dnm for dnm, d_dset in sconfig('UTCD.datasets').items() if filt(d_dset, 'in')]
@@ -93,24 +88,31 @@ if __name__ == '__main__':
         test = []
         for dataset_name in dataset_names:
             dset = data[dataset_name]
-            train += binary_cls_format(dset, name=dataset_name, sampling=args.sampling, mode=args.mode)
-            test += binary_cls_format(dset, train=False, mode=args.mode)
+            train += binary_cls_format(dset, name=dataset_name, sampling=args.sampling, mode=mode)
+            test += binary_cls_format(dset, train=False, mode=mode)
 
         # in case of loading from explicit pre-training,
         # the classification head would be ignored for classifying 3 classes
         model = CrossEncoder(model_init, num_labels=2, automodel_args=dict(ignore_mismatched_sizes=True))
-        if seq_len != 512:  # Intended for `bert-base-uncased` only
+        if seq_len != 512:  # Intended for `bert-base-uncased` only; TODO: binary bert seems to support this already?
             model.tokenizer, model.model = load_sliced_binary_bert(model_init, seq_len)
-        spec_tok_args = dict(eos_token=utcd_util.EOT_TOKEN)  # Add end of turn token for sgd
+        if mode == 'explicit':  # sanity check, SGD EOT should be added already
+            mic(model.tokenizer.get_added_vocab())  # TODO
+            exit(1)
+            spec_tok_args = dict()
+        else:
+            spec_tok_args = dict(eos_token=utcd_util.EOT_TOKEN)  # Add end of turn token for sgd
         add_spec_toks = None
         if args.mode == 'implicit-on-text-encode-aspect':
             add_spec_toks = list(sconfig('training.implicit-on-text.encode-aspect.aspect2aspect-token').values())
         elif args.mode == 'implicit-on-text-encode-sep':
             add_spec_toks = [sconfig('training.implicit-on-text.encode-sep.aspect-sep-token')]
         if add_spec_toks:
-            spec_tok_args.update(dict(additional_special_tokens=add_spec_toks))
-        model.tokenizer.add_special_tokens(spec_tok_args)
-        model.model.resize_token_embeddings(len(model.tokenizer))
+            spec_tok_args['additional_special_tokens'] = add_spec_toks
+        if len(spec_tok_args) > 0:
+            logger.info(f'Adding special tokens {log_dict(spec_tok_args)} to tokenizer... ')
+            model.tokenizer.add_special_tokens(special_tokens_dict=spec_tok_args)
+            model.model.resize_token_embeddings(len(model.tokenizer))
 
         transformers.logging.set_verbosity_error()  # disables `longest_first` warning
         random.seed(seed)
@@ -141,18 +143,15 @@ if __name__ == '__main__':
     if args.command == 'test':
         WITH_EVAL_LOSS = False
         mode, domain, model_path, bsz = args.mode, args.domain, args.model_path, args.batch_size
-        domain_str = 'in-domain' if domain == 'in' else 'out-of-domain'
-        date = datetime.datetime.now().strftime('%m.%d.%Y')
-        date = date[:-4] + date[-2:]  # 2-digit year
-        out_path = join(model_path, 'eval', f'{domain_str}, {date}')
+        split = 'test'
+
+        out_path = join(model_path, 'eval', domain2eval_dir_nm(domain))
         os.makedirs(out_path, exist_ok=True)
 
         data = get_data(in_domain_data_path if domain == 'in' else out_of_domain_data_path)
         model = CrossEncoder(model_path)  # load model
-        sep_token = sconfig('training.implicit-on-text.encode-sep.aspect-sep-token')
-        aspect2aspect_token = sconfig('training.implicit-on-text.encode-aspect.aspect2aspect-token')
 
-        logger = get_logger('Binary Bert Eval')
+        logger = get_logger(f'{MODEL_NAME} Eval')
         d_log = dict(mode=mode, domain=domain, batch_size=bsz, path=model_path)
         logger.info(f'Evaluating Binary Bert with {log_dict(d_log)} and saving to {logi(out_path)}... ')
 
@@ -161,8 +160,7 @@ if __name__ == '__main__':
 
         for dnm in dataset_names:  # loop through all datasets
             dset = data[dnm]
-            split = 'test'
-            txts, aspect = dset[split], dset['aspect']
+            pairs, aspect = dset[split], dset['aspect']
             d_dset = sconfig(f'UTCD.datasets.{dnm}.splits.{split}')
             label_options, multi_label = d_dset['labels'], d_dset['multi_label']
             n_options = len(label_options)
@@ -173,21 +171,9 @@ if __name__ == '__main__':
             arr_preds, arr_labels = np.empty(n_txt, dtype=int), np.empty(n_txt, dtype=int)
             arr_loss = torch.empty(n_txt, dtype=torch.float32) if WITH_EVAL_LOSS else None
 
-            txt_n_lbs2query = None
-            if mode in ['vanilla', 'explicit']:
-                def txt_n_lbs2query(txt: str, lbs: List[str]) -> List[List[str]]:
-                    return [[txt, lb] for lb in lbs]
-            elif mode == 'implicit':
-                def txt_n_lbs2query(txt: str, lbs: List[str]) -> List[List[str]]:
-                    return [[txt, f'{lb} {aspect}'] for lb in lbs]
-            elif mode == 'implicit-on-text-encode-aspect':
-                def txt_n_lbs2query(txt: str, lbs: List[str]) -> List[List[str]]:
-                    return [[f'{aspect2aspect_token[aspect]} {txt}', lb] for lb in lbs]
-            elif mode == 'implicit-on-text-encode-sep':
-                def txt_n_lbs2query(txt: str, lbs: List[str]) -> List[List[str]]:
-                    return [[f'{aspect} {sep_token} {txt}', lb] for lb in lbs]
+            txt_n_lbs2query = TrainStrategy2PairMap(train_strategy=mode)(aspect)
 
-            gen = group_n(txts.items(), n=bsz)
+            gen = group_n(pairs.items(), n=bsz)
             # loop through each test example
             for i_grp, group in enumerate(tqdm(gen, desc=dnm, unit='group', total=math.ceil(n_txt/bsz))):
                 txts_, lst_labels = zip(*group)
@@ -219,11 +205,10 @@ if __name__ == '__main__':
                 eval_loss[dnm] = arr_loss.numpy()
 
             args = dict(zero_division=0, target_names=label_options, output_dict=True)  # disables warning
-            report = classification_report(arr_labels, arr_preds, **args)
-            acc = f'{report["accuracy"]:.3f}'
+            df, acc = eval_res2df(arr_labels, arr_preds, **args)
             logger.info(f'{logi(dnm)} Classification Accuracy: {logi(acc)}')
-            df = pd.DataFrame(report).transpose()
             df.to_csv(join(out_path, f'{dnm}.csv'))
+
         if WITH_EVAL_LOSS:
             with open(join(out_path, 'eval_loss.pkl'), 'wb') as f:
                 pickle.dump(eval_loss, f)

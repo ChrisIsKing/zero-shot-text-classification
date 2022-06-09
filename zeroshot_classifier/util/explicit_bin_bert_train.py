@@ -79,7 +79,7 @@ class MyTrainStatsMonitorCallback(TrainerCallback):
         self.t_strt, self.t_end = None, None
 
         self.trainer = trainer
-        paths_ = self.trainer.args.output_dir.split(os.sep)
+        paths_ = self.trainer.args.log_output_dir.split(os.sep)
         path_proj = paths_[paths_.index(u.proj_dir):]
         # Keep the logging & plotting inside project directory, not potentially in `scratch`
         self.output_dir = os.path.join(u.base_path, *path_proj)

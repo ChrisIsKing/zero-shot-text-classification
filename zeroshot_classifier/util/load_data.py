@@ -179,10 +179,10 @@ def binary_cls_format(data, name=None, sampling='rand', train=True, mode='vanill
     examples = []
     aspect = data['aspect']
     if train:
-        label_list = None
         aspect_token, sep_token = None, None
         label_un_modified = mode != 'implicit'
-        if mode in ['vanilla', 'implicit-on-text-encode-aspect', 'implicit-on-text-encode-sep']:
+        ca.check_mismatch(training_strategy=mode)
+        if mode in ['vanilla', 'implicit-on-text-encode-aspect', 'implicit-on-text-encode-sep', 'explicit']:
             label_list = data['labels']
             if mode == 'implicit-on-text-encode-aspect':
                 aspect_token = sconfig('training.implicit-on-text.encode-aspect.aspect2aspect-token')[aspect]
@@ -244,7 +244,7 @@ def binary_cls_format(data, name=None, sampling='rand', train=True, mode='vanill
         sep_token = sconfig('training.implicit-on-text.encode-sep.aspect-sep-token')
         for text, labels in data['test'].items():
             for label in labels:
-                if mode == 'vanilla':
+                if mode in ['vanilla', 'explicit']:
                     pass
                 elif mode == 'implicit':
                     label = '{} {}'.format(label, aspect)

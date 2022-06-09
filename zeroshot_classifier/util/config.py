@@ -146,6 +146,13 @@ config_dict = {
             },
             'encode-sep': {'aspect-sep-token': '<|ASPECT-SEP|>'}
         },
+        'strategies': [
+            'vanilla',
+            'implicit',
+            'implicit-on-text-encode-aspect',  # encode each of the 3 aspects as 3 special tokens, followed by text
+            'implicit-on-text-encode-sep',  # encode aspects normally, but add special token between aspect and text
+            'explicit'  # see `zeroshot_classifier.explicit.binary_bert.py` for explicit training
+        ]
     },
     'random-seed': 77,
     'check-arg': [

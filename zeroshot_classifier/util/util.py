@@ -1,9 +1,12 @@
 import os
+import datetime
 import configparser
 from os.path import join as os_join
-from typing import Dict
+from typing import List, Tuple, Dict, Iterable
 
 import numpy as np
+import pandas as pd
+import sklearn
 import matplotlib.pyplot as plt
 
 from zeroshot_classifier.util.data_path import BASE_PATH, PROJ_DIR, DSET_DIR, PKG_NM, MODEL_DIR
@@ -12,7 +15,10 @@ from zeroshot_classifier.util.data_path import BASE_PATH, PROJ_DIR, DSET_DIR, PK
 from stefutil import ca, StefConfig, StefUtil
 
 
-__all__ = ['sconfig', 'u', 'save_fig', 'plot_points', 'map_model_output_path']
+__all__ = [
+    'sconfig', 'u', 'save_fig', 'plot_points',
+    'map_model_output_path', 'domain2eval_dir_nm', 'get_dataset_names', 'TrainStrategy2PairMap', 'eval_res2df'
+]
 
 
 sconfig = StefConfig(config_file=os_join(BASE_PATH, PROJ_DIR, PKG_NM, 'util', 'config.json')).__call__
@@ -65,7 +71,49 @@ def map_model_output_path(
         output_dir = _map(paths[-1])
         return os_join(*paths[:-1], output_dir)
     else:
-        return os_join(u.model_path, _map(None))
+        return os_join(u.proj_path, u.model_dir, _map(None))
+
+
+def domain2eval_dir_nm(domain: str = 'in'):
+    domain_str = 'in-domain' if domain == 'in' else 'out-of-domain'
+    date = datetime.datetime.now().strftime('%m.%d.%Y')
+    date = date[:-4] + date[-2:]  # 2-digit year
+    return f'{domain_str}, {date}'
+
+
+def get_dataset_names(domain: str = 'in'):
+    return [dnm for dnm, d_dset in sconfig('UTCD.datasets').items() if d_dset['domain'] == domain]
+
+
+class TrainStrategy2PairMap:
+    sep_token = sconfig('training.implicit-on-text.encode-sep.aspect-sep-token')
+    aspect2aspect_token = sconfig('training.implicit-on-text.encode-aspect.aspect2aspect-token')
+
+    def __init__(self, train_strategy: str = 'vanilla'):
+        self.train_strategy = train_strategy
+        ca(training_strategy=train_strategy)
+
+    def __call__(self, aspect: str = None):
+        if self.train_strategy in ['vanilla', 'explicit']:
+            def txt_n_lbs2query(txt: str, lbs: List[str]) -> List[List[str]]:
+                return [[txt, lb] for lb in lbs]
+        elif self.train_strategy == 'implicit':
+            def txt_n_lbs2query(txt: str, lbs: List[str]) -> List[List[str]]:
+                return [[txt, f'{lb} {aspect}'] for lb in lbs]
+        elif self.train_strategy == 'implicit-on-text-encode-aspect':
+            def txt_n_lbs2query(txt: str, lbs: List[str]) -> List[List[str]]:
+                return [[f'{TrainStrategy2PairMap.aspect2aspect_token[aspect]} {txt}', lb] for lb in lbs]
+        else:
+            assert self.train_strategy == 'implicit-on-text-encode-sep'
+
+            def txt_n_lbs2query(txt: str, lbs: List[str]) -> List[List[str]]:
+                return [[f'{aspect} {TrainStrategy2PairMap.sep_token} {txt}', lb] for lb in lbs]
+        return txt_n_lbs2query
+
+
+def eval_res2df(labels: Iterable, preds: Iterable, **kwargs) -> Tuple[pd.DataFrame, float]:
+    report = sklearn.metrics.classification_report(labels, preds, **kwargs)
+    return pd.DataFrame(report).transpose(), round(report["accuracy"], 3)
 
 
 if __name__ == '__main__':

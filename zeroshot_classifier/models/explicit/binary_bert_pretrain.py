@@ -74,7 +74,8 @@ def get_train_args(**kwargs) -> TrainingArguments:
             num_train_epochs=4
         )
     else:
-        # TODO: Keep those the same as in other approaches?; See `zeroshot_classifier.dual_bi_encoder.dual_bi_encoder.py`
+        # TODO: Keep those the same as in other approaches?;
+        #  See `zeroshot_classifier.dual_bi_encoder.dual_bi_encoder.py`
         args = dict(
             learning_rate=2e-5,
             per_device_train_batch_size=16,
@@ -215,18 +216,20 @@ if __name__ == '__main__':
                 args = get_train_args(
                     per_device_eval_batch_size=128
                 )
-            trainer_args = dict(model=mdl, args=args, train_dataset=tr, eval_dataset=vl, compute_metrics=compute_metrics)
+            trainer_args = dict(
+                model=mdl, args=args, train_dataset=tr, eval_dataset=vl, compute_metrics=compute_metrics
+            )
             trainer_ = ExplicitBinBertTrainer(name=f'{MODEL_NAME} Training', with_tqdm=with_tqdm, **trainer_args)
             logger.info('Launching Training... ')
             if resume:
                 trainer_.train(resume_from_checkpoint=resume)
             else:
                 trainer_.train()
-            save_path = os_join(trainer_.args.output_dir, 'trained')
+            save_path = os_join(trainer_.args.log_output_dir, 'trained')
             trainer_.save_model(save_path)
-            os.listdir(save_path)
+            mic(os.listdir(save_path))
             tokenizer.save_pretrained(save_path)
-            os.listdir(save_path)
+            mic(os.listdir(save_path))
     train()
     # dir_nm_ = '2022-05-16_21-25-30/checkpoint-274088'
     # ckpt_path = os_join(utcd_util.get_output_base(), PROJ_DIR, MODEL_DIR, MODEL_NAME.replace(' ', '-'), dir_nm_)

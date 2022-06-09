@@ -1785,7 +1785,14 @@
             "encode-sep": {
                 "aspect-sep-token": "<|ASPECT-SEP|>"
             }
-        }
+        },
+        "strategies": [
+            "vanilla",
+            "implicit",
+            "implicit-on-text-encode-aspect",
+            "implicit-on-text-encode-sep",
+            "explicit"
+        ]
     },
     "random-seed": 77,
     "check-arg": [

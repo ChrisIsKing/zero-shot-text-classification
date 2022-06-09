@@ -1,20 +1,18 @@
 import os
 import math
 import random
-from os.path import join
-from pathlib import Path
+from os.path import join as os_join
 from argparse import ArgumentParser
+from typing import List, Dict
 
 import numpy as np
-import pandas as pd
-from sklearn.metrics import classification_report
 from torch.utils.data import DataLoader
 import transformers
-from sentence_transformers import SentenceTransformer, models, losses, evaluation, util
+from sentence_transformers import SentenceTransformer, models, losses, evaluation, util as sbert_util
 from tqdm import tqdm
 
 from stefutil import *
-from zeroshot_classifier.util import u, sconfig, map_model_output_path
+from zeroshot_classifier.util import *
 from zeroshot_classifier.util.load_data import get_data, binary_cls_format, in_domain_data_path, out_of_domain_data_path
 import zeroshot_classifier.util.utcd as utcd_util
 
@@ -47,6 +45,7 @@ def parse_args():
 
 
 if __name__ == "__main__":
+
     args = parse_args()
 
     logger = get_logger(f'{MODEL_NAME} {args.command.capitalize()}')
@@ -65,9 +64,9 @@ if __name__ == "__main__":
         logger.info(f'Loading datasets {logi(dataset_names)} for training... ')
         train = []
         test = []
-        for dataset_name in dataset_names:
-            dset = data[dataset_name]
-            train += binary_cls_format(dset, name=dataset_name, sampling=sampling, mode=mode)
+        for dnm in dataset_names:
+            dset = data[dnm]
+            train += binary_cls_format(dset, name=dnm, sampling=sampling, mode=mode)
             test += binary_cls_format(dset, train=False, mode=mode)
 
         # seq length for consistency w/ `binary_bert` & `sgd`
@@ -110,39 +109,42 @@ if __name__ == "__main__":
         )
         # hence, make explicit call to save model
         model.save(output_path)
+        mic(os.listdir(output_path))
     if args.command == 'test':
-        pred_path = join(args.model_path, 'preds/{}/'.format(args.domain))
-        result_path = join(args.model_path, 'results/{}/'.format(args.domain))
-        Path(pred_path).mkdir(parents=True, exist_ok=True)
-        Path(result_path).mkdir(parents=True, exist_ok=True)
-        if args.domain == 'in':
-            data = get_data(in_domain_data_path)
-        elif args.domain == 'out':
-            data = get_data(out_of_domain_data_path)
-        # get keys from data dict
-        datasets = list(data.keys())
+        split = 'test'
+        mode, domain, model_path = args.mode, args.domain, args.model_path
+        out_path = os_join(model_path, 'eval', domain2eval_dir_nm(domain))
+        os.makedirs(out_path, exist_ok=True)
+        logger = get_logger(f'{MODEL_NAME} Eval')
+        d_log = dict(mode=mode, domain=domain, path=model_path)
+        logger.info(f'Evaluating Binary Bert with {log_dict(d_log)} and saving to {logi(out_path)}... ')
 
-        # load model
+        data = get_data(in_domain_data_path if domain == 'in' else out_of_domain_data_path)
+        dataset_names = get_dataset_names(domain)
+
         model = SentenceTransformer(args.model_path)
 
-        # loop through all datasets
-        for dataset_name in datasets:
-            examples = data[dataset_name]["test"]
-            labels = data[dataset_name]['labels'] if args.mode == 'vanilla' else [
-                '{} {}'.format(label, data[dataset_name]['aspect']) for label in data[dataset_name]['labels']]
+        for dnm in dataset_names:
+            pairs: Dict[str, List[str]] = data[dnm][split]
+            label_options = sconfig(f'UTCD.datasets.{dnm}.splits.{split}.labels')
+            label2id = {lbl: i for i, lbl in enumerate(label_options)}
+            txt_n_lbs2query = TrainStrategy2PairMap(train_strategy=mode)(aspect=data[dnm]['aspect'])
+
+            labels = data[dnm]['labels'] if args.mode == 'vanilla' else [
+                '{} {}'.format(label, data[dnm]['aspect']) for label in data[dnm]['labels']]
             preds = []
             gold = []
             correct = 0
 
-            example_vectors = model.encode(list(examples.keys()))
+            example_vectors = model.encode(list(pairs.keys()))
             label_vectors = model.encode(labels)
 
             # loop through each test example
-            print("Evaluating dataset: {}".format(dataset_name))
-            for index, (text, gold_labels) in enumerate(tqdm(examples.items())):
+            print("Evaluating dataset: {}".format(dnm))
+            for index, (text, gold_labels) in enumerate(tqdm(pairs.items())):
                 if args.mode == 'implicit':
-                    gold_labels = [f'{label} {data[dataset_name]["aspect"]}' for label in gold_labels]
-                results = [util.cos_sim(example_vectors[index], label_vectors[i]) for i in range(len(labels))]
+                    gold_labels = [f'{label} {data[dnm]["aspect"]}' for label in gold_labels]
+                results = [sbert_util.cos_sim(example_vectors[index], label_vectors[i]) for i in range(len(labels))]
 
                 # compute which pred is higher
                 pred = labels[np.argmax(results)]
@@ -154,7 +156,8 @@ if __name__ == "__main__":
                 else:
                     gold.append(gold_labels[0])
 
-            print('{} Dataset Accuracy = {}'.format(dataset_name, correct / len(examples)))
-            report = classification_report(gold, preds, output_dict=True)
-            df = pd.DataFrame(report).transpose()
-            df.to_csv('{}/{}.csv'.format(result_path, dataset_name))
+            args = dict(zero_division=0, target_names=label_options, output_dict=True)  # disables warning
+            df, acc = eval_res2df(gold, preds, **args)
+            logger.info(f'{logi(dnm)} Classification Accuracy: {logi(acc)}')
+            df.to_csv(os_join(out_path, f'{dnm}.csv'))
+            exit(1)
