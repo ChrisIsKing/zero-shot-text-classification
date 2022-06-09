@@ -110,6 +110,17 @@ class TrainStrategy2PairMap:
                 return [[f'{aspect} {TrainStrategy2PairMap.sep_token} {txt}', lb] for lb in lbs]
         return txt_n_lbs2query
 
+    def map_label(self, label: str, aspect: str = None):
+        return f'{label} {aspect}' if self.train_strategy == 'implicit' else label
+
+    def map_text(self, text: str, aspect: str = None):
+        if self.train_strategy == 'implicit-on-text-encode-aspect':
+            return f'{TrainStrategy2PairMap.aspect2aspect_token[aspect]} {text}'
+        elif self.train_strategy == 'implicit-on-text-encode-sep':
+            return f'{aspect} {TrainStrategy2PairMap.sep_token} {text}'
+        else:
+            return text
+
 
 def eval_res2df(labels: Iterable, preds: Iterable, **kwargs) -> Tuple[pd.DataFrame, float]:
     report = sklearn.metrics.classification_report(labels, preds, **kwargs)

@@ -5,11 +5,9 @@ from typing import List, Dict
 from os.path import join
 from argparse import ArgumentParser
 
-import pandas as pd
 import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
-from sklearn.metrics import classification_report
 from sentence_transformers.cross_encoder import CrossEncoder
 from sentence_transformers.cross_encoder.evaluation import CESoftmaxAccuracyEvaluator
 from tqdm import tqdm
@@ -166,7 +164,7 @@ if __name__ == '__main__':
             n_options = len(label_options)
             label2id = {lbl: i for i, lbl in enumerate(label_options)}
             n_txt = sconfig(f'UTCD.datasets.{dnm}.splits.{split}.n_text')
-            d_log = {'#text': n_txt, '#label': n_options}
+            d_log = {'#text': n_txt, '#label': n_options, 'labels': label_options}
             logger.info(f'Evaluating {logi(dnm)} with {log_dict(d_log)}...')
             arr_preds, arr_labels = np.empty(n_txt, dtype=int), np.empty(n_txt, dtype=int)
             arr_loss = torch.empty(n_txt, dtype=torch.float32) if WITH_EVAL_LOSS else None

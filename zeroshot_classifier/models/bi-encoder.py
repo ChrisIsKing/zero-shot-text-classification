@@ -124,40 +124,36 @@ if __name__ == "__main__":
 
         model = SentenceTransformer(args.model_path)
 
+        domain_str = 'in-domain' if domain == 'in' else 'out-of-domain'
+        md_nm = model.__class__.__qualname__
+        logger.info(f'Evaluating {logi(domain_str)} on {logi(md_nm)} and datasets {logi(dataset_names)}... ')
+
         for dnm in dataset_names:
             pairs: Dict[str, List[str]] = data[dnm][split]
             label_options = sconfig(f'UTCD.datasets.{dnm}.splits.{split}.labels')
             label2id = {lbl: i for i, lbl in enumerate(label_options)}
-            txt_n_lbs2query = TrainStrategy2PairMap(train_strategy=mode)(aspect=data[dnm]['aspect'])
+            mode2map = TrainStrategy2PairMap(train_strategy=mode)
+            txt_n_lbs2query = mode2map(aspect=data[dnm]['aspect'])
 
-            labels = data[dnm]['labels'] if args.mode == 'vanilla' else [
-                '{} {}'.format(label, data[dnm]['aspect']) for label in data[dnm]['labels']]
-            preds = []
-            gold = []
-            correct = 0
+            n_txt = sconfig(f'UTCD.datasets.{dnm}.splits.{split}.n_text')
+            arr_preds, arr_labels = np.empty(n_txt, dtype=int), np.empty(n_txt, dtype=int)
+            d_log = {'#text': n_txt, '#label': len(label_options), 'labels': label_options}
+            logger.info(f'Evaluating {logi(dnm)} with {log_dict(d_log)}...')
 
-            example_vectors = model.encode(list(pairs.keys()))
-            label_vectors = model.encode(labels)
+            txts = [mode2map.map_text(t) for t in pairs.keys()]
+            label_options = [mode2map.map_label(lb) for lb in label_options]
+            logger.info('Encoding texts...')
+            txt_embeds = model.encode(txts, show_progress_bar=True)
+            logger.info('Encoding labels...')
+            lb_opn_embeds = model.encode(label_options, show_progress_bar=True)
 
-            # loop through each test example
-            print("Evaluating dataset: {}".format(dnm))
-            for index, (text, gold_labels) in enumerate(tqdm(pairs.items())):
-                if args.mode == 'implicit':
-                    gold_labels = [f'{label} {data[dnm]["aspect"]}' for label in gold_labels]
-                results = [sbert_util.cos_sim(example_vectors[index], label_vectors[i]) for i in range(len(labels))]
-
-                # compute which pred is higher
-                pred = labels[np.argmax(results)]
-                preds.append(pred)
-
-                if pred in gold_labels:
-                    correct += 1
-                    gold.append(pred)
-                else:
-                    gold.append(gold_labels[0])
-
+            for i, (_, labels) in enumerate(tqdm(pairs.items(), desc=dnm)):
+                scores = [sbert_util.cos_sim(txt_embeds[i], v).item() for v in lb_opn_embeds]
+                pred = np.argmax(scores)
+                label_ids = [label2id[lb] for lb in labels]
+                true = pred if pred in label_ids else label_ids[0]
+                arr_preds[i], arr_labels[i] = pred, true
             args = dict(zero_division=0, target_names=label_options, output_dict=True)  # disables warning
-            df, acc = eval_res2df(gold, preds, **args)
+            df, acc = eval_res2df(arr_labels, arr_preds, **args)
             logger.info(f'{logi(dnm)} Classification Accuracy: {logi(acc)}')
             df.to_csv(os_join(out_path, f'{dnm}.csv'))
-            exit(1)
