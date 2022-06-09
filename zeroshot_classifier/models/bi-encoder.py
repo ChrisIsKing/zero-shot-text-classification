@@ -115,18 +115,15 @@ if __name__ == "__main__":
         mode, domain, model_path = args.mode, args.domain, args.model_path
         out_path = os_join(model_path, 'eval', domain2eval_dir_nm(domain))
         os.makedirs(out_path, exist_ok=True)
-        logger = get_logger(f'{MODEL_NAME} Eval')
-        d_log = dict(mode=mode, domain=domain, path=model_path)
-        logger.info(f'Evaluating Binary Bert with {log_dict(d_log)} and saving to {logi(out_path)}... ')
 
-        data = get_data(in_domain_data_path if domain == 'in' else out_of_domain_data_path)
         dataset_names = get_dataset_names(domain)
-
+        data = get_data(in_domain_data_path if domain == 'in' else out_of_domain_data_path)
         model = SentenceTransformer(args.model_path)
-
-        domain_str = 'in-domain' if domain == 'in' else 'out-of-domain'
         md_nm = model.__class__.__qualname__
-        logger.info(f'Evaluating {logi(domain_str)} on {logi(md_nm)} and datasets {logi(dataset_names)}... ')
+
+        d_log = dict(model=md_nm, mode=mode, domain=domain, datasets=dataset_names, path=model_path)
+        logger = get_logger(f'{MODEL_NAME} Eval')
+        logger.info(f'Evaluating {MODEL_NAME} with {log_dict(d_log)} and saving to {logi(out_path)}... ')
 
         for dnm in dataset_names:
             pairs: Dict[str, List[str]] = data[dnm][split]
