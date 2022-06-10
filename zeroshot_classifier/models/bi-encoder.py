@@ -125,7 +125,8 @@ if __name__ == "__main__":
         model = SentenceTransformer(args.model_path)
         md_nm = model.__class__.__qualname__
 
-        d_log = dict(model=md_nm, mode=mode, domain=domain, datasets=dataset_names, path=model_path)
+        bsz = 32
+        d_log = dict(model=md_nm, mode=mode, domain=domain, datasets=dataset_names, path=model_path, batch_size=bsz)
         logger = get_logger(f'{MODEL_NAME} Eval')
         logger.info(f'Evaluating {MODEL_NAME} with {log_dict(d_log)} and saving to {logi(out_path)}... ')
 
@@ -144,9 +145,9 @@ if __name__ == "__main__":
             txts = [mode2map.map_text(t) for t in pairs.keys()]
             label_options = [mode2map.map_label(lb) for lb in label_options]
             logger.info('Encoding texts...')
-            txt_embeds = model.encode(txts, show_progress_bar=True)
+            txt_embeds = model.encode(txts, batch_size=bsz, show_progress_bar=True)
             logger.info('Encoding labels...')
-            lb_opn_embeds = model.encode(label_options, show_progress_bar=True)
+            lb_opn_embeds = model.encode(label_options, batch_size=bsz, show_progress_bar=True)
 
             for i, (_, labels) in enumerate(tqdm(pairs.items(), desc=dnm)):
                 scores = [sbert_util.cos_sim(txt_embeds[i], v).item() for v in lb_opn_embeds]
