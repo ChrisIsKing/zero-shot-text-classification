@@ -944,15 +944,15 @@ if __name__ == '__main__':
         # dom = 'in'
         dom = 'out'
         evaluate_trained(domain=dom, batch_size=48, load_model_args=model_args)
-    evaluate()
+    # evaluate()
 
     def train():
         dnm = 'UTCD-in'
         # md_nm = 'debug'
         md_nm = 'gpt2-medium'
 
-        # form = 'vanilla'?
-        form = 'implicit'
+        form = 'vanilla'
+        # form = 'implicit'
 
         # n = 32
         # n = 128
@@ -989,8 +989,8 @@ if __name__ == '__main__':
                 # per_device_train_batch_size=16,
                 gradient_accumulation_steps=8
             )
-            ddp = False
-            # ddp = 4
+            # ddp = False
+            ddp = 4
         md, tkzer, dset_tr, dset_vl, trainer = get_all_setup(  # eval set is too large
             model_name=md_nm, dataset_name=dnm, form=form, do_eval=False, custom_logging=True, n_sample=n,
             random_seed=seed,
@@ -1001,13 +1001,13 @@ if __name__ == '__main__':
         trainer.train()
         trainer.save_model(os_join(trainer.log_output_dir, 'trained'))
         os.listdir(os_join(trainer.log_output_dir, 'trained'))
-    # train()
+    train()
 
     def sanity_check_trained_generate():
         text = 'hello world'
         label_options = ['happy', 'sad', 'angry', 'fearful', 'surprised']
-        ic(text, label_options)
-        ic(gpt2_inference(text, label_options))
+        mic(text, label_options)
+        mic(gpt2_inference(text, label_options))
     # sanity_check_trained_generate()
 
     # plot_dataset_token_length_stats(domain='in')

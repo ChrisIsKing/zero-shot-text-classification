@@ -65,9 +65,6 @@ class MyLoggingCallback(TrainerCallback):
             self.bsz *= self.trainer.args.n_gpu
         seq_max_len = len(dset_tr__[0]['input_ids'])
         n_data, md_sz = len(dset_tr__), md_.config.n_positions
-        from stefutil import mic
-        mic(n_data, self.bsz, n_ep)
-        exit(1)
         self.n_step = max(math.ceil(n_data / self.bsz), 1) * n_ep  # #step/epoch at least 1
         self.train_meta = OrderedDict([
             ('#data', n_data), ('model size', md_sz),
