@@ -96,10 +96,10 @@ if __name__ == '__main__':
         if seq_len != 512:  # Intended for `bert-base-uncased` only; TODO: binary bert seems to support this already?
             model.tokenizer, model.model = load_sliced_binary_bert(model_init, seq_len)
 
-        add_tok_arg = utcd_util.add_special_tokens(model.tokenizer, train_strategy=mode)
-        if add_tok_arg:
-            logger.info(f'Adding special tokens {log_dict(add_tok_arg)} to tokenizer... ')
-            model.tokenizer.add_special_tokens(special_tokens_dict=add_tok_arg)
+        spec_tok_arg = utcd_util.get_add_special_tokens_args(model.tokenizer, train_strategy=mode)
+        if spec_tok_arg:
+            logger.info(f'Adding special tokens {log_dict(spec_tok_arg)} to tokenizer... ')
+            model.tokenizer.add_special_tokens(special_tokens_dict=spec_tok_arg)
             model.model.resize_token_embeddings(len(model.tokenizer))
 
         transformers.logging.set_verbosity_error()  # disables `longest_first` warning

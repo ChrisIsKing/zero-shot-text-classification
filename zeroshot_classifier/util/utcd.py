@@ -201,24 +201,26 @@ def get_dataset(dnm: str, split: str) -> Dict[str, List[str]]:
         return json.load(fl)[split]
 
 
-def add_special_tokens(tokenizer, train_strategy: str = 'vanilla') -> Dict:
+def get_add_special_tokens_args(tokenizer, train_strategy: str = 'vanilla') -> Dict:
     """
     :return: If need to modify tokenizer & model, `Tokenizer.add_special_tokens` arg; otherwise None
     """
     ca(training_strategy=train_strategy)
     modify = False
+    # Include `end-of-turn` token for sgd, cannot set `eos` for '<|endoftext|>' already defined in GPT2
+    # for consistency with BERT tokenizer, not override `eos` for BERT too
+    add_spec_toks = []
     if train_strategy == 'explicit':  # sanity check, SGD EOT should be added already
         added_vocab = tokenizer.get_added_vocab()
         assert list(added_vocab.keys()) == [EOT_TOKEN]
-        spec_tok_args = dict()
     else:
-        spec_tok_args = dict(eos_token=EOT_TOKEN)  # Add end of turn token for sgd
+        add_spec_toks.append(EOT_TOKEN)
         modify = True
-    add_spec_toks = None
     if train_strategy == 'implicit-on-text-encode-aspect':
-        add_spec_toks = list(sconfig('training.implicit-on-text.encode-aspect.aspect2aspect-token').values())
+        add_spec_toks += list(sconfig('training.implicit-on-text.encode-aspect.aspect2aspect-token').values())
     elif train_strategy == 'implicit-on-text-encode-sep':
-        add_spec_toks = [sconfig('training.implicit-on-text.encode-sep.aspect-sep-token')]
+        add_spec_toks += [sconfig('training.implicit-on-text.encode-sep.aspect-sep-token')]
+    spec_tok_args = dict()
     if add_spec_toks:
         spec_tok_args['additional_special_tokens'] = add_spec_toks
         modify = True

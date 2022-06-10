@@ -1,119 +1,21 @@
-"""
-"Pretrain" binary BERT for aspect classification given text only
-    Same pretrained weights for initializing explicit bi-encoder
-
-For now just train with linear CLS objective
-
-TODO: consider +MLM?
-"""
 import os
 from os.path import join as os_join
-from typing import List, Dict, Any
 
-import numpy as np
 import torch
 from torch.utils.data import DataLoader
-from transformers import (
-    BertTokenizer, AutoModelForSequenceClassification,
-    TrainingArguments, SchedulerType
-)
-from transformers.training_args import OptimizerNames
-from datasets import Dataset, ClassLabel, load_metric
+from transformers import BertTokenizer, AutoModelForSequenceClassification
 from tqdm.auto import tqdm
-
 
 from stefutil import *
 from zeroshot_classifier.util import *
 import zeroshot_classifier.util.utcd as utcd_util
-from zeroshot_classifier.preprocess import get_dataset as get_dset
+from zeroshot_classifier.preprocess import get_explicit_dataset
+from zeroshot_classifier.models.binary_bert import HF_MODEL_NAME
+from zeroshot_classifier.models.explicit.explicit_v2 import *
 
 
-MODEL_NAME = 'Pretrain Aspect BinBERT'
-HF_MODEL_NAME = 'bert-base-uncased'
-
-
-def get_dataset(dataset_name: str = 'UTCD-in', tokenizer: BertTokenizer = None, **kwargs) -> List[Dataset]:
-    """
-    override text classification labels to be aspect labels
-    """
-    # perform preprocessing outside `get_dataset` as feature from the dataset is needed
-    dsets = get_dset(dataset_name, **kwargs)  # by split
-
-    aspects: List[str] = sconfig('UTCD.aspects')
-    aspect2id = {a: i for i, a in enumerate(aspects)}
-    is_combined = 'UTCD' in dataset_name
-    if is_combined:  # get aspect based on dataset id
-        feat: ClassLabel = dsets[0].features['dataset_id']  # the same feature for both `train` and `test`
-        n_dset = feat.num_classes
-        did2aspect_id = {i: aspect2id[sconfig(f'UTCD.datasets.{feat.int2str(i)}.aspect')] for i in range(n_dset)}
-    else:  # single dataset, the same aspect
-        aspect_id = aspect2id[sconfig(f'UTCD.datasets.{dataset_name}.aspect')]
-
-    def map_fn(samples: Dict[str, List[Any]]):
-        ret = tokenizer(samples['text'], padding='max_length', truncation=True)
-        if is_combined:
-            ret['labels'] = [did2aspect_id[asp] for asp in samples['dataset_id']]
-        else:
-            ret['labels'] = [aspect_id] * len(samples['text'])
-        return ret
-    rmv = ['text']
-    if is_combined:
-        rmv.append('dataset_id')
-    dsets = [dset.map(map_fn, batched=True, remove_columns=rmv, load_from_cache_file=False) for dset in dsets]
-    return dsets
-
-
-def get_train_args(**kwargs) -> TrainingArguments:
-    debug = False
-    if debug:
-        args = dict(
-            batch_size=16,
-            learning_rate=1e-4,
-            weight_decay=0,
-            lr_scheduler_type=SchedulerType.CONSTANT,
-            num_train_epochs=4
-        )
-    else:
-        # TODO: Keep those the same as in other approaches?;
-        #  See `zeroshot_classifier.dual_bi_encoder.dual_bi_encoder.py`
-        args = dict(
-            learning_rate=2e-5,
-            per_device_train_batch_size=16,
-            per_device_eval_batch_size=64,
-            weight_decay=1e-2,
-            num_train_epochs=3,
-            lr_scheduler_type=SchedulerType.COSINE,
-        )
-    if 'batch_size' in args:
-        bsz = args.pop('batch_size')
-        args['per_device_train_batch_size'] = bsz
-        args['per_device_eval_batch_size'] = bsz
-    md_nm = MODEL_NAME.replace(' ', '-')
-    dir_nm = f'{now(for_path=True)}_{md_nm}'
-    args.update(dict(
-        output_dir=os_join(utcd_util.get_output_base(), PROJ_DIR, MODEL_DIR, dir_nm),
-        do_train=True, do_eval=True,
-        evaluation_strategy='epoch',
-        eval_accumulation_steps=128,  # Saves GPU memory
-        warmup_ratio=1e-1,
-        adam_epsilon=1e-6,
-        logging_strategy='steps',
-        logging_steps=1,
-        save_strategy='epoch',
-        optim=OptimizerNames.ADAMW_TORCH,
-        report_to='none'  # I have my own tensorboard logging
-    ))
-    args.update(kwargs)
-    return TrainingArguments(**args)
-
-
-acc = load_metric('accuracy')
-
-
-def compute_metrics(eval_pred):
-    logits, labels = eval_pred
-    preds = np.argmax(logits, axis=-1)
-    return dict(acc=acc.compute(predictions=preds, references=labels)['accuracy'])
+MODEL_NAME = EXPLICIT_BERT_MODEL_NAME
+TRAIN_STRATEGY = 'explicit'
 
 
 if __name__ == '__main__':
@@ -141,7 +43,7 @@ if __name__ == '__main__':
         dset_args = dict(dataset_name=dnm, tokenizer=tokenizer, n_sample=n, shuffle_seed=seed)
         if NORMALIZE_ASPECT:
             dset_args['normalize_aspect'] = seed
-        tr, vl = get_dataset(**dset_args)
+        tr, vl = get_explicit_dataset(**dset_args)
         logger.info(f'Loaded {logi(len(tr))} training samples, {logi(len(vl))} eval samples')
         transformers.set_seed(seed)
 
@@ -209,17 +111,19 @@ if __name__ == '__main__':
                 # with_tqdm = False
                 with_tqdm = True
                 args = get_train_args(
+                    model_name=MODEL_NAME,
                     # save_strategy='no'
                 )
             else:
                 with_tqdm = True
                 args = get_train_args(
+                    model_name=MODEL_NAME,
                     per_device_eval_batch_size=128
                 )
             trainer_args = dict(
                 model=mdl, args=args, train_dataset=tr, eval_dataset=vl, compute_metrics=compute_metrics
             )
-            trainer_ = ExplicitBinBertTrainer(name=f'{MODEL_NAME} Training', with_tqdm=with_tqdm, **trainer_args)
+            trainer_ = ExplicitTrainer(name=f'{MODEL_NAME} Training', with_tqdm=with_tqdm, **trainer_args)
             logger.info('Launching Training... ')
             if resume:
                 trainer_.train(resume_from_checkpoint=resume)
@@ -241,7 +145,7 @@ if __name__ == '__main__':
         # dir_nm = '2022-05-16_21-25-30/checkpoint-274088'
         dir_nm = '2022-05-19_23-33-50/checkpoint-411132'
         path = os_join(utcd_util.get_output_base(), PROJ_DIR, MODEL_DIR, MODEL_NAME.replace(' ', '-'), dir_nm)
-        ic(path)
+        mic(path)
         tokenizer = BertTokenizer.from_pretrained(HF_MODEL_NAME)  # TODO: should add eot token as in updated training
         # tokenizer = BertTokenizer.from_pretrained(path)
         model = AutoModelForSequenceClassification.from_pretrained(path)
@@ -259,7 +163,7 @@ if __name__ == '__main__':
             return ret
 
         for dnm in dnms:
-            vl = get_dataset(dataset_name=dnm, tokenizer=tokenizer, n_sample=n, splits='test')[0]
+            vl = get_explicit_dataset(dataset_name=dnm, tokenizer=tokenizer, n_sample=n, splits='test')[0]
             n_sample = len(vl)
             dl = DataLoader(vl, batch_size=batch_size, shuffle=False, pin_memory=True, collate_fn=collate_fn)
             lst_preds, lst_labels = [], []

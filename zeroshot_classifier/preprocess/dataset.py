@@ -1,12 +1,17 @@
 import os
-from typing import List, Tuple, Dict, Callable, Union
+from typing import List, Tuple, Dict, Callable, Union, Any
 
+from transformers import PreTrainedTokenizerBase
 import datasets
+from datasets import Dataset, ClassLabel
 
 from stefutil import *
 from zeroshot_classifier.util import *
 from zeroshot_classifier.util import load_data
 import zeroshot_classifier.util.utcd as utcd_util
+
+
+__all__ = ['get_dataset', 'get_explicit_dataset']
 
 
 def get_dataset(
@@ -15,7 +20,7 @@ def get_dataset(
         remove_columns: Union[str, List[str]] = None,
         n_sample: int = None, shuffle_seed: int = None, fast=True, from_disk=True,
         splits: Union[str, List[str], Tuple[str]] = ('train', 'test')
-) -> List[datasets.Dataset]:
+) -> List[Dataset]:
     logger = get_logger('Get Dataset')
     if from_disk:
         path = os.path.join(utcd_util.get_output_base(), u.proj_dir, u.dset_dir, 'processed', dataset_name)
@@ -58,4 +63,37 @@ def get_dataset(
             for dset, split in zip(dsets, splits)
         ]
     datasets.set_progress_bar_enabled(True)
+    return dsets
+
+
+def get_explicit_dataset(
+        dataset_name: str = 'UTCD-in', tokenizer: PreTrainedTokenizerBase = None, **kwargs
+) -> List[Dataset]:
+    """
+    override text classification labels to be aspect labels
+    """
+    # perform preprocessing outside `get_dataset` as feature from the dataset is needed
+    dsets = get_dataset(dataset_name, **kwargs)  # by split
+
+    aspects: List[str] = sconfig('UTCD.aspects')
+    aspect2id = {a: i for i, a in enumerate(aspects)}
+    is_combined = 'UTCD' in dataset_name
+    if is_combined:  # get aspect based on dataset id
+        feat: ClassLabel = dsets[0].features['dataset_id']  # the same feature for both `train` and `test`
+        n_dset = feat.num_classes
+        did2aspect_id = {i: aspect2id[sconfig(f'UTCD.datasets.{feat.int2str(i)}.aspect')] for i in range(n_dset)}
+    else:  # single dataset, the same aspect
+        aspect_id = aspect2id[sconfig(f'UTCD.datasets.{dataset_name}.aspect')]
+
+    def map_fn(samples: Dict[str, List[Any]]):
+        ret = tokenizer(samples['text'], padding='max_length', truncation=True)
+        if is_combined:
+            ret['labels'] = [did2aspect_id[asp] for asp in samples['dataset_id']]
+        else:
+            ret['labels'] = [aspect_id] * len(samples['text'])
+        return ret
+    rmv = ['text']
+    if is_combined:
+        rmv.append('dataset_id')
+    dsets = [dset.map(map_fn, batched=True, remove_columns=rmv, load_from_cache_file=False) for dset in dsets]
     return dsets

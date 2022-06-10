@@ -73,10 +73,10 @@ if __name__ == "__main__":
 
         # seq length for consistency w/ `binary_bert` & `sgd`
         word_embedding_model = models.Transformer(model_init, max_seq_length=512)
-        add_tok_arg = utcd_util.add_special_tokens(word_embedding_model.tokenizer, train_strategy=mode)
+        add_tok_arg = utcd_util.get_add_special_tokens_args(word_embedding_model.tokenizer, train_strategy=mode)
         if add_tok_arg:
             logger.info(f'Adding special tokens {log_dict(add_tok_arg)} to tokenizer... ')
-            word_embedding_model.tokenizer.add_special_tokens(special_tokens_dict=add_tok_arg)
+            word_embedding_model.tokenizer.get_add_special_tokens_args(special_tokens_dict=add_tok_arg)
             word_embedding_model.auto_model.resize_token_embeddings(len(word_embedding_model.tokenizer))
         pooling_model = models.Pooling(
             word_embedding_dimension=word_embedding_model.get_word_embedding_dimension(),

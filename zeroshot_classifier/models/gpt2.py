@@ -100,7 +100,7 @@ class ZsGPT2Tokenizer(GPT2TokenizerFast):
         # Pad token cannot be `self.eos_token`
         # cos otherwise `DataCollatorForLanguageModeling` would override normal eos tokens
         spec_toks = list(ZsGPT2Tokenizer.SPEC_TOKS.values())
-        spec_toks.append(utcd_util.EOT_TOKEN)
+        spec_toks.append(utcd_util.EOT_TOKEN)  # SGD end of turn
         ca.check_mismatch('Formalization mode', form, ['vanilla', 'implicit'])
         self.form = form
         self.did2aspect, aspect_sep_token = None, None
