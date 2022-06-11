@@ -57,6 +57,7 @@ class ZsGPT2Tokenizer(GPT2TokenizerFast):
         ('type_answ', '[ANSW]')
     ])
     _aspect_sep_token = '[ASPECT_SEP]'   # for implicit training, passing in aspect as part of `text`
+    pad_token_ = '[PAD]'
 
     class Cache(dict):
         """
@@ -93,15 +94,25 @@ class ZsGPT2Tokenizer(GPT2TokenizerFast):
 
     def __init__(self, form: str = 'vanilla', **kwargs):
         """
-        :param form: One of [`vanilla`, `implicit`]
+        :param form: One of [`vanilla`, `implicit`, `explicit`]
             See `binary_bert::modes`
+
+            `implicit` is `implicit-on-text-encode-sep`
         """
         super().__init__(**kwargs)
         # Pad token cannot be `self.eos_token`
         # cos otherwise `DataCollatorForLanguageModeling` would override normal eos tokens
         spec_toks = list(ZsGPT2Tokenizer.SPEC_TOKS.values())
-        spec_toks.append(utcd_util.EOT_TOKEN)  # SGD end of turn
-        ca.check_mismatch('Formalization mode', form, ['vanilla', 'implicit'])
+        spec_toks.append(utcd_util.EOT_TOKEN)
+        if form == 'explicit':
+            added_vocab = self.get_added_vocab()
+            mic(added_vocab)
+            assert list(added_vocab.keys()) == [utcd_util.EOT_TOKEN]
+            self.pad_token = self.enc_spec(self.pad_token)
+            exit(1)
+        else:
+            spec_toks.append(utcd_util.EOT_TOKEN)  # SGD end of turn
+        ca.check_mismatch('GPT2 Training Strategy', form, ['vanilla', 'implicit', 'explicit'])
         self.form = form
         self.did2aspect, aspect_sep_token = None, None
         if form == 'implicit':
@@ -109,8 +120,7 @@ class ZsGPT2Tokenizer(GPT2TokenizerFast):
             spec_toks.append(self.aspect_sep_token)
             did2nm = sconfig('UTCD.dataset_id2name')
             self.did2aspect = {did: sconfig(f'UTCD.datasets.{dnm}.aspect') for did, dnm in enumerate(did2nm)}
-            mic(self.did2aspect)
-        self.add_special_tokens(dict(pad_token='[PAD]', additional_special_tokens=spec_toks))
+        self.add_special_tokens(dict(pad_token=ZsGPT2Tokenizer.pad_token_, additional_special_tokens=spec_toks))
 
         self.templates = sconfig('baselines.gpt2-nvidia.templates')
         # Mapping from dataset name to label for non-UTCD cases
@@ -129,6 +139,8 @@ class ZsGPT2Tokenizer(GPT2TokenizerFast):
         self.warned_desc = set()  # Warning for each dataset happens once    @property
 
         self.logger = get_logger(self.__class__.__qualname__)
+        d_log = dict(form=form, vocab=list(self.get_added_vocab().keys()))
+        self.logger.info(f'{self.__class__.__qualname__} initialized with {log_dict(d_log)}')
 
     @property
     def max_len_single_sentence(self) -> int:
@@ -744,6 +756,8 @@ def load_trained(form: str = 'vanilla', epoch: int = 3, normalize_aspect: bool =
     if normalize_aspect:
         assert epoch == 3
         if form == 'vanilla':
+            dir_nm = '2022-06-10_11-36-47_NVIDIA-GPT2-gpt2-medium'
+        elif form == 'implicit':
             dir_nm = '2022-06-08_18-19-27_NVIDIA-GPT2-gpt2-medium'
         else:
             raise NotImplementedError('TODO')
@@ -760,10 +774,15 @@ def load_trained(form: str = 'vanilla', epoch: int = 3, normalize_aspect: bool =
     return ZsGPT2LMHeadModel.from_pretrained(path, is_zs_gpt2=True)  # with caching
 
 
-def evaluate_trained(domain: str = 'in', batch_size: int = 48, load_model_args: Dict = None):
+def evaluate_trained(domain: str = 'in', batch_size: int = 48, form: str = 'vanilla', load_model_args: Dict = None):
     """
     Run evaluation, on potentially multi-label datasets
     """
+    form_ = load_model_args.get('form', None)
+    if form_:
+        assert form_ == form
+    else:
+        load_model_args['form'] = form
     ca(dataset_domain=domain)
     model = load_trained(**(load_model_args or dict())).to('cuda')
     conf, model_cnm = model.config, model.__class__.__qualname__
@@ -771,7 +790,7 @@ def evaluate_trained(domain: str = 'in', batch_size: int = 48, load_model_args: 
     model_size = conf.max_length = conf.n_ctx
     conf.pad_token_id = conf.eos_token_id
     model.eval()
-    tkzer = ZsGPT2Tokenizer.from_pretrained('gpt2', use_fast=True, model_max_length=model_size)
+    tkzer = ZsGPT2Tokenizer.from_pretrained('gpt2', use_fast=True, model_max_length=model_size, form=form)
     model.tokenizer = tkzer  # See ZsGPT2LMHeadModel.forward() sanity check`
 
     split = 'test'
@@ -779,7 +798,7 @@ def evaluate_trained(domain: str = 'in', batch_size: int = 48, load_model_args: 
     os.makedirs(output_path, exist_ok=True)
 
     dataset_names = get_dataset_names(domain)
-    d_model = OrderedDict([('model name', model_cnm), ('model size', model_size)])
+    d_model = OrderedDict({'model name': model_cnm, 'model size': model_size, 'training_strategy': form})
     d_eval = OrderedDict([
         ('max batch size', batch_size),
         ('datasets', dataset_names)
@@ -939,12 +958,12 @@ if __name__ == '__main__':
             profile_runtime(lambda: evaluate_trained(domain='in', batch_size=48), sleep=2)
         # profile_evaluation()
 
-        model_args = dict(form='vanilla', normalize_aspect=True)
-
         # dom = 'in'
         dom = 'out'
-        evaluate_trained(domain=dom, batch_size=48, load_model_args=model_args)
-    # evaluate()
+        form = 'vanilla'
+        # form = 'implicit'
+        evaluate_trained(domain=dom, batch_size=48, form=form, load_model_args=dict(normalize_aspect=True))
+    evaluate()
 
     def train():
         dnm = 'UTCD-in'
@@ -1001,7 +1020,7 @@ if __name__ == '__main__':
         trainer.train()
         trainer.save_model(os_join(trainer.log_output_dir, 'trained'))
         os.listdir(os_join(trainer.log_output_dir, 'trained'))
-    train()
+    # train()
 
     def sanity_check_trained_generate():
         text = 'hello world'

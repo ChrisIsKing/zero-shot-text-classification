@@ -24,7 +24,7 @@ import zeroshot_classifier.models.binary_bert
 __all__ = ['EXPLICIT_BERT_MODEL_NAME', 'EXPLICIT_GPT2_MODEL_NAME', 'get_train_args', 'compute_metrics']
 
 
-_bert_md_nm = zeroshot_classifier.models.binary_bert.MODEL_NAME,
+_bert_md_nm = zeroshot_classifier.models.binary_bert.MODEL_NAME
 _gpt2_md_nm = zeroshot_classifier.models.gpt2.MODEL_NAME
 EXPLICIT_BERT_MODEL_NAME = f'Explicit Pretrain Aspect {_bert_md_nm}'
 EXPLICIT_GPT2_MODEL_NAME = f'Explicit Pretrain Aspect {_gpt2_md_nm}'
