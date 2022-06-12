@@ -2,7 +2,7 @@ import os
 import datetime
 import configparser
 from os.path import join as os_join
-from typing import List, Tuple, Dict, Iterable
+from typing import List, Tuple, Dict, Iterable, Optional
 
 import numpy as np
 import pandas as pd
@@ -46,20 +46,22 @@ def config_parser2dict(conf: configparser.ConfigParser) -> Dict:
 
 
 def map_model_dir_nm(
-        model_name: str = None, name: str = None, mode: str = 'vanilla', sampling: str = 'rand',
+        model_name: str = None, name: str = None, mode: str = 'vanilla', sampling: Optional[str] = 'rand',
         normalize_aspect: bool = False
 ) -> str:
     out = f'{now(for_path=True)}_{model_name}'
     if name:
         out = f'{out}-{name}'
-    out = f'{out}-{mode}-{sampling}'
+    out = f'{out}-{mode}'
+    if sampling:
+        out = f'{out}-{sampling}'
     if normalize_aspect:
         out = f'{out}-aspect-norm'
     return out
 
 
 def map_model_output_path(
-        model_name: str = None, output_path: str = None, mode: str = 'vanilla', sampling: str = 'rand',
+        model_name: str = None, output_path: str = None, mode: str = 'vanilla', sampling: Optional[str] = 'rand',
         normalize_aspect: bool = False
 ) -> str:
     def _map(dir_nm):

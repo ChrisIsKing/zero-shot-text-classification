@@ -30,8 +30,8 @@ if __name__ == '__main__':
         logger = get_logger(f'{MODEL_NAME} Train')
         logger.info('Setting up training... ')
 
-        n = 128
-        # n = None
+        # n = 128
+        n = None
         logger.info('Loading tokenizer & model... ')
 
         tokenizer = GPT2TokenizerFast.from_pretrained(HF_MODEL_NAME)
@@ -40,6 +40,7 @@ if __name__ == '__main__':
         ))
         config = transformers.GPT2Config.from_pretrained(HF_MODEL_NAME)
         config.pad_token_id = tokenizer.pad_token_id  # Needed for Seq CLS
+        config.num_labels = len(sconfig('UTCD.aspects'))
         model = GPT2ForSequenceClassification.from_pretrained(HF_MODEL_NAME, config=config)
         # Include `end-of-turn` token for sgd, cannot set `eos` for '<|endoftext|>' already defined in GPT2
         model.resize_token_embeddings(len(tokenizer))
@@ -54,11 +55,16 @@ if __name__ == '__main__':
 
         transformers.set_seed(seed)
         train_args = dict(
-            per_device_train_batch_size=4,  # to fit in memory
+            per_device_train_batch_size=4,  # to fit in memory, bsz 16 to keep same with Bin Bert pretraining
             gradient_accumulation_steps=4,
             fp16=torch.cuda.is_available(),
         )
-        train_args = get_train_args(model_name=GPT2_MODEL_NAME, **train_args)
+        dir_nm = map_model_output_path(
+            model_name=MODEL_NAME.replace(' ', '-'), output_path=HF_MODEL_NAME, mode='explicit',
+            sampling=None, normalize_aspect=NORMALIZE_ASPECT
+        )
+        mic(dir_nm)
+        train_args = get_train_args(model_name=GPT2_MODEL_NAME, dir_name=dir_nm, **train_args)
         trainer_args = dict(
             model=model, args=train_args, train_dataset=tr, eval_dataset=vl, compute_metrics=compute_metrics
         )

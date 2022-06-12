@@ -139,7 +139,7 @@ class ZsGPT2Tokenizer(GPT2TokenizerFast):
         self.warned_desc = set()  # Warning for each dataset happens once    @property
 
         self.logger = get_logger(self.__class__.__qualname__)
-        d_log = dict(form=form, vocab=list(self.get_added_vocab().keys()))
+        d_log = dict(form=form, added_vocab=list(self.get_added_vocab().keys()), vocab_size=self.__len__())
         self.logger.info(f'{self.__class__.__qualname__} initialized with {log_dict(d_log)}')
 
     @property
@@ -537,7 +537,7 @@ def get_model_n_tokenizer(model_name='gpt2', form: str = 'vanilla', save_gpu_mem
 
 
 def get_train_setup(
-        model_name='gpt2', do_eval=True, train_args: Dict = None,
+        model_name='gpt2', do_eval=True, dir_name: str = None, train_args: Dict = None,
         save_gpu_memory: bool = True
 ) -> TrainingArguments:
     name_ = model_name
@@ -585,7 +585,8 @@ def get_train_setup(
         assert bsz_tr is not None and bsz_vl is not None
     else:
         bsz_tr = bsz_vl = bsz
-    dir_nm = f'{now(for_path=True)}_{MODEL_NAME}-{model_name}'
+    dir_nm = dir_name or f'{now(for_path=True)}_{MODEL_NAME}-{model_name}'
+    mic(dir_nm)
     args = dict(
         output_dir=os_join(utcd_util.get_output_base(), PROJ_DIR, MODEL_DIR, dir_nm),
         do_train=True,
@@ -676,7 +677,13 @@ def get_all_setup(
         save_gpu_mem = 'arc-ts' not in get_hostname()
         # save_gpu_mem = True  # Gradient checkpointing still needed - otherwise doesn't fit in 44G GPU
         model_, tokenizer_, data_collator_ = get_model_n_tokenizer(model_name, form=form, save_gpu_memory=save_gpu_mem)
-        train_args_ = get_train_setup(model_name, do_eval=do_eval, train_args=train_args, save_gpu_memory=save_gpu_mem)
+        dir_nm = map_model_output_path(
+            model_name=MODEL_NAME, output_path=model_name, mode=form,
+            sampling=None, normalize_aspect=dataset_args.get('normalize_aspect', None)
+        )
+        train_args_ = get_train_setup(
+            model_name, do_eval=do_eval, dir_name=dir_nm, train_args=train_args, save_gpu_memory=save_gpu_mem
+        )
         tr_map_func = tokenize_func(tokenizer_, dataset_name=dataset_name, split='train')
         vl_map_func = tokenize_func(tokenizer_, dataset_name=dataset_name, split='test')
 
@@ -774,7 +781,7 @@ def load_trained(form: str = 'vanilla', epoch: int = 3, normalize_aspect: bool =
     return ZsGPT2LMHeadModel.from_pretrained(path, is_zs_gpt2=True)  # with caching
 
 
-def evaluate_trained(domain: str = 'in', batch_size: int = 48, form: str = 'vanilla', load_model_args: Dict = None):
+def evaluate(domain: str = 'in', batch_size: int = 48, form: str = 'vanilla', load_model_args: Dict = None):
     """
     Run evaluation, on potentially multi-label datasets
     """
@@ -790,8 +797,8 @@ def evaluate_trained(domain: str = 'in', batch_size: int = 48, form: str = 'vani
     model_size = conf.max_length = conf.n_ctx
     conf.pad_token_id = conf.eos_token_id
     model.eval()
-    tkzer = ZsGPT2Tokenizer.from_pretrained('gpt2', use_fast=True, model_max_length=model_size, form=form)
-    model.tokenizer = tkzer  # See ZsGPT2LMHeadModel.forward() sanity check`
+    tokenizer = ZsGPT2Tokenizer.from_pretrained('gpt2', use_fast=True, model_max_length=model_size, form=form)
+    model.tokenizer = tokenizer  # See ZsGPT2LMHeadModel.forward() sanity check`
 
     split = 'test'
     output_path = os_join(u.eval_path, MODEL_NAME, domain2eval_dir_nm(domain))
@@ -821,7 +828,7 @@ def evaluate_trained(domain: str = 'in', batch_size: int = 48, form: str = 'vani
         lb2id.update({lb.lower(): i for i, lb in enumerate(labels)})
         dset = get_dataset(  # Get evaluation set only
             dataset_name=dnm_, splits='test',
-            map_func=dict(test=tokenize_func(tkzer, dataset_name=dnm_, split='test', mode='inference')),
+            map_func=dict(test=tokenize_func(tokenizer, dataset_name=dnm_, split='test', mode='inference')),
             remove_columns='text', n_sample=None, from_disk=True  # keeps the `labels`
         )[0]
 
@@ -852,22 +859,22 @@ def evaluate_trained(domain: str = 'in', batch_size: int = 48, form: str = 'vani
                 if k != 'labels'  # Convert `dataset_id` too so that fits into HuggingFace APIs
             }
             outputs = model.generate(**inputs)  # Greedy decoding
-            outputs_str = tkzer.batch_decode(outputs, skip_special_tokens=False)
+            outputs_str = tokenizer.batch_decode(outputs, skip_special_tokens=False)
             n_computed += len(idxs)
 
             def set_pred_n_true(generated: str, i_sample: int) -> Tuple[int, int]:
-                idxs_boa = get_substr_indices(generated, s_sub=tkzer.boa_token)
+                idxs_boa = get_substr_indices(generated, s_sub=tokenizer.boa_token)
                 # there will be at least one index, as in prompt
                 assert len(idxs_boa) >= 1
                 # **try to be as lenient**: try to extract the text part if possible
-                answer_with_eos = generated[idxs_boa[-1] + len(tkzer.boa_token):]
+                answer_with_eos = generated[idxs_boa[-1] + len(tokenizer.boa_token):]
                 if len(idxs_boa) > 1:
                     logger.warning(f'{logi(model_cnm)} generated {logi(len(idxs_boa))} boa_token '
                                    f'instead of {logi(1)} with [{logi(answer_with_eos)}]')
                     logger_fl.warning(f'{model_cnm} generated {len(idxs_boa)} boa_token '
                                       f'instead of {1} with [{answer_with_eos}]')
                 assert len(idxs_boa) == 1
-                idxs_eos = get_substr_indices(answer_with_eos, s_sub=tkzer.eos_token)
+                idxs_eos = get_substr_indices(answer_with_eos, s_sub=tokenizer.eos_token)
                 # GPT2 would generate multiple `eos_token` for the samples in the batch that terminates early
                 if len(idxs_eos) == 0:  # Still, **try to be as lenient**
                     logger.warning(f'{logi(model_cnm)} didn\'t finish generating answer '
@@ -877,12 +884,12 @@ def evaluate_trained(domain: str = 'in', batch_size: int = 48, form: str = 'vani
                 else:
                     answer = answer_with_eos[:idxs_eos[0]]  # until the 1st eos
                 answer = answer.lower()
-                idxs_sep = get_substr_indices(answer, s_sub=tkzer.ques_sep_token)
+                idxs_sep = get_substr_indices(answer, s_sub=tokenizer.ques_sep_token)
                 if len(idxs_sep) > 0:
                     answers = [answer[:idxs_sep[0]]]
                     for i, idx in enumerate(idxs_sep[:-1]):
-                        answers.append(answer[idx + len(tkzer.ques_sep_token):idxs_sep[i+1]])
-                    answers.append(answer[idxs_sep[-1] + len(tkzer.ques_sep_token):])
+                        answers.append(answer[idx + len(tokenizer.ques_sep_token):idxs_sep[i+1]])
+                    answers.append(answer[idxs_sep[-1] + len(tokenizer.ques_sep_token):])
                 else:
                     answers = [answer]
                 ids_pred = [lb2id[a] for a in answers]
@@ -953,25 +960,25 @@ if __name__ == '__main__':
     seed = sconfig('random-seed')
     transformers.set_seed(seed)
 
-    def evaluate():
-        def profile_evaluation():
-            profile_runtime(lambda: evaluate_trained(domain='in', batch_size=48), sleep=2)
-        # profile_evaluation()
+    def run_eval():
+        # def profile_evaluation():
+        #     profile_runtime(lambda: evaluate(domain='in', batch_size=48), sleep=2)
+        # # profile_evaluation()
 
-        # dom = 'in'
-        dom = 'out'
-        form = 'vanilla'
-        # form = 'implicit'
-        evaluate_trained(domain=dom, batch_size=48, form=form, load_model_args=dict(normalize_aspect=True))
-    evaluate()
+        dom = 'in'
+        # dom = 'out'
+        # form = 'vanilla'
+        form = 'implicit'
+        evaluate(domain=dom, batch_size=48, form=form, load_model_args=dict(normalize_aspect=True))
+    # run_eval()
 
     def train():
         dnm = 'UTCD-in'
         # md_nm = 'debug'
         md_nm = 'gpt2-medium'
 
-        form = 'vanilla'
-        # form = 'implicit'
+        # form = 'vanilla'
+        form = 'implicit'
 
         # n = 32
         # n = 128
@@ -1006,11 +1013,11 @@ if __name__ == '__main__':
                 num_train_epochs=3,
                 per_device_train_batch_size=4,
                 # per_device_train_batch_size=16,
-                gradient_accumulation_steps=8
+                gradient_accumulation_steps=2,
             )
             # ddp = False
             ddp = 4
-        md, tkzer, dset_tr, dset_vl, trainer = get_all_setup(  # eval set is too large
+        model, tokenizer, dset_tr, dset_vl, trainer = get_all_setup(  # eval set is too large
             model_name=md_nm, dataset_name=dnm, form=form, do_eval=False, custom_logging=True, n_sample=n,
             random_seed=seed,
             # random_seed=1,
@@ -1018,9 +1025,11 @@ if __name__ == '__main__':
             is_ddp=ddp
         )
         trainer.train()
-        trainer.save_model(os_join(trainer.log_output_dir, 'trained'))
-        os.listdir(os_join(trainer.log_output_dir, 'trained'))
-    # train()
+        save_path = os_join(trainer.log_output_dir, 'trained')
+        trainer.save_model(save_path)
+        tokenizer.save_pretrained(save_path)
+        os.listdir(save_path)
+    train()
 
     def sanity_check_trained_generate():
         text = 'hello world'

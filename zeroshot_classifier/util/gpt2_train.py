@@ -31,7 +31,7 @@ class MyLoggingCallback(TrainerCallback):
     """
     def __init__(
             self, parent_trainer: Trainer, do_eval=True,
-            name='Zero-shot GPT-2 Training', is_ddp: Union[int, bool] = False,
+            name='GPT2-NVIDIA Train', is_ddp: Union[int, bool] = False
     ):
         """
         :param parent_trainer: The parent Trainer

@@ -30,7 +30,7 @@ EXPLICIT_BERT_MODEL_NAME = f'Explicit Pretrain Aspect {_bert_md_nm}'
 EXPLICIT_GPT2_MODEL_NAME = f'Explicit Pretrain Aspect {_gpt2_md_nm}'
 
 
-def get_train_args(model_name: str, **kwargs) -> TrainingArguments:
+def get_train_args(model_name: str, dir_name: str = None, **kwargs) -> TrainingArguments:
     ca.check_mismatch('Model Name', model_name, [_bert_md_nm, _gpt2_md_nm])
     debug = False
     if debug:
@@ -56,7 +56,7 @@ def get_train_args(model_name: str, **kwargs) -> TrainingArguments:
         args['per_device_train_batch_size'] = bsz
         args['per_device_eval_batch_size'] = bsz
     md_nm = model_name.replace(' ', '-')
-    dir_nm = f'{now(for_path=True)}_{md_nm}'
+    dir_nm = dir_name or f'{now(for_path=True)}_{md_nm}'
     args.update(dict(
         output_dir=os_join(utcd_util.get_output_base(), u.proj_dir, u.model_dir, dir_nm),
         do_train=True, do_eval=True,
