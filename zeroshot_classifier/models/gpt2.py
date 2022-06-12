@@ -1012,8 +1012,7 @@ if __name__ == '__main__':
             train_args = dict(  # Distribute among GPUs & fit in memory; Effectively batch size 128 as in paper
                 num_train_epochs=3,
                 per_device_train_batch_size=4,
-                # per_device_train_batch_size=16,
-                gradient_accumulation_steps=2,
+                gradient_accumulation_steps=8,
             )
             # ddp = False
             ddp = 4
