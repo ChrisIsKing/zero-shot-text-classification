@@ -38,6 +38,7 @@ if __name__ == "__main__":
     import os
 
     import transformers
+    import datasets
 
     args = parse_args()
 
@@ -55,11 +56,11 @@ if __name__ == "__main__":
             dset_args['normalize_aspect'] = seed
         data = get_data(in_domain_data_path if domain == 'in' else out_of_domain_data_path, **dset_args)
         if dataset_name == 'all':
-            train_dset, dset_, labels = seq_cls_format(data, all=True)
+            train_dset, test_dset, labels = seq_cls_format(data, all=True)
         else:
-            train_dset, dset_, labels = seq_cls_format(data[dataset_name])
-        d_log = {'#train': len(train_dset), '#test': len(dset_), 'labels': list(labels.keys())}
-        logger.info(f'Loaded {logi(domain_str)} dataset {logi(dataset_name)} with {log_dict(d_log)} ')
+            train_dset, test_dset, labels = seq_cls_format(data[dataset_name])
+        d_log = {'#train': len(train_dset), '#test': len(test_dset), 'labels': list(labels.keys())}
+        logger.info(f'Loaded {logi(domain_str)} datasets {logi(dataset_name)} with {log_dict(d_log)} ')
 
         num_labels = len(labels)
         tokenizer = BertTokenizer.from_pretrained(HF_MODEL_NAME)
@@ -70,11 +71,11 @@ if __name__ == "__main__":
         def tokenize_function(examples):
             return tokenizer(examples['text'], padding='max_length', truncation=True)
         train_dset = Dataset.from_pandas(pd.DataFrame(train_dset))
-        dset_ = Dataset.from_pandas(pd.DataFrame(dset_))
+        test_dset = Dataset.from_pandas(pd.DataFrame(test_dset))
         # small batch size cos samples are very long in some datasets
         map_args = dict(batched=True, batch_size=16, num_proc=os.cpu_count())
         train_dset = train_dset.map(tokenize_function, **map_args)
-        dset_ = dset_.map(tokenize_function, **map_args)
+        test_dset = test_dset.map(tokenize_function, **map_args)
 
         bsz, n_ep = 16, 3
         warmup_steps = math.ceil(len(train_dset) * n_ep * 0.1)  # 10% of train data for warm-up
@@ -104,7 +105,7 @@ if __name__ == "__main__":
         )
         trainer = Trainer(
             model=model, args=training_args,
-            train_dataset=train_dset, eval_dataset=dset_, compute_metrics=compute_metrics
+            train_dataset=train_dset, eval_dataset=test_dset, compute_metrics=compute_metrics
         )
 
         transformers.set_seed(seed)
@@ -117,6 +118,7 @@ if __name__ == "__main__":
     if args.command == 'test':
         dataset_name, domain, model_path = args.dataset, args.domain, args.model_path
         bsz = 32
+        split = 'test'
         assert dataset_name == 'all'
         dataset_names = utcd_util.get_dataset_names(domain)
         output_path = os_join(model_path, 'eval')
@@ -125,42 +127,51 @@ if __name__ == "__main__":
         lg_fl = os_join(output_path, f'{now(for_path=True)}_{lg_nm}, dom={domain}.log')
         logger_fl = get_logger(lg_nm, typ='file-write', file_path=lg_fl)
         domain_str = 'in-domain' if domain == 'in' else 'out-of-domain'
-        logger.info(f'Evaluating {logi(domain_str)} dataset {logi(dataset_names)} on model {logi(model_path)}... ')
-        logger_fl.info(f'Evaluating {domain_str} dataset {dataset_names} on model {model_path}... ')
+        logger.info(f'Evaluating {logi(domain_str)} datasets {log_list(dataset_names)} on model {logi(model_path)}... ')
+        logger_fl.info(f'Evaluating {domain_str} datasets {dataset_names} on model {model_path}... ')
 
         data = get_data(in_domain_data_path if domain == 'in' else out_of_domain_data_path)
         tokenizer = BertTokenizer.from_pretrained(model_path)
         model = BertForSequenceClassification.from_pretrained(model_path)
-        _, dset_formatted, labels = seq_cls_format(data, all=True)
+        _, dset_formatted, labels = seq_cls_format(data, all=True)  # Need to pass in all data for `label_map`
 
         def tokenize(examples):
             return tokenizer(examples['text'], padding='max_length', truncation=True)
         i_dset_strt = 0
-        mic(data.keys())
-        for dnm in dataset_names:
-            dset = data[dnm]['test']
+        for dnm, dset in data.items():  # ordering matters since selecting formatted samples
+        # for dnm in dataset_names:
+            dset = dset['test']
             asp = sconfig(f'UTCD.datasets.{dnm}.aspect')
             logger.info(f'Evaluating {logi(asp)} dataset {logi(dnm)}... ')
             logger_fl.info(f'Evaluating {asp} dataset {dnm}... ')
 
+            # dset_ = seq_cls_format(data[dnm])[1]  # test split
             n = len(dset)
-            mic(n)
+            mic(n, sconfig(f'UTCD.datasets.{dnm}.splits.{split}.n_text'))
+            assert n == sconfig(f'UTCD.datasets.{dnm}.splits.{split}.n_text')  # sanity check
             dset_ = dset_formatted[i_dset_strt:i_dset_strt+n]
             i_dset_strt += n
 
+            logger.info(f'Loading {logi(n)} samples... ')
+            logger_fl.info(f'Loading {n} samples... ')
             dset_ = Dataset.from_pandas(pd.DataFrame(dset_))
-            dset_ = dset_.map(tokenize, batched=True, batch_size=64, num_proc=os.cpu_count())
+            datasets.set_progress_bar_enabled(False)
+            map_args = dict(batched=True, batch_size=64, num_proc=os.cpu_count(), remove_columns=['label_name', 'text'])
+            dset_ = dset_.map(tokenize, **map_args)
+            datasets.set_progress_bar_enabled(True)
+            # TODO: fix multi-label
 
+            logger.info(f'Evaluating... ')
+            logger_fl.info(f'Evaluating... ')
             training_args = TrainingArguments(  # Take trainer for eval
-                output_dir=os_join(output_path, dnm),
-                do_train=False, do_eval=True,
-                per_device_eval_batch_size=bsz,
-                evaluation_strategy='steps'
+                output_dir=output_path,  # Expect nothing to be written to
+                per_device_eval_batch_size=bsz
             )
-            trainer = Trainer(
+            d_eval = Trainer(
                 model=model, args=training_args, eval_dataset=dset_, compute_metrics=compute_metrics
-            )
-            d_eval = trainer.evaluate()
-            mic(d_eval)
-            exit(1)
+            ).evaluate()
+            acc = d_eval['eval_acc']
+            logger.info(f'{logi(dnm)} Classification Accuracy: {logi(round(acc, 3))}')
+            logger_fl.info(f'{dnm} Classification Accuracy: {acc}')
+        mic(i_dset_strt, len(dset_formatted))
         assert i_dset_strt == len(dset_formatted)  # sanity check
