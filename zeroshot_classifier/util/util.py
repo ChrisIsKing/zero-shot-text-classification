@@ -16,7 +16,7 @@ from zeroshot_classifier.util.data_path import BASE_PATH, PROJ_DIR, DSET_DIR, PK
 
 __all__ = [
     'sconfig', 'u', 'save_fig', 'plot_points',
-    'map_model_output_path', 'domain2eval_dir_nm', 'get_dataset_names', 'TrainStrategy2PairMap',
+    'map_model_output_path', 'domain2eval_dir_nm', 'TrainStrategy2PairMap',
     'eval_res2df', 'compute_metrics'
 ]
 
@@ -82,10 +82,6 @@ def domain2eval_dir_nm(domain: str = 'in'):
     date = datetime.datetime.now().strftime('%m.%d.%Y')
     date = date[:-4] + date[-2:]  # 2-digit year
     return f'{domain_str}, {date}'
-
-
-def get_dataset_names(domain: str = 'in'):
-    return [dnm for dnm, d_dset in sconfig('UTCD.datasets').items() if d_dset['domain'] == domain]
 
 
 class TrainStrategy2PairMap:

@@ -184,14 +184,15 @@ def get_utcd_info() -> pd.DataFrame:
     return pd.DataFrame(infos)
 
 
+def get_dataset_names(domain: str = 'in'):
+    return [dnm for dnm, d_dset in sconfig('UTCD.datasets').items() if d_dset['domain'] == domain]
+
+
 UtcdDatasetNames = namedtuple('UtcdDatasetNames', ['in_domain', 'out_of_domain'])
 
 
 def _get_utcd_dnms() -> UtcdDatasetNames:
-    return UtcdDatasetNames(
-        [dnm for dnm, d in sconfig('UTCD.datasets').items() if d['domain'] == 'in'],
-        [dnm for dnm, d in sconfig('UTCD.datasets').items() if d['domain'] == 'out']
-    )
+    return UtcdDatasetNames(in_domain=get_dataset_names('in'), out_of_domain=get_dataset_names('out'))
 
 
 def get_dataset(dnm: str, split: str) -> Dict[str, List[str]]:

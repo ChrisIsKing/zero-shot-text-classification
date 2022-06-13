@@ -29,7 +29,7 @@ def parse_args():
 
     parser_test.add_argument('--dataset', type=str, default='all')
     parser_test.add_argument('--domain', type=str, choices=['in', 'out'], required=True)
-    parser_test.add_argument('--path', type=str, required=True)
+    parser_test.add_argument('--model_path', type=str, required=True)
 
     return parser.parse_args()
 
@@ -45,7 +45,6 @@ if __name__ == "__main__":
     NORMALIZE_ASPECT = True
 
     if args.command == 'train':
-        mic('after cmd train')
         logger = get_logger(f'{MODEL_NAME} Train')
         dataset_name, domain = args.dataset, args.domain
         ca(dataset_domain=domain)
@@ -56,10 +55,10 @@ if __name__ == "__main__":
             dset_args['normalize_aspect'] = seed
         data = get_data(in_domain_data_path if domain == 'in' else out_of_domain_data_path, **dset_args)
         if dataset_name == 'all':
-            train_dset, test_dset, labels = seq_cls_format(data, all=True)
+            train_dset, dset_, labels = seq_cls_format(data, all=True)
         else:
-            train_dset, test_dset, labels = seq_cls_format(data[dataset_name])
-        d_log = {'#train': len(train_dset), '#test': len(test_dset), 'labels': list(labels.keys())}
+            train_dset, dset_, labels = seq_cls_format(data[dataset_name])
+        d_log = {'#train': len(train_dset), '#test': len(dset_), 'labels': list(labels.keys())}
         logger.info(f'Loaded {logi(domain_str)} dataset {logi(dataset_name)} with {log_dict(d_log)} ')
 
         num_labels = len(labels)
@@ -71,11 +70,11 @@ if __name__ == "__main__":
         def tokenize_function(examples):
             return tokenizer(examples['text'], padding='max_length', truncation=True)
         train_dset = Dataset.from_pandas(pd.DataFrame(train_dset))
-        test_dset = Dataset.from_pandas(pd.DataFrame(test_dset))
+        dset_ = Dataset.from_pandas(pd.DataFrame(dset_))
         # small batch size cos samples are very long in some datasets
         map_args = dict(batched=True, batch_size=16, num_proc=os.cpu_count())
         train_dset = train_dset.map(tokenize_function, **map_args)
-        test_dset = test_dset.map(tokenize_function, **map_args)
+        dset_ = dset_.map(tokenize_function, **map_args)
 
         bsz, n_ep = 16, 3
         warmup_steps = math.ceil(len(train_dset) * n_ep * 0.1)  # 10% of train data for warm-up
@@ -85,7 +84,7 @@ if __name__ == "__main__":
             sampling=None, normalize_aspect=NORMALIZE_ASPECT
         )
         output_path = os_join(utcd_util.get_output_base(), u.proj_dir, u.model_dir, dir_nm)
-        proj_output_path = os_join(u.model_path, dir_nm, 'trained')
+        proj_output_path = os_join(u.base_path, u.proj_dir, u.model_path, dir_nm, 'trained')
         mic(dir_nm, proj_output_path)
         d_log = {'batch size': bsz, 'epochs': n_ep, 'warmup steps': warmup_steps, 'save path': output_path}
         logger.info(f'Launched training with {log_dict(d_log)}... ')
@@ -105,7 +104,7 @@ if __name__ == "__main__":
         )
         trainer = Trainer(
             model=model, args=training_args,
-            train_dataset=train_dset, eval_dataset=test_dset, compute_metrics=compute_metrics
+            train_dataset=train_dset, eval_dataset=dset_, compute_metrics=compute_metrics
         )
 
         transformers.set_seed(seed)
@@ -116,56 +115,52 @@ if __name__ == "__main__":
         os.listdir(proj_output_path)
 
     if args.command == 'test':
-        logger = get_logger(f'{MODEL_NAME} Eval')
+        dataset_name, domain, model_path = args.dataset, args.domain, args.model_path
+        bsz = 32
+        assert dataset_name == 'all'
+        dataset_names = utcd_util.get_dataset_names(domain)
+        output_path = os_join(model_path, 'eval')
+        lg_nm = f'{MODEL_NAME} Eval'
+        logger = get_logger(lg_nm)
+        lg_fl = os_join(output_path, f'{now(for_path=True)}_{lg_nm}, dom={domain}.log')
+        logger_fl = get_logger(lg_nm, typ='file-write', file_path=lg_fl)
+        domain_str = 'in-domain' if domain == 'in' else 'out-of-domain'
+        logger.info(f'Evaluating {logi(domain_str)} dataset {logi(dataset_names)} on model {logi(model_path)}... ')
+        logger_fl.info(f'Evaluating {domain_str} dataset {dataset_names} on model {model_path}... ')
 
-        if args.domain == "in":
-            data = get_data(in_domain_data_path)
-        else:
-            data = get_data(out_of_domain_data_path)
-        
-        tokenizer = BertTokenizer.from_pretrained(HF_MODEL_NAME)
-        model = BertForSequenceClassification.from_pretrained(args.path)
-        model.to("cuda")
+        data = get_data(in_domain_data_path if domain == 'in' else out_of_domain_data_path)
+        tokenizer = BertTokenizer.from_pretrained(model_path)
+        model = BertForSequenceClassification.from_pretrained(model_path)
+        _, dset_formatted, labels = seq_cls_format(data, all=True)
 
         def tokenize(examples):
-            return tokenizer(examples["text"], padding="max_length", truncation=True)
+            return tokenizer(examples['text'], padding='max_length', truncation=True)
+        i_dset_strt = 0
+        mic(data.keys())
+        for dnm in dataset_names:
+            dset = data[dnm]['test']
+            asp = sconfig(f'UTCD.datasets.{dnm}.aspect')
+            logger.info(f'Evaluating {logi(asp)} dataset {logi(dnm)}... ')
+            logger_fl.info(f'Evaluating {asp} dataset {dnm}... ')
 
-        if args.dataset == "all":
-            dataset = data
-            train, test, labels = seq_cls_format(dataset, all=True)
-        
-        index = 0
+            n = len(dset)
+            mic(n)
+            dset_ = dset_formatted[i_dset_strt:i_dset_strt+n]
+            i_dset_strt += n
 
-        for name, dataset in data.items():
-            dataset_len = len(dataset['test'])
+            dset_ = Dataset.from_pandas(pd.DataFrame(dset_))
+            dset_ = dset_.map(tokenize, batched=True, batch_size=64, num_proc=os.cpu_count())
 
-            test_dset = test[index:index + dataset_len]
-            index += dataset_len
-
-            test_dset = Dataset.from_pandas(pd.DataFrame(test_dset))
-            test_dset = test_dset.map(tokenize, batched=True)
-
-            output_path = './models/{}'.format(args.dataset)
-
-            training_args = TrainingArguments(
-                output_dir=output_path,          # output directory
-                per_device_train_batch_size=16,  # batch size per device during training
-                per_device_eval_batch_size=32,   # batch size for evaluation
-                weight_decay=0.01,               # strength of weight decay
-                logging_dir='./logs',            # directory for storing logs
-                load_best_model_at_end=True,     # load the best model when finished training (default metric is loss)
-                # but you can specify `metric_for_best_model` argument to change to accuracy or other metric
-                logging_steps=100000,               # log & save weights each logging_steps
-                save_steps=100000,
-                evaluation_strategy="steps",     # evaluate each `logging_steps`
+            training_args = TrainingArguments(  # Take trainer for eval
+                output_dir=os_join(output_path, dnm),
+                do_train=False, do_eval=True,
+                per_device_eval_batch_size=bsz,
+                evaluation_strategy='steps'
             )
-
             trainer = Trainer(
-                model=model,                         # the instantiated Transformers model to be trained
-                args=training_args,                  # training arguments, defined above
-                eval_dataset=test_dset,          # evaluation dataset
-                compute_metrics=compute_metrics,     # the callback that computes metrics of interest
+                model=model, args=training_args, eval_dataset=dset_, compute_metrics=compute_metrics
             )
-
-            print("Evaluation Metrics for {} dataset".format(name))
-            print(trainer.evaluate())
+            d_eval = trainer.evaluate()
+            mic(d_eval)
+            exit(1)
+        assert i_dset_strt == len(dset_formatted)  # sanity check
