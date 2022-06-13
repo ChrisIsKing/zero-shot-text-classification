@@ -45,17 +45,21 @@ if __name__ == "__main__":
     NORMALIZE_ASPECT = True
 
     if args.command == 'train':
+        mic('after cmd train')
         logger = get_logger(f'{MODEL_NAME} Train')
         dataset_name, domain = args.dataset, args.domain
+        ca(dataset_domain=domain)
         domain_str = 'in-domain' if domain == 'in' else 'out-of-domain'
 
-        dset_args = dict(normalize_aspect=seed) if NORMALIZE_ASPECT else dict()
-        data = get_data(in_domain_data_path, **dset_args)
+        dset_args = dict(domain=domain)
+        if NORMALIZE_ASPECT:
+            dset_args['normalize_aspect'] = seed
+        data = get_data(in_domain_data_path if domain == 'in' else out_of_domain_data_path, **dset_args)
         if dataset_name == 'all':
             train_dset, test_dset, labels = seq_cls_format(data, all=True)
         else:
             train_dset, test_dset, labels = seq_cls_format(data[dataset_name])
-        d_log = {'#train': len(train_dset), '#test': len(test_dset), 'labels': labels}
+        d_log = {'#train': len(train_dset), '#test': len(test_dset), 'labels': list(labels.keys())}
         logger.info(f'Loaded {logi(domain_str)} dataset {logi(dataset_name)} with {log_dict(d_log)} ')
 
         num_labels = len(labels)
@@ -68,8 +72,10 @@ if __name__ == "__main__":
             return tokenizer(examples['text'], padding='max_length', truncation=True)
         train_dset = Dataset.from_pandas(pd.DataFrame(train_dset))
         test_dset = Dataset.from_pandas(pd.DataFrame(test_dset))
-        train_dset = train_dset.map(tokenize_function, batched=True)
-        test_dset = test_dset.map(tokenize_function, batched=True)
+        # small batch size cos samples are very long in some datasets
+        map_args = dict(batched=True, batch_size=16, num_proc=os.cpu_count())
+        train_dset = train_dset.map(tokenize_function, **map_args)
+        test_dset = test_dset.map(tokenize_function, **map_args)
 
         bsz, n_ep = 16, 3
         warmup_steps = math.ceil(len(train_dset) * n_ep * 0.1)  # 10% of train data for warm-up

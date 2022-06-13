@@ -59,7 +59,7 @@ category_map = {
 }
 
 
-def get_data(path: str, n_sample: int = None, normalize_aspect: Union[bool, int] = False) -> Dict[str, Dict]:
+def get_data(path: str, n_sample: int = None, normalize_aspect: Union[bool, int] = False, domain: str = 'in') -> Dict[str, Dict]:
     """
     :param path: File system path to folder of UTCD dataset
     :param n_sample: If given, a random sample of the entire dataset is selected
@@ -67,6 +67,8 @@ def get_data(path: str, n_sample: int = None, normalize_aspect: Union[bool, int]
     :param normalize_aspect: If true, # of training samples for each aspect is normalized
         via subsampling datasets in the larger aspect
         If int given, used as seed for sampling
+    :param domain: Needed for aspect normalization
+        Intended for training directly on out-of-domain data, see `zeroshot_classifier/models/bert.py`
     """
     logger = get_logger('Get UTCD data')
     if not os.path.exists(path):
@@ -91,23 +93,25 @@ def get_data(path: str, n_sample: int = None, normalize_aspect: Union[bool, int]
         data[dataset_name] = dset
     if normalize_aspect:
         seed = None if isinstance(normalize_aspect, bool) else normalize_aspect
-        data = sample_data(data, seed=seed)
+        data = sample_data(data, seed=seed, domain=domain)
     return data
 
 
-def sample_data(data: Dict[str, Dict], seed: int = None) -> Dict[str, Dict]:
+def sample_data(data: Dict[str, Dict], seed: int = None, domain: str = 'in') -> Dict[str, Dict]:
     """
     Sample the `train` split of the 9 in-domain datasets so that each `aspect` contains same # of samples
 
     Maintain class distribution
     """
+    logger = get_logger('Normalize Aspect')
     if seed:
         random.seed(seed)
     aspect2n_txt = defaultdict(int)
     for dnm, d_dset in sconfig('UTCD.datasets').items():
-        if d_dset['domain'] == 'in':
+        if d_dset['domain'] == domain:
             aspect2n_txt[d_dset['aspect']] += d_dset['splits']['train']['n_text']
     asp_min = min(aspect2n_txt, key=aspect2n_txt.get)
+    logger.info(f'Normalizing each aspect to ~{logi(aspect2n_txt[asp_min])} samples... ')
 
     def sample_dset(d: Dict[str, List[str]], dnm_: str, n_text: int) -> Dict[str, List[str]]:
         """
@@ -138,6 +142,10 @@ def sample_data(data: Dict[str, Dict], seed: int = None) -> Dict[str, Dict]:
         if asp != asp_min:
             n_normed = sconfig(f'UTCD.datasets.{dnm}.splits.train.n_text') * aspect2n_txt[asp_min] / aspect2n_txt[asp]
             d_dset['train'] = sample_dset(d_dset['train'], dnm, n_text=round(n_normed))
+    dnm2count = defaultdict(dict)
+    for dnm, d_dset in data.items():
+        dnm2count[sconfig(f'UTCD.datasets.{dnm}.aspect')][dnm] = len(d_dset['train'])
+    logger.info(f'Dataset counts after normalization: {log_dict_pg(dnm2count)}')
     return data
 
 
