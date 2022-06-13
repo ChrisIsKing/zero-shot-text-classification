@@ -1,15 +1,20 @@
 import math
-import logging
-import pandas as pd
-from transformers import AutoTokenizer
-from datasets import Dataset
-from transformers import BertForSequenceClassification
-from transformers import TrainingArguments, Trainer
-from sklearn.metrics import accuracy_score
+from os.path import join as os_join
 from argparse import ArgumentParser
+
+import pandas as pd
+from transformers import BertTokenizer, BertForSequenceClassification
+from transformers import TrainingArguments, Trainer
+from datasets import Dataset
+
+from stefutil import *
+from zeroshot_classifier.util import *
+import zeroshot_classifier.util.utcd as utcd_util
 from zeroshot_classifier.util.load_data import get_data, seq_cls_format, in_domain_data_path, out_of_domain_data_path
 
-logger = logging.getLogger(__name__)
+
+MODEL_NAME = 'BERT Seq CLS'
+HF_MODEL_NAME = 'bert-base-uncased'
 
 
 def parse_args():
@@ -19,110 +24,105 @@ def parse_args():
     parser_train = subparser.add_parser('train')
     parser_test = subparser.add_parser('test')
 
-    parser_train.add_argument('--dataset', type=str, required=True)
+    parser_train.add_argument('--dataset', type=str, default='all')
     parser_train.add_argument('--domain', type=str, choices=['in', 'out'], required=True)
 
-    parser_test.add_argument('--dataset', type=str, required=True)
+    parser_test.add_argument('--dataset', type=str, default='all')
     parser_test.add_argument('--domain', type=str, choices=['in', 'out'], required=True)
     parser_test.add_argument('--path', type=str, required=True)
 
     return parser.parse_args()
 
 
-def compute_metrics(pred):
-    labels = pred.label_ids
-    preds = pred.predictions.argmax(-1)
-    # calculate accuracy using sklearn's function
-    acc = accuracy_score(labels, preds)
-    return {'accuracy': acc}
-
-
 if __name__ == "__main__":
-    import transformers
+    import os
 
-    from zeroshot_classifier.util import *
+    import transformers
 
     args = parse_args()
 
     seed = sconfig('random-seed')
+    NORMALIZE_ASPECT = True
 
     if args.command == 'train':
-        if args.dataset:
+        logger = get_logger(f'{MODEL_NAME} Train')
+        dataset_name, domain = args.dataset, args.domain
+        domain_str = 'in-domain' if domain == 'in' else 'out-of-domain'
 
-            if args.domain == "in":
-                data = get_data(in_domain_data_path, normalize_aspect=seed)
-            else:
-                data = get_data(out_of_domain_data_path)
+        dset_args = dict(normalize_aspect=seed) if NORMALIZE_ASPECT else dict()
+        data = get_data(in_domain_data_path, **dset_args)
+        if dataset_name == 'all':
+            train_dset, test_dset, labels = seq_cls_format(data, all=True)
+        else:
+            train_dset, test_dset, labels = seq_cls_format(data[dataset_name])
+        d_log = {'#train': len(train_dset), '#test': len(test_dset), 'labels': labels}
+        logger.info(f'Loaded {logi(domain_str)} dataset {logi(dataset_name)} with {log_dict(d_log)} ')
 
-            if args.dataset == "all":
-                dataset = data
-                train, test, labels = seq_cls_format(dataset, all=True)
-            else:
-                # get dataset data
-                dataset = data[args.dataset]
-                train, test, labels = seq_cls_format(dataset)
-            
-            num_labels = len(labels)
+        num_labels = len(labels)
+        tokenizer = BertTokenizer.from_pretrained(HF_MODEL_NAME)
+        model = BertForSequenceClassification.from_pretrained(HF_MODEL_NAME, return_dict=True, num_labels=num_labels)
+        tokenizer.add_special_tokens(dict(eos_token=utcd_util.EOT_TOKEN))  # end-of-turn for SGD
+        model.resize_token_embeddings(len(tokenizer))
 
-            tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased")
-            model = BertForSequenceClassification.from_pretrained('bert-base-uncased', return_dict=True, num_labels=num_labels)
-            model.to("cuda")
+        def tokenize_function(examples):
+            return tokenizer(examples['text'], padding='max_length', truncation=True)
+        train_dset = Dataset.from_pandas(pd.DataFrame(train_dset))
+        test_dset = Dataset.from_pandas(pd.DataFrame(test_dset))
+        train_dset = train_dset.map(tokenize_function, batched=True)
+        test_dset = test_dset.map(tokenize_function, batched=True)
 
-            def tokenize_function(examples):
-                return tokenizer(examples["text"], padding="max_length", truncation=True)
+        bsz, n_ep = 16, 3
+        warmup_steps = math.ceil(len(train_dset) * n_ep * 0.1)  # 10% of train data for warm-up
 
+        dir_nm = map_model_output_path(
+            model_name=MODEL_NAME.replace(' ', '-'), output_path=f'{domain}-{dataset_name}', mode=None,
+            sampling=None, normalize_aspect=NORMALIZE_ASPECT
+        )
+        output_path = os_join(utcd_util.get_output_base(), u.proj_dir, u.model_dir, dir_nm)
+        proj_output_path = os_join(u.model_path, dir_nm, 'trained')
+        mic(dir_nm, proj_output_path)
+        d_log = {'batch size': bsz, 'epochs': n_ep, 'warmup steps': warmup_steps, 'save path': output_path}
+        logger.info(f'Launched training with {log_dict(d_log)}... ')
 
-            train_dataset = Dataset.from_pandas(pd.DataFrame(train))
-            test_dataset = Dataset.from_pandas(pd.DataFrame(test))
+        training_args = TrainingArguments(  # TODO: learning rate
+            output_dir=output_path,
+            num_train_epochs=n_ep,
+            per_device_train_batch_size=bsz,
+            per_device_eval_batch_size=bsz,
+            warmup_steps=warmup_steps,
+            weight_decay=0.01,
+            logging_dir='./logs',
+            load_best_model_at_end=True,
+            logging_steps=100000,
+            save_steps=100000,
+            evaluation_strategy='steps'
+        )
+        trainer = Trainer(
+            model=model, args=training_args,
+            train_dataset=train_dset, eval_dataset=test_dset, compute_metrics=compute_metrics
+        )
 
-            train_dataset = train_dataset.map(tokenize_function, batched=True)
-            test_dataset = test_dataset.map(tokenize_function, batched=True)
+        transformers.set_seed(seed)
+        trainer.train()
+        mic(trainer.evaluate())
+        trainer.save_model(proj_output_path)
+        tokenizer.save_pretrained(proj_output_path)
+        os.listdir(proj_output_path)
 
-            output_path = './models/{}'.format(args.dataset)
-            num_epochs = 3
-            warmup_steps = math.ceil(len(train_dataset) * num_epochs * 0.1)  # 10% of train data for warm-up
-            logger.info("Warmup-steps: {}".format(warmup_steps))
-
-            training_args = TrainingArguments(
-                output_dir=output_path,          # output directory
-                num_train_epochs=num_epochs,     # total number of training epochs
-                per_device_train_batch_size=16,  # batch size per device during training
-                per_device_eval_batch_size=20,   # batch size for evaluation
-                warmup_steps=warmup_steps,       # number of warmup steps for learning rate scheduler
-                weight_decay=0.01,               # strength of weight decay
-                logging_dir='./logs',            # directory for storing logs
-                load_best_model_at_end=True,     # load the best model when finished training (default metric is loss)
-                # but you can specify `metric_for_best_model` argument to change to accuracy or other metric
-                logging_steps=100000,               # log & save weights each logging_steps
-                save_steps=100000,
-                evaluation_strategy="steps",     # evaluate each `logging_steps`
-            )
-
-            trainer = Trainer(
-                model=model,                         # the instantiated Transformers model to be trained
-                args=training_args,                  # training arguments, defined above
-                train_dataset=train_dataset,         # training dataset
-                eval_dataset=test_dataset,          # evaluation dataset
-                compute_metrics=compute_metrics,     # the callback that computes metrics of interest
-            )
-
-            transformers.set_seed(seed)
-            trainer.train()
-            print(trainer.evaluate())
-    
     if args.command == 'test':
+        logger = get_logger(f'{MODEL_NAME} Eval')
 
         if args.domain == "in":
             data = get_data(in_domain_data_path)
         else:
             data = get_data(out_of_domain_data_path)
         
-        tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased")
+        tokenizer = BertTokenizer.from_pretrained(HF_MODEL_NAME)
         model = BertForSequenceClassification.from_pretrained(args.path)
         model.to("cuda")
 
-        def tokenize_function(examples):
-                return tokenizer(examples["text"], padding="max_length", truncation=True)
+        def tokenize(examples):
+            return tokenizer(examples["text"], padding="max_length", truncation=True)
 
         if args.dataset == "all":
             dataset = data
@@ -133,11 +133,11 @@ if __name__ == "__main__":
         for name, dataset in data.items():
             dataset_len = len(dataset['test'])
 
-            test_dataset = test[index:index+dataset_len]
+            test_dset = test[index:index + dataset_len]
             index += dataset_len
 
-            test_dataset = Dataset.from_pandas(pd.DataFrame(test_dataset))
-            test_dataset = test_dataset.map(tokenize_function, batched=True)
+            test_dset = Dataset.from_pandas(pd.DataFrame(test_dset))
+            test_dset = test_dset.map(tokenize, batched=True)
 
             output_path = './models/{}'.format(args.dataset)
 
@@ -157,7 +157,7 @@ if __name__ == "__main__":
             trainer = Trainer(
                 model=model,                         # the instantiated Transformers model to be trained
                 args=training_args,                  # training arguments, defined above
-                eval_dataset=test_dataset,          # evaluation dataset
+                eval_dataset=test_dset,          # evaluation dataset
                 compute_metrics=compute_metrics,     # the callback that computes metrics of interest
             )
 

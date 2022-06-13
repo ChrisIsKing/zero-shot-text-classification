@@ -10,10 +10,8 @@ Pretrained weights loaded for finetuning
 
 from os.path import join as os_join
 
-import numpy as np
 from transformers import TrainingArguments, SchedulerType
 from transformers.training_args import OptimizerNames
-from datasets import load_metric
 
 from stefutil import *
 from zeroshot_classifier.util import *
@@ -21,7 +19,7 @@ import zeroshot_classifier.util.utcd as utcd_util
 import zeroshot_classifier.models.binary_bert
 
 
-__all__ = ['EXPLICIT_BERT_MODEL_NAME', 'EXPLICIT_GPT2_MODEL_NAME', 'get_train_args', 'compute_metrics']
+__all__ = ['EXPLICIT_BERT_MODEL_NAME', 'EXPLICIT_GPT2_MODEL_NAME', 'get_train_args']
 
 
 _bert_md_nm = zeroshot_classifier.models.binary_bert.MODEL_NAME
@@ -72,11 +70,3 @@ def get_train_args(model_name: str, dir_name: str = None, **kwargs) -> TrainingA
     ))
     args.update(kwargs)
     return TrainingArguments(**args)
-
-
-def compute_metrics(eval_pred):
-    if not hasattr(compute_metrics, 'acc'):
-        compute_metrics.acc = load_metric('accuracy')
-    logits, labels = eval_pred
-    preds = np.argmax(logits, axis=-1)
-    return dict(acc=compute_metrics.acc.compute(predictions=preds, references=labels)['accuracy'])
