@@ -103,13 +103,10 @@ class ZsGPT2Tokenizer(GPT2TokenizerFast):
         # Pad token cannot be `self.eos_token`
         # cos otherwise `DataCollatorForLanguageModeling` would override normal eos tokens
         spec_toks = list(ZsGPT2Tokenizer.SPEC_TOKS.values())
-        spec_toks.append(utcd_util.EOT_TOKEN)
         if form == 'explicit':
             added_vocab = self.get_added_vocab()
-            mic(added_vocab)
-            assert list(added_vocab.keys()) == [utcd_util.EOT_TOKEN]
-            self.pad_token = self.enc_spec(self.pad_token)
-            exit(1)
+            assert set(added_vocab.keys()) == {utcd_util.EOT_TOKEN, ZsGPT2Tokenizer.pad_token_}
+            # TODO: when re-loaded, PAD token doesn't seem to be added...
         else:
             spec_toks.append(utcd_util.EOT_TOKEN)  # SGD end of turn
         ca.check_mismatch('GPT2 Training Strategy', form, ['vanilla', 'implicit', 'explicit'])
@@ -139,7 +136,7 @@ class ZsGPT2Tokenizer(GPT2TokenizerFast):
         self.warned_desc = set()  # Warning for each dataset happens once    @property
 
         self.logger = get_logger(self.__class__.__qualname__)
-        d_log = dict(form=form, added_vocab=list(self.get_added_vocab().keys()), vocab_size=self.__len__())
+        d_log = dict(form=form, added_vocab=list(self.get_added_vocab().keys()), vocab_size=self.vocab_size)
         self.logger.info(f'{logi(self.__class__.__qualname__)} initialized with {log_dict(d_log)}')
 
     @property
@@ -489,35 +486,56 @@ class ZsGPT2LMHeadModel(GPT2LMHeadModel):
         return model_kwargs
 
 
-def tokenize_func(
-        tokenizer: ZsGPT2Tokenizer, dataset_name='ag_news', max_length=None,
-        split: str = 'train', mode: str = 'train', **kwargs
-):
-    def _tokenize_func(sample: Dict[str, List]):
+class Tokenize:
+    def __init__(
+            self, tokenizer: ZsGPT2Tokenizer, dataset_name='ag_news', max_length=None,
+            split: str = 'train', mode: str = 'train', **kwargs
+    ):
+        self.tokenizer = tokenizer
+        self.dataset_name = dataset_name
+        self.max_length = max_length
+        self.split = split
+        self.mode = mode
+        self.kwargs = kwargs
+
+    def __call__(self, sample: Dict[str, List]):
         """
         :param sample: A batch of data samples
         """
-        if 'UTCD' not in dataset_name:
-            sample['dataset_id'] = [sconfig('UTCD.dataset_name2id')[dataset_name]] * len(sample['text'])
+        if 'UTCD' not in self.dataset_name:
+            sample['dataset_id'] = [sconfig('UTCD.dataset_name2id')[self.dataset_name]] * len(sample['text'])
         # Otherwise, `dataset_id` already part of input
-        return tokenizer(sample, dataset_name=dataset_name, max_length=max_length, split=split, mode=mode, **kwargs)
-    return _tokenize_func
+        args = dict(dataset_name=self.dataset_name, max_length=self.max_length, split=self.split, mode=self.mode)
+        return self.tokenizer(sample, **args, **self.kwargs)
+
+# def tokenize_func(
+#         tokenizer: ZsGPT2Tokenizer, dataset_name='ag_news', max_length=None,
+#         split: str = 'train', mode: str = 'train', **kwargs
+# ):
+#     def _tokenize_func(sample: Dict[str, List]):
+#         """
+#         :param sample: A batch of data samples
+#         """
+#         if 'UTCD' not in dataset_name:
+#             sample['dataset_id'] = [sconfig('UTCD.dataset_name2id')[dataset_name]] * len(sample['text'])
+#         # Otherwise, `dataset_id` already part of input
+#         return tokenizer(sample, dataset_name=dataset_name, max_length=max_length, split=split, mode=mode, **kwargs)
+#     return _tokenize_func
 
 
 def get_model_n_tokenizer(model_name='gpt2', form: str = 'vanilla', save_gpu_memory: bool = True) -> Tuple[
     ZsGPT2LMHeadModel, ZsGPT2Tokenizer, DataCollatorForLanguageModeling
 ]:
-    pretrained_model_name = 'gpt2'
-
     if 'debug' in model_name:  # Try a smaller model for training sanity check
         if 'large' in model_name:
             n_token = 128
         else:
             n_token = 4
-        conf = AutoConfig.from_pretrained('gpt2')
+        model_name = 'gpt2'
+        conf = AutoConfig.from_pretrained(model_name)
         # If using cpu, must be debugging and hence no `gradient_checkpointing`, see `get_train_setup`
         conf.update(dict(n_ctx=n_token, n_positions=n_token, use_cache=not torch.cuda.is_available()))
-        model_ = ZsGPT2LMHeadModel.from_pretrained(pretrained_model_name, config=conf, ignore_mismatched_sizes=True)
+        model_ = ZsGPT2LMHeadModel.from_pretrained(model_name, config=conf, ignore_mismatched_sizes=True)
         model_max_length = n_token
     else:
         model_max_length = 1024  # Keep max seq len of 1024, instead of 512 in paper, for longer texts & more labels
@@ -528,7 +546,7 @@ def get_model_n_tokenizer(model_name='gpt2', form: str = 'vanilla', save_gpu_mem
         model_ = ZsGPT2LMHeadModel.from_pretrained(model_name, config=conf, ignore_mismatched_sizes=True)
 
     tokenizer_ = ZsGPT2Tokenizer.from_pretrained(
-        pretrained_model_name, use_fast=True, model_max_length=model_max_length, form=form
+        model_name, use_fast=True, model_max_length=model_max_length, form=form
     )
     model_.resize_token_embeddings(len(tokenizer_))
     model_.tokenizer = tokenizer_
@@ -540,10 +558,6 @@ def get_train_setup(
         model_name='gpt2', do_eval=True, dir_name: str = None, train_args: Dict = None,
         save_gpu_memory: bool = True
 ) -> TrainingArguments:
-    name_ = model_name
-    if name_ == 'debug-gpt-ori':
-        name_ = 'gpt2'
-
     d_train_args = {
         'debug': dict(
             learning_rate=1e-4,
@@ -576,6 +590,9 @@ def get_train_setup(
             lr_scheduler_type=SchedulerType.COSINE,
         )
     }
+    name_ = model_name
+    if name_ not in d_train_args:
+        name_ = 'gpt2-medium'
     lr, bsz, decay, n_ep, sch, gas = (d_train_args[name_].get(k, None) for k in [
         'learning_rate', 'batch_size', 'weight_decay',
         'num_train_epochs', 'lr_scheduler_type', 'gradient_accumulation_steps'
@@ -652,13 +669,13 @@ def get_all_setup(
     if model_name == 'debug-gpt-ori':  # Sanity check: As if keep training GPT-2, with padding for simplicity
         conf = AutoConfig.from_pretrained('gpt2')
         conf.update(dict(use_cache=False))
-        model_ = GPT2LMHeadModel.from_pretrained('gpt2', config=conf)
-        tokenizer_ = GPT2TokenizerFast.from_pretrained('gpt2')
+        model = GPT2LMHeadModel.from_pretrained('gpt2', config=conf)
+        tokenizer = GPT2TokenizerFast.from_pretrained('gpt2')
         data_collator_ = None
         train_args_ = get_train_setup(model_name, do_eval=do_eval)
 
         def group_texts(examples):
-            examples = tokenizer_(examples['text'])
+            examples = tokenizer(examples['text'])
             # Taken from
             # https://github.com/huggingface/notebooks/blob/master/examples/language_modeling_from_scratch.ipynb
             # block_size = tokenizer_.model_max_length
@@ -676,42 +693,45 @@ def get_all_setup(
     else:
         save_gpu_mem = 'arc-ts' not in get_hostname()
         # save_gpu_mem = True  # Gradient checkpointing still needed - otherwise doesn't fit in 44G GPU
-        model_, tokenizer_, data_collator_ = get_model_n_tokenizer(model_name, form=form, save_gpu_memory=save_gpu_mem)
-        dir_nm = map_model_output_path(
-            model_name=MODEL_NAME, output_path=model_name, mode=form,
+        model, tokenizer, data_collator_ = get_model_n_tokenizer(model_name, form=form, save_gpu_memory=save_gpu_mem)
+        _md_nm = None if form == 'explicit' else model_name  # cos the filesystem path is too long
+        dir_nm = map_model_dir_nm(
+            model_name=MODEL_NAME, name=_md_nm, mode=form,
             sampling=None, normalize_aspect=dataset_args.get('normalize_aspect', None)
         )
         train_args_ = get_train_setup(
             model_name, do_eval=do_eval, dir_name=dir_nm, train_args=train_args, save_gpu_memory=save_gpu_mem
         )
-        tr_map_func = tokenize_func(tokenizer_, dataset_name=dataset_name, split='train')
-        vl_map_func = tokenize_func(tokenizer_, dataset_name=dataset_name, split='test')
+        tr_map_func = Tokenize(tokenizer, dataset_name=dataset_name, split='train')
+        vl_map_func = Tokenize(tokenizer, dataset_name=dataset_name, split='test')
+        # tr_map_func = tokenize_func(tokenizer, dataset_name=dataset_name, split='train')
+        # vl_map_func = tokenize_func(tokenizer, dataset_name=dataset_name, split='test')
 
     if dataset_args is None:
         dataset_args = dict()
     dset_tr_, dset_vl_ = get_dataset(
         dataset_name=dataset_name,
         map_func=dict(train=tr_map_func, test=vl_map_func), remove_columns=['text', 'labels'],
-        n_sample=n_sample, shuffle_seed=random_seed,
+        n_sample=n_sample, shuffle_seed=random_seed, pbar=True,
         fast='debug' not in model_name, **dataset_args
     )
     trainer_args = dict(
-        model=model_, args=train_args_, data_collator=data_collator_,
+        model=model, args=train_args_, data_collator=data_collator_,
         train_dataset=dset_tr_, eval_dataset=dset_vl_, compute_metrics=compute_metrics
     )
     trainer_ = GPT2Trainer(
-        tokenizer=tokenizer_, custom_logging=custom_logging, compute_cls_acc=model_name != 'debug-gpt-ori',
+        tokenizer=tokenizer, custom_logging=custom_logging, compute_cls_acc=model_name != 'debug-gpt-ori',
         is_ddp=is_ddp,
         **trainer_args
     )
-    return model_, tokenizer_, dset_tr_, dset_vl_, trainer_
+    return model, tokenizer, dset_tr_, dset_vl_, trainer_
 
 
 def plot_dataset_token_length_stats(domain: str = 'in'):
     ca(dataset_domain=domain)
     tokenizer = get_model_n_tokenizer('gpt2-medium')[1]
     # `split` shouldn't matter
-    func = tokenize_func(tokenizer=tokenizer, dataset_name=f'UTCD-{domain}', split='train', mode='stats')
+    func = Tokenize(tokenizer=tokenizer, dataset_name=f'UTCD-{domain}', split='train', mode='stats')
     did2nm = sconfig('UTCD.dataset_id2name')
 
     def map_func(examples):
@@ -968,25 +988,18 @@ if __name__ == '__main__':
     seed = sconfig('random-seed')
     transformers.set_seed(seed)
 
-    def run_eval():
-        # def profile_evaluation():
-        #     profile_runtime(lambda: evaluate(domain='in', batch_size=48), sleep=2)
-        # # profile_evaluation()
-
-        # dom = 'in'
-        dom = 'out'
-        # form = 'vanilla'
-        form = 'implicit'
-        evaluate(domain=dom, batch_size=48, form=form, load_model_args=dict(normalize_aspect=True))
-    run_eval()
-
     def train():
         dnm = 'UTCD-in'
         # md_nm = 'debug'
         md_nm = 'gpt2-medium'
 
         # form = 'vanilla'
-        form = 'implicit'
+        # form = 'implicit'
+        form = 'explicit'
+        if form == 'explicit':
+            dir_nm = '2022-06-12_16-40-16_Explicit Pretrain Aspect NVIDIA-GPT2-gpt2-medium-explicit-aspect-norm'
+            md_nm = os_join(u.proj_path, u.model_dir, dir_nm, 'trained')
+            # mic(os.listdir(md_nm))
 
         # n = 32
         # n = 128
@@ -1036,7 +1049,19 @@ if __name__ == '__main__':
         trainer.save_model(save_path)
         tokenizer.save_pretrained(save_path)
         os.listdir(save_path)
-    # train()
+    train()
+
+    def run_eval():
+        # def profile_evaluation():
+        #     profile_runtime(lambda: evaluate(domain='in', batch_size=48), sleep=2)
+        # # profile_evaluation()
+
+        # dom = 'in'
+        dom = 'out'
+        # form = 'vanilla'
+        form = 'implicit'
+        evaluate(domain=dom, batch_size=48, form=form, load_model_args=dict(normalize_aspect=True))
+    # run_eval()
 
     def sanity_check_trained_generate():
         text = 'hello world'

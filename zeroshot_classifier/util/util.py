@@ -16,7 +16,7 @@ from zeroshot_classifier.util.data_path import BASE_PATH, PROJ_DIR, DSET_DIR, PK
 
 __all__ = [
     'sconfig', 'u', 'save_fig', 'plot_points',
-    'map_model_output_path', 'domain2eval_dir_nm', 'TrainStrategy2PairMap',
+    'map_model_dir_nm', 'map_model_output_path', 'domain2eval_dir_nm', 'TrainStrategy2PairMap',
     'eval_res2df', 'compute_metrics'
 ]
 

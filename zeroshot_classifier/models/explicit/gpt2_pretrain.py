@@ -72,9 +72,29 @@ if __name__ == '__main__':
         logger.info('Launching Training... ')
         trainer.train()
 
-        save_path = os_join(trainer.args.log_output_dir, 'trained')
+        save_path = os_join(trainer.log_output_dir, 'trained')
         trainer.save_model(save_path)
         tokenizer.save_pretrained(save_path)
         mic(save_path)
         mic(os.listdir(save_path))
-    train()
+    # train()
+
+    dir_nm = '2022-06-12_16-40-16_Explicit Pretrain Aspect NVIDIA-GPT2-gpt2-medium-explicit-aspect-norm'
+    save_path = os_join(u.proj_path, u.model_dir, dir_nm, 'trained')
+
+    def fix_save_tokenizer():
+        tokenizer = GPT2TokenizerFast.from_pretrained(HF_MODEL_NAME)
+        tokenizer.add_special_tokens(special_tokens_dict=dict(
+            pad_token=ZsGPT2Tokenizer.pad_token_, additional_special_tokens=[utcd_util.EOT_TOKEN]
+        ))
+        mic(tokenizer.get_added_vocab())
+        mic(save_path)
+        # exit(1)
+        tokenizer.save_pretrained(save_path)
+        mic(os.listdir(save_path))
+    # fix_save_tokenizer()
+
+    def check_save_tokenizer():
+        tokenizer = GPT2TokenizerFast.from_pretrained(save_path)
+        mic(tokenizer.get_added_vocab())
+    check_save_tokenizer()
