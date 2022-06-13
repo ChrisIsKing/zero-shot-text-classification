@@ -120,7 +120,7 @@ if __name__ == "__main__":
         out_path = os_join(model_path, 'eval', domain2eval_dir_nm(domain))
         os.makedirs(out_path, exist_ok=True)
 
-        dataset_names = get_dataset_names(domain)
+        dataset_names = utcd_util.get_dataset_names(domain)
         data = get_data(in_domain_data_path if domain == 'in' else out_of_domain_data_path)
         model = SentenceTransformer(args.model_path)
         md_nm = model.__class__.__qualname__
@@ -135,7 +135,6 @@ if __name__ == "__main__":
             label_options = sconfig(f'UTCD.datasets.{dnm}.splits.{split}.labels')
             label2id = {lbl: i for i, lbl in enumerate(label_options)}
             mode2map = TrainStrategy2PairMap(train_strategy=mode)
-            txt_n_lbs2query = mode2map(aspect=data[dnm]['aspect'])
 
             n_txt = sconfig(f'UTCD.datasets.{dnm}.splits.{split}.n_text')
             arr_preds, arr_labels = np.empty(n_txt, dtype=int), np.empty(n_txt, dtype=int)

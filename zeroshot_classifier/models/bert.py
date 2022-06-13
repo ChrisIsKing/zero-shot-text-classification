@@ -1,11 +1,16 @@
 import math
 from os.path import join as os_join
 from argparse import ArgumentParser
+from typing import List, Dict
 
+import numpy as np
 import pandas as pd
+import torch.cuda
+from torch.utils.data import DataLoader
 from transformers import BertTokenizer, BertForSequenceClassification
 from transformers import TrainingArguments, Trainer
 from datasets import Dataset
+from tqdm.auto import tqdm
 
 from stefutil import *
 from zeroshot_classifier.util import *
@@ -127,51 +132,65 @@ if __name__ == "__main__":
         lg_fl = os_join(output_path, f'{now(for_path=True)}_{lg_nm}, dom={domain}.log')
         logger_fl = get_logger(lg_nm, typ='file-write', file_path=lg_fl)
         domain_str = 'in-domain' if domain == 'in' else 'out-of-domain'
-        logger.info(f'Evaluating {logi(domain_str)} datasets {log_list(dataset_names)} on model {logi(model_path)}... ')
+        logger.info(f'Evaluating {logi(domain_str)} datasets {logi(dataset_names)} on model {logi(model_path)}... ')
         logger_fl.info(f'Evaluating {domain_str} datasets {dataset_names} on model {model_path}... ')
 
         data = get_data(in_domain_data_path if domain == 'in' else out_of_domain_data_path)
         tokenizer = BertTokenizer.from_pretrained(model_path)
         model = BertForSequenceClassification.from_pretrained(model_path)
-        _, dset_formatted, labels = seq_cls_format(data, all=True)  # Need to pass in all data for `label_map`
+        device = 'cpu'
+        if torch.cuda.is_available():
+            model = model.cuda()
+            device = 'cuda'
+
+        lb2id: Dict[str, int] = dict()  # see `load_data.seq_cls_format`
+        for dset in data.values():
+            for label in dset['labels']:
+                if label not in lb2id:
+                    lb2id[label] = len(lb2id)
+        logger.info(f'Loaded labels: {logi(lb2id)}')
+        logger_fl.info(f'Loaded labels: {lb2id}')
 
         def tokenize(examples):
             return tokenizer(examples['text'], padding='max_length', truncation=True)
-        i_dset_strt = 0
-        for dnm, dset in data.items():  # ordering matters since selecting formatted samples
-        # for dnm in dataset_names:
-            dset = dset['test']
+        for dnm in dataset_names:
+            pairs: Dict[str, List[str]] = data[dnm][split]
             asp = sconfig(f'UTCD.datasets.{dnm}.aspect')
             logger.info(f'Evaluating {logi(asp)} dataset {logi(dnm)}... ')
             logger_fl.info(f'Evaluating {asp} dataset {dnm}... ')
 
-            # dset_ = seq_cls_format(data[dnm])[1]  # test split
-            n = len(dset)
-            mic(n, sconfig(f'UTCD.datasets.{dnm}.splits.{split}.n_text'))
-            assert n == sconfig(f'UTCD.datasets.{dnm}.splits.{split}.n_text')  # sanity check
-            dset_ = dset_formatted[i_dset_strt:i_dset_strt+n]
-            i_dset_strt += n
+            n_txt = sconfig(f'UTCD.datasets.{dnm}.splits.{split}.n_text')
+            arr_preds, arr_labels = np.empty(n_txt, dtype=int), np.empty(n_txt, dtype=int)
+            logger.info(f'Loading {logi(n_txt)} samples... ')
+            logger_fl.info(f'Loading {n_txt} samples... ')
 
-            logger.info(f'Loading {logi(n)} samples... ')
-            logger_fl.info(f'Loading {n} samples... ')
-            dset_ = Dataset.from_pandas(pd.DataFrame(dset_))
+            df = pd.DataFrame([dict(text=txt, label=[lb2id[lb] for lb in lb]) for txt, lb in pairs.items()])
+            dset = Dataset.from_pandas(df)
             datasets.set_progress_bar_enabled(False)
-            map_args = dict(batched=True, batch_size=64, num_proc=os.cpu_count(), remove_columns=['label_name', 'text'])
-            dset_ = dset_.map(tokenize, **map_args)
+            map_args = dict(batched=True, batch_size=64, num_proc=os.cpu_count(), remove_columns=['text'])
+            dset = dset.map(tokenize, **map_args)
             datasets.set_progress_bar_enabled(True)
-            # TODO: fix multi-label
+            gen = group_n(range(len(dset)), n=bsz)
+            n_ba = math.ceil(n_txt / bsz)
 
             logger.info(f'Evaluating... ')
             logger_fl.info(f'Evaluating... ')
-            training_args = TrainingArguments(  # Take trainer for eval
-                output_dir=output_path,  # Expect nothing to be written to
-                per_device_eval_batch_size=bsz
-            )
-            d_eval = Trainer(
-                model=model, args=training_args, eval_dataset=dset_, compute_metrics=compute_metrics
-            ).evaluate()
-            acc = d_eval['eval_acc']
-            logger.info(f'{logi(dnm)} Classification Accuracy: {logi(round(acc, 3))}')
+            it = tqdm(gen, desc=dnm, unit='ba', total=n_ba)
+            for i, idxs in enumerate(it):
+                inputs = dset[idxs]
+                labels = inputs.pop('label')
+                inputs = {k: torch.tensor(v, device=device) for k, v in inputs.items()}
+                with torch.no_grad():
+                    outputs = model(**inputs)
+                preds = torch.argmax(outputs[0], dim=1)
+                for i_, (pred, lbs) in enumerate(zip(preds, labels), start=i*bsz):
+                    arr_preds[i_] = pred = pred.item()
+                    arr_labels[i_] = pred if pred in lbs else lbs[0]
+            args = dict(zero_division=0, target_names=list(lb2id.keys()), labels=list(range(len(lb2id))), output_dict=True)  # disables warning
+            df, acc = eval_res2df(arr_labels, arr_preds, report_args=args)
+            logger.info(f'{logi(dnm)} Classification Accuracy: {logi(acc)}')
             logger_fl.info(f'{dnm} Classification Accuracy: {acc}')
-        mic(i_dset_strt, len(dset_formatted))
-        assert i_dset_strt == len(dset_formatted)  # sanity check
+            out = os_join(output_path, f'{dnm}.csv')
+            df.to_csv(out)
+            logger.info(f'{logi(dnm)} Eval CSV written to {logi(out)}')
+            logger_fl.info(f'{dnm} Eval CSV written to {out}')
