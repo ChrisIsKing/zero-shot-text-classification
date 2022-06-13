@@ -140,7 +140,7 @@ class ZsGPT2Tokenizer(GPT2TokenizerFast):
 
         self.logger = get_logger(self.__class__.__qualname__)
         d_log = dict(form=form, added_vocab=list(self.get_added_vocab().keys()), vocab_size=self.__len__())
-        self.logger.info(f'{self.__class__.__qualname__} initialized with {log_dict(d_log)}')
+        self.logger.info(f'{logi(self.__class__.__qualname__)} initialized with {log_dict(d_log)}')
 
     @property
     def max_len_single_sentence(self) -> int:
@@ -759,16 +759,21 @@ def plot_dataset_token_length_stats(domain: str = 'in'):
     plt.savefig(os_join(output_dir, f'{title}, {now(for_path=True)}.png'), dpi=300)
 
 
-def load_trained(form: str = 'vanilla', epoch: int = 3, normalize_aspect: bool = False) -> ZsGPT2LMHeadModel:
+def load_trained(
+        form: str = 'vanilla', epoch: int = 3, normalize_aspect: bool = False
+) -> Tuple[ZsGPT2LMHeadModel, ZsGPT2Tokenizer]:
+    tokenizer_name = 'gpt2'
     if normalize_aspect:
         assert epoch == 3
         if form == 'vanilla':
             dir_nm = '2022-06-10_11-36-47_NVIDIA-GPT2-gpt2-medium'
         elif form == 'implicit':
-            dir_nm = '2022-06-08_18-19-27_NVIDIA-GPT2-gpt2-medium'
+            dir_nm = '2022-06-12_17-11-17_NVIDIA-GPT2-gpt2-medium-implicit-aspect-norm'
         else:
             raise NotImplementedError('TODO')
         path = os_join(u.proj_path, u.model_dir, dir_nm, 'trained')
+        if form == 'implicit':  # TODO: all models should have tokenizers saved eventually
+            tokenizer_name = path
     else:
         assert epoch in [2, 3]
         if not hasattr(load_trained, 'epoch2path'):
@@ -778,7 +783,10 @@ def load_trained(form: str = 'vanilla', epoch: int = 3, normalize_aspect: bool =
                 3: os_join('2022-04-02_11-51-19', 'checkpoint-51390'),
             }
         path = os_join(BASE_PATH, PROJ_DIR, 'trained-models', 'gpt2-nvidia', load_trained.epoch2path[epoch])
-    return ZsGPT2LMHeadModel.from_pretrained(path, is_zs_gpt2=True)  # with caching
+    model = ZsGPT2LMHeadModel.from_pretrained(path, is_zs_gpt2=True)  # with caching
+    tokenizer_args = dict(form=form, use_fast=True, model_max_length=model.config.n_ctx)
+    tokenizer = ZsGPT2Tokenizer.from_pretrained(tokenizer_name, **tokenizer_args)
+    return model, tokenizer
 
 
 def evaluate(domain: str = 'in', batch_size: int = 48, form: str = 'vanilla', load_model_args: Dict = None):
@@ -791,20 +799,20 @@ def evaluate(domain: str = 'in', batch_size: int = 48, form: str = 'vanilla', lo
     else:
         load_model_args['form'] = form
     ca(dataset_domain=domain)
-    model = load_trained(**(load_model_args or dict())).to('cuda')
+    model, tokenizer = load_trained(**(load_model_args or dict()))
     conf, model_cnm = model.config, model.__class__.__qualname__
     # To disable warning `Setting `pad_token_id` to `eos_token_id` for open-end generation.`
     model_size = conf.max_length = conf.n_ctx
     conf.pad_token_id = conf.eos_token_id
     model.eval()
-    tokenizer = ZsGPT2Tokenizer.from_pretrained('gpt2', use_fast=True, model_max_length=model_size, form=form)
+    model = model.to('cuda')
     model.tokenizer = tokenizer  # See ZsGPT2LMHeadModel.forward() sanity check`
 
     split = 'test'
-    output_path = os_join(u.eval_path, MODEL_NAME, domain2eval_dir_nm(domain))
+    output_path = os_join(u.eval_path, MODEL_NAME.replace(' ', '-'), form, domain2eval_dir_nm(domain))
     os.makedirs(output_path, exist_ok=True)
 
-    dataset_names = get_dataset_names(domain)
+    dataset_names = utcd_util.get_dataset_names(domain)
     d_model = OrderedDict({'model name': model_cnm, 'model size': model_size, 'training_strategy': form})
     d_eval = OrderedDict([
         ('max batch size', batch_size),
@@ -829,7 +837,7 @@ def evaluate(domain: str = 'in', batch_size: int = 48, form: str = 'vanilla', lo
         dset = get_dataset(  # Get evaluation set only
             dataset_name=dnm_, splits='test',
             map_func=dict(test=tokenize_func(tokenizer, dataset_name=dnm_, split='test', mode='inference')),
-            remove_columns='text', n_sample=None, from_disk=True  # keeps the `labels`
+            remove_columns='text', n_sample=None, from_disk=True, pbar=True  # keeps the `labels`
         )[0]
 
         # Batched generation that **doesn't take up padding** is not supported by HuggingFace
@@ -851,7 +859,7 @@ def evaluate(domain: str = 'in', batch_size: int = 48, form: str = 'vanilla', lo
                        f'of {len(dset)} unique texts in {n_bch} batches... ')
 
         n_computed = 0
-        it = tqdm(idxs_batches, desc='ba')
+        it = tqdm(idxs_batches, desc=dnm_, unit='ba')
         for step, idxs in enumerate(it):  # Each batch has input samples of the same token length
             idxs = [int(idx) for idx in idxs]  # `Dataset.select` works with `int` indices only
             inputs = {  # No need to pad; Don't need to the labels to complicate forward pass
@@ -965,12 +973,12 @@ if __name__ == '__main__':
         #     profile_runtime(lambda: evaluate(domain='in', batch_size=48), sleep=2)
         # # profile_evaluation()
 
-        dom = 'in'
-        # dom = 'out'
+        # dom = 'in'
+        dom = 'out'
         # form = 'vanilla'
         form = 'implicit'
         evaluate(domain=dom, batch_size=48, form=form, load_model_args=dict(normalize_aspect=True))
-    # run_eval()
+    run_eval()
 
     def train():
         dnm = 'UTCD-in'
@@ -1028,7 +1036,7 @@ if __name__ == '__main__':
         trainer.save_model(save_path)
         tokenizer.save_pretrained(save_path)
         os.listdir(save_path)
-    train()
+    # train()
 
     def sanity_check_trained_generate():
         text = 'hello world'

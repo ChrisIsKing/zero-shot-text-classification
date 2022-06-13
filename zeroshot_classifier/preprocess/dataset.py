@@ -19,7 +19,7 @@ def get_dataset(
         map_func: Union[Dict[str, Callable], Callable] = None, filter_func: Callable = None,
         remove_columns: Union[str, List[str]] = None,
         n_sample: int = None, shuffle_seed: int = None, fast=True, from_disk=True,
-        splits: Union[str, List[str], Tuple[str]] = ('train', 'test')
+        splits: Union[str, List[str], Tuple[str]] = ('train', 'test'), pbar: bool = False
 ) -> List[Dataset]:
     logger = get_logger('Get Dataset')
     if from_disk:
@@ -47,7 +47,8 @@ def get_dataset(
     n_cpu = os.cpu_count()
     if fast and n_cpu >= 2:
         num_proc = n_cpu
-        datasets.set_progress_bar_enabled(False)
+        if not pbar:
+            datasets.set_progress_bar_enabled(False)
     # ordering of filter, shuffle, then select determined for debugging
     if filter_func is not None:
         dsets = [dset.filter(filter_func, num_proc=num_proc) for dset in dsets]
