@@ -1,3 +1,4 @@
+import math
 import os
 import datetime
 import configparser
@@ -127,7 +128,7 @@ def eval_res2df(labels: Iterable, preds: Iterable, report_args: Dict = None) -> 
         acc = report['accuracy']
     else:
         vals = [v for k, v in report['micro avg'].items() if k != 'support']
-        assert all(v == vals[0] for v in vals)
+        assert all(math.isclose(v, vals[0], abs_tol=1e-8) for v in vals)
         acc = vals[0]
     return pd.DataFrame(report).transpose(), round(acc, 3)
 
