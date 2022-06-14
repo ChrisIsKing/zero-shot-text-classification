@@ -104,8 +104,8 @@ class ZsGPT2Tokenizer(GPT2TokenizerFast):
         # cos otherwise `DataCollatorForLanguageModeling` would override normal eos tokens
         spec_toks = list(ZsGPT2Tokenizer.SPEC_TOKS.values())
         if form == 'explicit':
-            added_vocab = self.get_added_vocab()
-            assert set(added_vocab.keys()) == {utcd_util.EOT_TOKEN, ZsGPT2Tokenizer.pad_token_}
+            added_vocab = set(self.get_added_vocab().keys())
+            assert utcd_util.EOT_TOKEN in added_vocab and ZsGPT2Tokenizer.pad_token_ in added_vocab
             # TODO: when re-loaded, PAD token doesn't seem to be added...
         else:
             spec_toks.append(utcd_util.EOT_TOKEN)  # SGD end of turn
@@ -508,20 +508,6 @@ class Tokenize:
         args = dict(dataset_name=self.dataset_name, max_length=self.max_length, split=self.split, mode=self.mode)
         return self.tokenizer(sample, **args, **self.kwargs)
 
-# def tokenize_func(
-#         tokenizer: ZsGPT2Tokenizer, dataset_name='ag_news', max_length=None,
-#         split: str = 'train', mode: str = 'train', **kwargs
-# ):
-#     def _tokenize_func(sample: Dict[str, List]):
-#         """
-#         :param sample: A batch of data samples
-#         """
-#         if 'UTCD' not in dataset_name:
-#             sample['dataset_id'] = [sconfig('UTCD.dataset_name2id')[dataset_name]] * len(sample['text'])
-#         # Otherwise, `dataset_id` already part of input
-#         return tokenizer(sample, dataset_name=dataset_name, max_length=max_length, split=split, mode=mode, **kwargs)
-#     return _tokenize_func
-
 
 def get_model_n_tokenizer(model_name='gpt2', form: str = 'vanilla', save_gpu_memory: bool = True) -> Tuple[
     ZsGPT2LMHeadModel, ZsGPT2Tokenizer, DataCollatorForLanguageModeling
@@ -704,8 +690,6 @@ def get_all_setup(
         )
         tr_map_func = Tokenize(tokenizer, dataset_name=dataset_name, split='train')
         vl_map_func = Tokenize(tokenizer, dataset_name=dataset_name, split='test')
-        # tr_map_func = tokenize_func(tokenizer, dataset_name=dataset_name, split='train')
-        # vl_map_func = tokenize_func(tokenizer, dataset_name=dataset_name, split='test')
 
     if dataset_args is None:
         dataset_args = dict()
@@ -790,9 +774,10 @@ def load_trained(
         elif form == 'implicit':
             dir_nm = '2022-06-12_17-11-17_NVIDIA-GPT2-gpt2-medium-implicit-aspect-norm'
         else:
-            raise NotImplementedError('TODO')
+            assert form == 'explicit'
+            dir_nm = '2022-06-13_19-09-32_NVIDIA-GPT2-explicit-aspect-norm'
         path = os_join(u.proj_path, u.model_dir, dir_nm, 'trained')
-        if form == 'implicit':  # TODO: all models should have tokenizers saved eventually
+        if form != 'vanilla':  # TODO: all models should have tokenizers saved eventually
             tokenizer_name = path
     else:
         assert epoch in [2, 3]
@@ -856,8 +841,9 @@ def evaluate(domain: str = 'in', batch_size: int = 48, form: str = 'vanilla', lo
         lb2id.update({lb.lower(): i for i, lb in enumerate(labels)})
         dset = get_dataset(  # Get evaluation set only
             dataset_name=dnm_, splits='test',
-            map_func=dict(test=tokenize_func(tokenizer, dataset_name=dnm_, split='test', mode='inference')),
-            remove_columns='text', n_sample=None, from_disk=True, pbar=True  # keeps the `labels`
+            map_func=dict(test=Tokenize(tokenizer, dataset_name=dnm_, split='test', mode='inference')),
+            remove_columns='text', n_sample=None, from_disk=True,  # keeps the `labels`
+            # pbar=True
         )[0]
 
         # Batched generation that **doesn't take up padding** is not supported by HuggingFace
@@ -977,7 +963,7 @@ def gpt2_inference(text: str, label_options: List[str]) -> str:
     tkzer = ZsGPT2Tokenizer.from_pretrained('gpt2', use_fast=True, model_max_length=model_size)
 
     # 'dataset_name` just so that it passes, irrelevant
-    tokenize_fn = tokenize_func(tkzer, dataset_name='UTCD', mode='inference-sample')
+    tokenize_fn = Tokenize(tkzer, dataset_name='UTCD', mode='inference-sample')
     inputs = tokenize_fn(dict(text=text, dataset_id=-1, labels=-1, label_options=label_options))
     inputs = {k: torch.tensor(v).to(device).unsqueeze(0) for k, v in inputs.items()}  # add dummy batch dim
     outputs = model.generate(**inputs)
@@ -1049,7 +1035,7 @@ if __name__ == '__main__':
         trainer.save_model(save_path)
         tokenizer.save_pretrained(save_path)
         os.listdir(save_path)
-    train()
+    # train()
 
     def run_eval():
         # def profile_evaluation():
@@ -1059,9 +1045,10 @@ if __name__ == '__main__':
         # dom = 'in'
         dom = 'out'
         # form = 'vanilla'
-        form = 'implicit'
+        # form = 'implicit'
+        form = 'explicit'
         evaluate(domain=dom, batch_size=48, form=form, load_model_args=dict(normalize_aspect=True))
-    # run_eval()
+    run_eval()
 
     def sanity_check_trained_generate():
         text = 'hello world'

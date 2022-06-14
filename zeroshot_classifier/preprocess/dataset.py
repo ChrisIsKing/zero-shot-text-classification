@@ -46,7 +46,7 @@ def get_dataset(
     dsets = [dsets[s] for s in splits]
     num_proc = None
     n_cpu = os.cpu_count()
-    if fast and n_cpu >= 2:
+    if fast and n_cpu >= 2 and min(len(d) for d in dsets) > 4096:
         num_proc = n_cpu
         if not pbar:
             datasets.set_progress_bar_enabled(False)
