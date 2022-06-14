@@ -10,7 +10,7 @@ from stefutil import *
 from zeroshot_classifier.util import *
 import zeroshot_classifier.util.utcd as utcd_util
 from zeroshot_classifier.preprocess import get_explicit_dataset
-from zeroshot_classifier.models.binary_bert import HF_MODEL_NAME
+from zeroshot_classifier.models.binary_bert import MODEL_NAME as BERT_MODEL_NAME, HF_MODEL_NAME
 from zeroshot_classifier.models.explicit.explicit_v2 import *
 
 
@@ -24,7 +24,6 @@ if __name__ == '__main__':
     seed = sconfig('random-seed')
 
     NORMALIZE_ASPECT = True
-    mic(NORMALIZE_ASPECT)
 
     def train(resume: str = None):
         logger = get_logger(MODEL_NAME)
@@ -111,26 +110,35 @@ if __name__ == '__main__':
                 # with_tqdm = False
                 with_tqdm = True
                 args = get_train_args(
-                    model_name=MODEL_NAME,
+                    model_name=BERT_MODEL_NAME,
                     # save_strategy='no'
                 )
             else:
+                dir_nm = map_model_output_path(
+                    model_name=MODEL_NAME.replace(' ', '-'), mode='explicit',
+                    sampling=None, normalize_aspect=NORMALIZE_ASPECT
+                )
+                mic(dir_nm)
+
                 with_tqdm = True
                 args = get_train_args(
-                    model_name=MODEL_NAME,
+                    model_name=BERT_MODEL_NAME,
+                    dir_name=dir_nm,
                     per_device_eval_batch_size=128
                 )
             trainer_args = dict(
                 model=mdl, args=args, train_dataset=tr, eval_dataset=vl, compute_metrics=compute_metrics
             )
-            trainer_ = ExplicitTrainer(name=f'{MODEL_NAME} Training', with_tqdm=with_tqdm, **trainer_args)
+            trainer = ExplicitTrainer(name=f'{MODEL_NAME} Training', with_tqdm=with_tqdm, **trainer_args)
+            mic(trainer.log_output_dir)
+            # exit(1)
             logger.info('Launching Training... ')
             if resume:
-                trainer_.train(resume_from_checkpoint=resume)
+                trainer.train(resume_from_checkpoint=resume)
             else:
-                trainer_.train()
-            save_path = os_join(trainer_.args.log_output_dir, 'trained')
-            trainer_.save_model(save_path)
+                trainer.train()
+            save_path = os_join(trainer.log_output_dir, 'trained')
+            trainer.save_model(save_path)
             tokenizer.save_pretrained(save_path)
             mic(save_path)
             mic(os.listdir(save_path))

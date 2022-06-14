@@ -72,6 +72,29 @@ def get_dataset(
     return dsets
 
 
+class ExplicitMap:
+    def __init__(self, tokenizer, dataset_name: str, dataset: List[Dataset]):
+        self.tokenizer = tokenizer
+
+        self.is_combined = 'UTCD' in dataset_name
+        aspects: List[str] = sconfig('UTCD.aspects')
+        aspect2id = {a: i for i, a in enumerate(aspects)}
+        if self.is_combined:  # get aspect based on dataset id
+            feat: ClassLabel = dataset[0].features['dataset_id']  # the same feature for both `train` and `test`
+            n_dset = feat.num_classes
+            self.did2aspect_id = {i: aspect2id[sconfig(f'UTCD.datasets.{feat.int2str(i)}.aspect')] for i in range(n_dset)}
+        else:  # single dataset, the same aspect
+            self.aspect_id = aspect2id[sconfig(f'UTCD.datasets.{dataset_name}.aspect')]
+
+    def __call__(self, samples: Dict[str, List[Any]]):
+        ret = self.tokenizer(samples['text'], padding='max_length', truncation=True)
+        if self.is_combined:
+            ret['labels'] = [self.did2aspect_id[asp] for asp in samples['dataset_id']]
+        else:
+            ret['labels'] = [self.aspect_id] * len(samples['text'])
+        return ret
+
+
 def get_explicit_dataset(
         dataset_name: str = 'UTCD-in', tokenizer: PreTrainedTokenizerBase = None, **kwargs
 ) -> List[Dataset]:
@@ -81,25 +104,10 @@ def get_explicit_dataset(
     # perform preprocessing outside `get_dataset` as feature from the dataset is needed
     dsets = get_dataset(dataset_name, **kwargs)  # by split
 
-    aspects: List[str] = sconfig('UTCD.aspects')
-    aspect2id = {a: i for i, a in enumerate(aspects)}
-    is_combined = 'UTCD' in dataset_name
-    if is_combined:  # get aspect based on dataset id
-        feat: ClassLabel = dsets[0].features['dataset_id']  # the same feature for both `train` and `test`
-        n_dset = feat.num_classes
-        did2aspect_id = {i: aspect2id[sconfig(f'UTCD.datasets.{feat.int2str(i)}.aspect')] for i in range(n_dset)}
-    else:  # single dataset, the same aspect
-        aspect_id = aspect2id[sconfig(f'UTCD.datasets.{dataset_name}.aspect')]
+    exp_map = ExplicitMap(tokenizer=tokenizer, dataset_name=dataset_name, dataset=dsets)
 
-    def map_fn(samples: Dict[str, List[Any]]):
-        ret = tokenizer(samples['text'], padding='max_length', truncation=True)
-        if is_combined:
-            ret['labels'] = [did2aspect_id[asp] for asp in samples['dataset_id']]
-        else:
-            ret['labels'] = [aspect_id] * len(samples['text'])
-        return ret
     rmv = ['text']
-    if is_combined:
+    if exp_map.is_combined:
         rmv.append('dataset_id')
-    dsets = [dset.map(map_fn, batched=True, remove_columns=rmv, load_from_cache_file=False) for dset in dsets]
+    dsets = [dset.map(exp_map, batched=True, remove_columns=rmv, load_from_cache_file=False) for dset in dsets]
     return dsets

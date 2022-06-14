@@ -79,8 +79,8 @@ if __name__ == '__main__':
         mic(os.listdir(save_path))
     # train()
 
-    dir_nm = '2022-06-12_16-40-16_Explicit Pretrain Aspect NVIDIA-GPT2-gpt2-medium-explicit-aspect-norm'
-    save_path = os_join(u.proj_path, u.model_dir, dir_nm, 'trained')
+    dir_nm_ = '2022-06-12_16-40-16_Explicit Pretrain Aspect NVIDIA-GPT2-gpt2-medium-explicit-aspect-norm'
+    save_path = os_join(u.proj_path, u.model_dir, dir_nm_, 'trained')
 
     def fix_save_tokenizer():
         tokenizer = GPT2TokenizerFast.from_pretrained(HF_MODEL_NAME)

@@ -77,8 +77,6 @@ if __name__ == '__main__':
     if args.command == 'train':
         output_path, sampling, mode, bsz, n_ep = args.output, args.sampling, args.mode, args.batch_size, args.epochs
         model_init, seq_len = args.model_init, args.max_sequence_length
-        mic(model_init)
-        mic(os.listdir(model_init))
         dset_args = dict(normalize_aspect=seed) if NORMALIZE_ASPECT else dict()
         data = get_data(in_domain_data_path, **dset_args)
         dataset_names = [dnm for dnm, d_dset in sconfig('UTCD.datasets').items() if filt(d_dset, 'in')]
@@ -92,6 +90,10 @@ if __name__ == '__main__':
 
         # in case of loading from explicit pre-training,
         # the classification head would be ignored for classifying 3 classes
+        d_log = dict(model_init=model_init)
+        if model_init != HF_MODEL_NAME:
+            d_log['files'] = os.listdir(model_init)
+        logger.info(f'Loading model with {logi(d_log)}...')
         model = CrossEncoder(model_init, num_labels=2, automodel_args=dict(ignore_mismatched_sizes=True))
         if seq_len != 512:  # Intended for `bert-base-uncased` only; TODO: binary bert seems to support this already?
             model.tokenizer, model.model = load_sliced_binary_bert(model_init, seq_len)
@@ -114,7 +116,7 @@ if __name__ == '__main__':
         logger.info(f'Launched training with {log_dict(d_log)}... ')
 
         output_path = map_model_output_path(
-            model_name=MODEL_NAME, output_path=output_path,
+            model_name=MODEL_NAME.replace(' ', '-'), output_path=output_path,
             mode=mode, sampling=sampling, normalize_aspect=NORMALIZE_ASPECT
         )
         logger.info(f'Model will be saved to {logi(output_path)}')

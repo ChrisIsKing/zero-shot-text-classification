@@ -1800,6 +1800,7 @@
             "display_name": "Model Name",
             "attr_name": "model_name",
             "accepted_values": [
+                "bert-seq-cls",
                 "binary-bert",
                 "bert-nli",
                 "bi-encoder",

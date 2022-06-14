@@ -158,7 +158,10 @@ config_dict = {
     'check-arg': [
         dict(
             display_name='Model Name', attr_name='model_name',
-            accepted_values=['binary-bert', 'bert-nli', 'bi-encoder', 'dual-bi-encoder', 'gpt2-nvidia']
+            accepted_values=[
+                'bert-seq-cls',  # not a Zeroshot framework, a supervised learning upperbound
+                'binary-bert', 'bert-nli', 'bi-encoder', 'dual-bi-encoder', 'gpt2-nvidia'
+            ]
         ),
         dict(
             display_name='Dataset Domain', attr_name='dataset_domain',
