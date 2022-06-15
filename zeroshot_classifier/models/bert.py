@@ -47,7 +47,8 @@ if __name__ == "__main__":
     args = parse_args()
 
     seed = sconfig('random-seed')
-    NORMALIZE_ASPECT = True
+    NORMALIZE_ASPECT = False
+    # NORMALIZE_ASPECT = True
 
     if args.command == 'train':
         logger = get_logger(f'{MODEL_NAME} Train')
