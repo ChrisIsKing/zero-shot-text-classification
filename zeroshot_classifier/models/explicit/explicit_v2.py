@@ -55,6 +55,8 @@ def get_train_args(model_name: str, dir_name: str = None, **kwargs) -> TrainingA
         args['per_device_eval_batch_size'] = bsz
     md_nm = model_name.replace(' ', '-')
     dir_nm = dir_name or f'{now(for_path=True)}_{md_nm}'
+    mic(dir_nm, os_join(utcd_util.get_output_base(), u.proj_dir, u.model_dir, dir_nm))
+    exit(1)
     args.update(dict(
         output_dir=os_join(utcd_util.get_output_base(), u.proj_dir, u.model_dir, dir_nm),
         do_train=True, do_eval=True,

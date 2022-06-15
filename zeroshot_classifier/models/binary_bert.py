@@ -195,7 +195,7 @@ if __name__ == '__main__':
                 eval_loss[dnm] = arr_loss.numpy()
 
             args = dict(zero_division=0, target_names=label_options, output_dict=True)  # disables warning
-            df, acc = eval_res2df(arr_labels, arr_preds, **args)
+            df, acc = eval_res2df(arr_labels, arr_preds, report_args=args)
             logger.info(f'{logi(dnm)} Classification Accuracy: {logi(acc)}')
             df.to_csv(join(out_path, f'{dnm}.csv'))
 
