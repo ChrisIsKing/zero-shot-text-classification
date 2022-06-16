@@ -48,7 +48,8 @@ if __name__ == "__main__":
 
     seed = sconfig('random-seed')
     NORMALIZE_ASPECT = False
-    IS_CHRIS = True
+    # IS_CHRIS = True
+    IS_CHRIS = False
     mic(IS_CHRIS)
     # NORMALIZE_ASPECT = True
 
@@ -158,8 +159,9 @@ if __name__ == "__main__":
             for label in data[dataset_name]['labels']:
                 if label not in lb2id:
                     lb2id[label] = len(lb2id)
-        logger.info(f'Loaded labels: {logi(lb2id)}')
-        logger_fl.info(f'Loaded labels: {lb2id}')
+        _lbs = list(lb2id.keys())
+        logger.info(f'Loaded labels: {logi(_lbs)}')
+        logger_fl.info(f'Loaded labels: {_lbs}')
 
         def tokenize(examples):
             return tokenizer(examples['text'], padding='max_length', truncation=True)
