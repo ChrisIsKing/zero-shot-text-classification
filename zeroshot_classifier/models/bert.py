@@ -47,7 +47,11 @@ if __name__ == "__main__":
     args = parse_args()
 
     seed = sconfig('random-seed')
-    NORMALIZE_ASPECT = True
+    NORMALIZE_ASPECT = False
+    # IS_CHRIS = True
+    IS_CHRIS = False
+    mic(IS_CHRIS)
+    # NORMALIZE_ASPECT = True
 
     if args.command == 'train':
         logger = get_logger(f'{MODEL_NAME} Train')
@@ -123,8 +127,10 @@ if __name__ == "__main__":
         dataset_name, domain, model_path = args.dataset, args.domain, args.model_path
         bsz = 32
         split = 'test'
-        assert dataset_name == 'all'
         dataset_names = utcd_util.get_dataset_names(domain)
+        if dataset_name != 'all':
+            assert dataset_name in dataset_names
+            dataset_names = [dataset_name]
         output_path = os_join(model_path, 'eval')
         lg_nm = f'{MODEL_NAME} Eval'
         logger = get_logger(lg_nm)
@@ -135,20 +141,27 @@ if __name__ == "__main__":
         logger_fl.info(f'Evaluating {domain_str} datasets {dataset_names} on model {model_path}... ')
 
         data = get_data(in_domain_data_path if domain == 'in' else out_of_domain_data_path)
-        tokenizer = BertTokenizer.from_pretrained(model_path)
+        tokenizer = BertTokenizer.from_pretrained(HF_MODEL_NAME if IS_CHRIS else model_path)
         model = BertForSequenceClassification.from_pretrained(model_path)
+        model.eval()
         device = 'cpu'
         if torch.cuda.is_available():
             model = model.cuda()
             device = 'cuda'
 
         lb2id: Dict[str, int] = dict()  # see `load_data.seq_cls_format`
-        for dset in data.values():
-            for label in dset['labels']:
+        if dataset_name == 'all':
+            for dset in data.values():
+                for label in dset['labels']:
+                    if label not in lb2id:
+                        lb2id[label] = len(lb2id)
+        else:
+            for label in data[dataset_name]['labels']:
                 if label not in lb2id:
                     lb2id[label] = len(lb2id)
-        logger.info(f'Loaded labels: {logi(lb2id)}')
-        logger_fl.info(f'Loaded labels: {lb2id}')
+        _lbs = list(lb2id.keys())
+        logger.info(f'Loaded labels: {logi(_lbs)}')
+        logger_fl.info(f'Loaded labels: {_lbs}')
 
         def tokenize(examples):
             return tokenizer(examples['text'], padding='max_length', truncation=True)
@@ -185,8 +198,10 @@ if __name__ == "__main__":
                 for i_, (pred, lbs) in enumerate(zip(preds, labels), start=i*bsz):
                     arr_preds[i_] = pred = pred.item()
                     arr_labels[i_] = pred if pred in lbs else lbs[0]
-            args = dict(zero_division=0, target_names=list(lb2id.keys()), labels=list(range(len(lb2id))), output_dict=True)  # disables warning
-            df, acc = eval_res2df(arr_labels, arr_preds, report_args=args)
+            args = dict(
+                zero_division=0, target_names=list(lb2id.keys()), labels=list(range(len(lb2id))), output_dict=True
+            )  # disables warning
+            df, acc = eval_res2df(arr_labels, arr_preds, report_args=args, pretty=False)
             logger.info(f'{logi(dnm)} Classification Accuracy: {logi(acc)}')
             logger_fl.info(f'{dnm} Classification Accuracy: {acc}')
             out = os_join(output_path, f'{dnm}.csv')

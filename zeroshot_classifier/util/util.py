@@ -122,7 +122,7 @@ class TrainStrategy2PairMap:
             return text
 
 
-def eval_res2df(labels: Iterable, preds: Iterable, report_args: Dict = None) -> Tuple[pd.DataFrame, float]:
+def eval_res2df(labels: Iterable, preds: Iterable, report_args: Dict = None, pretty: bool = True) -> Tuple[pd.DataFrame, float]:
     report = sklearn.metrics.classification_report(labels, preds, **(report_args or dict()))
     if 'accuracy' in report:
         acc = report['accuracy']
@@ -130,7 +130,7 @@ def eval_res2df(labels: Iterable, preds: Iterable, report_args: Dict = None) -> 
         vals = [v for k, v in report['micro avg'].items() if k != 'support']
         assert all(math.isclose(v, vals[0], abs_tol=1e-8) for v in vals)
         acc = vals[0]
-    return pd.DataFrame(report).transpose(), round(acc, 3)
+    return pd.DataFrame(report).transpose(), round(acc, 3) if pretty else acc
 
 
 def compute_metrics(eval_pred):
