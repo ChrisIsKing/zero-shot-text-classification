@@ -20,13 +20,14 @@ if __name__ == '__main__':
     import transformers
 
     from stefutil import *
+    import zeroshot_classifier.util.utcd as utcd_util
 
     seed = sconfig('random-seed')
 
     NORMALIZE_ASPECT = True
     mic(NORMALIZE_ASPECT)
 
-    def train():
+    def train(resume: str = None):
         logger = get_logger(f'{MODEL_NAME} Train')
         logger.info('Setting up training... ')
 
@@ -58,6 +59,7 @@ if __name__ == '__main__':
             per_device_train_batch_size=4,  # to fit in memory, bsz 16 to keep same with Bin Bert pretraining
             gradient_accumulation_steps=4,
             fp16=torch.cuda.is_available(),
+            num_train_epochs=5
         )
         dir_nm = map_model_output_path(
             model_name=MODEL_NAME.replace(' ', '-'), output_path=HF_MODEL_NAME, mode='explicit',
@@ -69,18 +71,25 @@ if __name__ == '__main__':
             model=model, args=train_args, train_dataset=tr, eval_dataset=vl, compute_metrics=compute_metrics
         )
         trainer = ExplicitTrainer(name=f'{MODEL_NAME} Train', with_tqdm=True, **trainer_args)
-        logger.info('Launching Training... ')
-        trainer.train()
-
         save_path = os_join(trainer.log_output_dir, 'trained')
+        mic(save_path)
+        logger.info('Launching Training... ')
+        if resume:
+            trainer.train(resume_from_checkpoint=resume)
+        else:
+            trainer.train()
+
         trainer.save_model(save_path)
         tokenizer.save_pretrained(save_path)
         mic(save_path)
         mic(os.listdir(save_path))
-    # train()
+    dir_nm_ = '2022-06-19_13-13-54_Explicit-Pretrain-Aspect-NVIDIA-GPT2-gpt2-medium-explicit-aspect-norm'
+    ckpt_path = os_join(utcd_util.get_output_base(), u.proj_dir, u.model_dir, dir_nm_, 'checkpoint-31984')
+    mic(ckpt_path)
+    train(resume=ckpt_path)
 
     dir_nm_ = '2022-06-12_16-40-16_Explicit Pretrain Aspect NVIDIA-GPT2-gpt2-medium-explicit-aspect-norm'
-    save_path = os_join(u.proj_path, u.model_dir, dir_nm_, 'trained')
+    save_path_ = os_join(u.proj_path, u.model_dir, dir_nm_, 'trained')
 
     def fix_save_tokenizer():
         tokenizer = GPT2TokenizerFast.from_pretrained(HF_MODEL_NAME)
@@ -88,13 +97,13 @@ if __name__ == '__main__':
             pad_token=ZsGPT2Tokenizer.pad_token_, additional_special_tokens=[utcd_util.EOT_TOKEN]
         ))
         mic(tokenizer.get_added_vocab())
-        mic(save_path)
+        mic(save_path_)
         # exit(1)
-        tokenizer.save_pretrained(save_path)
-        mic(os.listdir(save_path))
+        tokenizer.save_pretrained(save_path_)
+        mic(os.listdir(save_path_))
     # fix_save_tokenizer()
 
     def check_save_tokenizer():
-        tokenizer = GPT2TokenizerFast.from_pretrained(save_path)
+        tokenizer = GPT2TokenizerFast.from_pretrained(save_path_)
         mic(tokenizer.get_added_vocab())
-    check_save_tokenizer()
+    # check_save_tokenizer()

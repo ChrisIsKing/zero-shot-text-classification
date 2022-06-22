@@ -27,6 +27,7 @@ from transformers import (
 )
 from transformers.file_utils import ModelOutput
 from transformers.training_args import OptimizerNames
+from sentence_transformers import SentenceTransformer, util as sbert_util
 import datasets
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -766,16 +767,27 @@ def plot_dataset_token_length_stats(domain: str = 'in'):
 def load_trained(
         form: str = 'vanilla', epoch: int = 3, normalize_aspect: bool = False
 ) -> Tuple[ZsGPT2LMHeadModel, ZsGPT2Tokenizer]:
+    logger = get_logger('Load ZS-GPT2 Trained')
+    d_log = dict(form=form, epoch=epoch, normalize_aspect=normalize_aspect)
+    logger.info(f'Loading model with {logi(d_log)}... ')
     tokenizer_name = 'gpt2'
     if normalize_aspect:
-        assert epoch == 3
-        if form == 'vanilla':
-            dir_nm = '2022-06-10_11-36-47_NVIDIA-GPT2-gpt2-medium'
-        elif form == 'implicit':
-            dir_nm = '2022-06-12_17-11-17_NVIDIA-GPT2-gpt2-medium-implicit-aspect-norm'
-        else:
-            assert form == 'explicit'
-            dir_nm = '2022-06-13_19-09-32_NVIDIA-GPT2-explicit-aspect-norm'
+        assert epoch in [3, 5]
+        if epoch == 3:
+            if form == 'vanilla':
+                dir_nm = '2022-06-10_11-36-47_NVIDIA-GPT2-gpt2-medium'
+            elif form == 'implicit':
+                dir_nm = '2022-06-12_17-11-17_NVIDIA-GPT2-gpt2-medium-implicit-aspect-norm'
+            else:
+                assert form == 'explicit'
+                dir_nm = '2022-06-13_19-09-32_NVIDIA-GPT2-explicit-aspect-norm'
+        else:  # epoch == 5
+            if form == 'vanilla':
+                dir_nm = '2022-06-19_13-08-17_NVIDIA-GPT2-gpt2-medium-vanilla-aspect-norm'
+            elif form == 'implicit':
+                dir_nm = '2022-06-19_13-09-36_NVIDIA-GPT2-gpt2-medium-implicit-aspect-norm'
+            else:
+                raise NotImplementedError('TODO')
         path = os_join(u.proj_path, u.model_dir, dir_nm, 'trained')
         if form != 'vanilla':  # TODO: all models should have tokenizers saved eventually
             tokenizer_name = path
@@ -794,9 +806,18 @@ def load_trained(
     return model, tokenizer
 
 
-def evaluate(domain: str = 'in', batch_size: int = 48, form: str = 'vanilla', load_model_args: Dict = None):
+def evaluate(
+        domain: str = 'in', batch_size: int = 48, form: str = 'vanilla', load_model_args: Dict = None,
+        embed_sim: bool = False
+):
     """
     Run evaluation, on potentially multi-label datasets
+
+    :param domain: Dataset domain
+    :param form: training strategy
+    :param batch_size: model generation batch size
+    :param load_model_args: arguments for `load_trained`
+    :param embed_sim: If true, in case model generates non-label, consider semantically most-similar text as prediction
     """
     form_ = load_model_args.get('form', None)
     if form_:
@@ -812,6 +833,9 @@ def evaluate(domain: str = 'in', batch_size: int = 48, form: str = 'vanilla', lo
     model.eval()
     model = model.to('cuda')
     model.tokenizer = tokenizer  # See ZsGPT2LMHeadModel.forward() sanity check`
+    encoder = None
+    if embed_sim:
+        encoder = SentenceTransformer('all-mpnet-base-v2', device='cuda' if torch.cuda.is_available() else 'cpu')
 
     split = 'test'
     output_path = os_join(u.eval_path, MODEL_NAME.replace(' ', '-'), form, domain2eval_dir_nm(domain))
@@ -819,10 +843,7 @@ def evaluate(domain: str = 'in', batch_size: int = 48, form: str = 'vanilla', lo
 
     dataset_names = utcd_util.get_dataset_names(domain)
     d_model = OrderedDict({'model name': model_cnm, 'model size': model_size, 'training_strategy': form})
-    d_eval = OrderedDict([
-        ('max batch size', batch_size),
-        ('datasets', dataset_names)
-    ])
+    d_eval = dict(batch_size=batch_size, datasets=dataset_names, embed_similarity=embed_sim)
     domain = 'in-domain' if domain == 'in' else 'out-of-domain'
     logger_name = 'GPT2-NVIDIA Evaluation'
     logger = get_logger(logger_name, typ='stdout')
@@ -834,6 +855,8 @@ def evaluate(domain: str = 'in', batch_size: int = 48, form: str = 'vanilla', lo
     logger_fl.info(f'Running evaluation {domain} on model {log_dict_nc(d_model)}, with {log_dict_nc(d_eval)}... ')
 
     for dnm_ in dataset_names:
+        if dnm_ != 'consumer_finance':  # TODO: debugging
+            continue
         d_info = sconfig(f'UTCD.datasets.{dnm_}.splits.{split}')
         lb2id = defaultdict(lambda: -1)  # If generated invalid descriptive label, will return -1
         labels = d_info['labels']
@@ -845,6 +868,9 @@ def evaluate(domain: str = 'in', batch_size: int = 48, form: str = 'vanilla', lo
             remove_columns='text', n_sample=None, from_disk=True,  # keeps the `labels`
             # pbar=True
         )[0]
+        label_embeds = None
+        if embed_sim:
+            label_embeds = encoder.encode(labels, batch_size=batch_size)  # not necessarily lowercase
 
         # Batched generation that **doesn't take up padding** is not supported by HuggingFace
         n_dset = len(dset)
@@ -879,6 +905,10 @@ def evaluate(domain: str = 'in', batch_size: int = 48, form: str = 'vanilla', lo
             def set_pred_n_true(generated: str, i_sample: int) -> Tuple[int, int]:
                 idxs_boa = get_substr_indices(generated, s_sub=tokenizer.boa_token)
                 # there will be at least one index, as in prompt
+                if not len(idxs_boa) >= 1:
+                    ids = dset[i_sample]['input_ids']
+                    txt = tokenizer.decode(ids)
+                    mic(generated, idxs_boa, txt)
                 assert len(idxs_boa) >= 1
                 # **try to be as lenient**: try to extract the text part if possible
                 answer_with_eos = generated[idxs_boa[-1] + len(tokenizer.boa_token):]
@@ -897,7 +927,7 @@ def evaluate(domain: str = 'in', batch_size: int = 48, form: str = 'vanilla', lo
                     answer = answer_with_eos
                 else:
                     answer = answer_with_eos[:idxs_eos[0]]  # until the 1st eos
-                answer = answer.lower()
+                # answer = answer.lower()
                 idxs_sep = get_substr_indices(answer, s_sub=tokenizer.ques_sep_token)
                 if len(idxs_sep) > 0:
                     answers = [answer[:idxs_sep[0]]]
@@ -906,7 +936,16 @@ def evaluate(domain: str = 'in', batch_size: int = 48, form: str = 'vanilla', lo
                     answers.append(answer[idxs_sep[-1] + len(tokenizer.ques_sep_token):])
                 else:
                     answers = [answer]
-                ids_pred = [lb2id[a] for a in answers]
+                ids_pred: List[int] = [lb2id[a.lower()] for a in answers]
+                assert len(ids_pred) >= 1  # sanity check
+                if embed_sim and all(i == -1 for i in ids_pred):  # all generated answer are non-label
+                    logger.warning(f'{logi(model_cnm)} didn\'t generate any valid label option with {logi(answers)}')
+                    logger_fl.warning(f'{model_cnm} didn\'t generate any valid label option with {answers}')
+                    ids_pred = []
+                    answ_embeds = encoder.encode(answers, batch_size=batch_size)
+                    for v_ans in answ_embeds:
+                        scores = [sbert_util.cos_sim(v_lb, v_ans).item() for v_lb in label_embeds]
+                        ids_pred.append(int(np.argmax(scores)))
                 ids_true: List[int] = dset[i_sample]['labels']
                 matched = set(ids_pred) & set(ids_true)
                 if len(matched) > 0:
@@ -972,9 +1011,10 @@ def gpt2_inference(text: str, label_options: List[str]) -> str:
 
 if __name__ == '__main__':
     seed = sconfig('random-seed')
-    transformers.set_seed(seed)
+
 
     def train():
+        transformers.set_seed(seed)
         dnm = 'UTCD-in'
         # md_nm = 'debug'
         md_nm = 'gpt2-medium'
@@ -983,9 +1023,10 @@ if __name__ == '__main__':
         # form = 'implicit'
         form = 'explicit'
         if form == 'explicit':
-            dir_nm = '2022-06-12_16-40-16_Explicit Pretrain Aspect NVIDIA-GPT2-gpt2-medium-explicit-aspect-norm'
+            dir_nm = '2022-06-20_22-50-06_Explicit-Pretrain-Aspect-NVIDIA-GPT2-gpt2-medium-explicit-aspect-norm'
             md_nm = os_join(u.proj_path, u.model_dir, dir_nm, 'trained')
-            # mic(os.listdir(md_nm))
+            mic(os.listdir(md_nm))
+            # exit(1)
 
         # n = 32
         # n = 128
@@ -1017,12 +1058,14 @@ if __name__ == '__main__':
         else:
             # dataset_args = dict()
             train_args = dict(  # Distribute among GPUs & fit in memory; Effectively batch size 128 as in paper
-                num_train_epochs=3,
+                # num_train_epochs=3,
+                num_train_epochs=5,
                 per_device_train_batch_size=4,
-                gradient_accumulation_steps=8,
+                gradient_accumulation_steps=8 * 4,
             )
             # ddp = False
             ddp = 4
+            mic(trasin_args, ddp)
         model, tokenizer, dset_tr, dset_vl, trainer = get_all_setup(  # eval set is too large
             model_name=md_nm, dataset_name=dnm, form=form, do_eval=False, custom_logging=True, n_sample=n,
             random_seed=seed,
@@ -1030,14 +1073,17 @@ if __name__ == '__main__':
             train_args=train_args, dataset_args=dataset_args,
             is_ddp=ddp
         )
-        trainer.train()
         save_path = os_join(trainer.log_output_dir, 'trained')
+        mic(save_path)
+        trainer.train()
+
         trainer.save_model(save_path)
         tokenizer.save_pretrained(save_path)
         os.listdir(save_path)
     # train()
 
     def run_eval():
+        transformers.set_seed(seed)  # cos explicit 3 epoch doesn't generate BOA token...
         # def profile_evaluation():
         #     profile_runtime(lambda: evaluate(domain='in', batch_size=48), sleep=2)
         # # profile_evaluation()
@@ -1047,7 +1093,12 @@ if __name__ == '__main__':
         # form = 'vanilla'
         # form = 'implicit'
         form = 'explicit'
-        evaluate(domain=dom, batch_size=48, form=form, load_model_args=dict(normalize_aspect=True))
+        n_ep = 3
+        # n_ep = 5
+        evaluate(
+            domain=dom, batch_size=48, form=form, load_model_args=dict(normalize_aspect=True, epoch=n_ep),
+            embed_sim=True
+        )
     run_eval()
 
     def sanity_check_trained_generate():

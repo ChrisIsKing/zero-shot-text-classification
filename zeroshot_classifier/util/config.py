@@ -96,17 +96,17 @@ config_dict = {
     'UTCD': dict(
         datasets=dict(
             # in-domain evaluation has the same labels as training
-            emotion=dict(
-                path='UTCD/in-domain/emotion', aspect='sentiment', eval_labels_same=True, domain='in'),
             go_emotion=dict(
                 path='UTCD/in-domain/go_emotion', aspect='sentiment', eval_labels_same=True, domain='in'),
             sentiment_tweets_2020=dict(
                 path='UTCD/in-domain/sentiment_tweets_2020', aspect='sentiment', eval_labels_same=True, domain='in'
             ),
-            clinc_150=dict(
-                path='UTCD/in-domain/clinc_150', aspect='intent', eval_labels_same=True, domain='in'),
+            emotion=dict(
+                path='UTCD/in-domain/emotion', aspect='sentiment', eval_labels_same=True, domain='in'),
             # `eval_labels_same` := has some unique test labels
             sgd=dict(path='UTCD/in-domain/sgd', aspect='intent', eval_labels_same=False, domain='in'),
+            clinc_150=dict(
+                path='UTCD/in-domain/clinc_150', aspect='intent', eval_labels_same=True, domain='in'),
             slurp=dict(path='UTCD/in-domain/slurp', aspect='intent', eval_labels_same=False, domain='in'),
             ag_news=dict(path='UTCD/in-domain/ag_news', aspect='topic', eval_labels_same=True, domain='in'),
             dbpedia=dict(path='UTCD/in-domain/dbpedia', aspect='topic', eval_labels_same=True, domain='in'),
