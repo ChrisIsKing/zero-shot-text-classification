@@ -793,6 +793,7 @@ def load_trained(
             tokenizer_name = path
     else:
         assert epoch in [2, 3]
+        assert form == 'vanilla'
         if not hasattr(load_trained, 'epoch2path'):
             load_trained.epoch2path = {
                 # 2: os_join('2022-03-04 21-33-12', 'checkpoint-37066'),
@@ -800,6 +801,8 @@ def load_trained(
                 3: os_join('2022-04-02_11-51-19', 'checkpoint-51390'),
             }
         path = os_join(BASE_PATH, PROJ_DIR, 'trained-models', 'gpt2-nvidia', load_trained.epoch2path[epoch])
+        mic(path)
+        mic(os.listdir(path))
     model = ZsGPT2LMHeadModel.from_pretrained(path, is_zs_gpt2=True)  # with caching
     tokenizer_args = dict(form=form, use_fast=True, model_max_length=model.config.n_ctx)
     tokenizer = ZsGPT2Tokenizer.from_pretrained(tokenizer_name, **tokenizer_args)
@@ -1088,15 +1091,19 @@ if __name__ == '__main__':
         #     profile_runtime(lambda: evaluate(domain='in', batch_size=48), sleep=2)
         # # profile_evaluation()
 
-        # dom = 'in'
-        dom = 'out'
-        # form = 'vanilla'
+        dom = 'in'
+        # dom = 'out'
+        form = 'vanilla'
         # form = 'implicit'
-        form = 'explicit'
+        # form = 'explicit'
         n_ep = 3
         # n_ep = 5
+
+        # normalize_aspect = True
+        normalize_aspect = False
+
         evaluate(
-            domain=dom, batch_size=48, form=form, load_model_args=dict(normalize_aspect=True, epoch=n_ep),
+            domain=dom, batch_size=48, form=form, load_model_args=dict(normalize_aspect=normalize_aspect, epoch=n_ep),
             embed_sim=True
         )
     run_eval()
