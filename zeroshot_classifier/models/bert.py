@@ -30,6 +30,8 @@ def parse_args():
 
     parser_train.add_argument('--dataset', type=str, default='all')
     parser_train.add_argument('--domain', type=str, choices=['in', 'out'], required=True)
+    parser_train.add_argument('--epochs', type=int, default=3)
+    parser_train.add_argument('--learning_rate', type=float, default=5e-5)
 
     parser_test.add_argument('--dataset', type=str, default='all')
     parser_test.add_argument('--domain', type=str, choices=['in', 'out'], required=True)
@@ -56,6 +58,7 @@ if __name__ == "__main__":
     if args.command == 'train':
         logger = get_logger(f'{MODEL_NAME} Train')
         dataset_name, domain = args.dataset, args.domain
+        bsz, n_ep, lr = 16, args.epochs, args.learning_rate
         ca(dataset_domain=domain)
         domain_str = 'in-domain' if domain == 'in' else 'out-of-domain'
 
@@ -85,7 +88,6 @@ if __name__ == "__main__":
         train_dset = train_dset.map(tokenize_function, **map_args)
         test_dset = test_dset.map(tokenize_function, **map_args)
 
-        bsz, n_ep = 16, 3
         warmup_steps = math.ceil(len(train_dset) * n_ep * 0.1)  # 10% of train data for warm-up
 
         dir_nm = map_model_output_path(
@@ -95,10 +97,14 @@ if __name__ == "__main__":
         output_path = os_join(utcd_util.get_output_base(), u.proj_dir, u.model_dir, dir_nm)
         proj_output_path = os_join(u.base_path, u.proj_dir, u.model_path, dir_nm, 'trained')
         mic(dir_nm, proj_output_path)
-        d_log = {'batch size': bsz, 'epochs': n_ep, 'warmup steps': warmup_steps, 'save path': output_path}
+        d_log = {
+            'learning rate': lr, 'batch size': bsz, 'epochs': n_ep,
+            'warmup steps': warmup_steps, 'save path': output_path
+        }
         logger.info(f'Launched training with {log_dict(d_log)}... ')
 
-        training_args = TrainingArguments(  # TODO: learning rate
+        training_args = TrainingArguments(
+            learning_rate=lr,
             output_dir=output_path,
             num_train_epochs=n_ep,
             per_device_train_batch_size=bsz,

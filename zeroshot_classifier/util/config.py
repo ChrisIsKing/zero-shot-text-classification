@@ -409,11 +409,9 @@ for dom in ['in']:
 
 
 if __name__ == '__main__':
-    from icecream import ic
-
     from zeroshot_classifier.util.data_path import PKG_NM
 
     fl_nm = 'config.json'
-    ic(config_dict)
+    mic(config_dict)
     with open(os_join(BASE_PATH, PROJ_DIR, PKG_NM, 'util', 'config.json'), 'w') as f:
         json.dump(config_dict, f, indent=4)
