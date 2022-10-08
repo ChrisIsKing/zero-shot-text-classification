@@ -75,55 +75,13 @@
     },
     "UTCD": {
         "datasets": {
-            "emotion": {
-                "path": "UTCD/in-domain/emotion",
-                "aspect": "sentiment",
-                "eval_labels_same": true,
-                "domain": "in",
-                "splits": {
-                    "train": {
-                        "labels": [
-                            "anger",
-                            "fear",
-                            "joy",
-                            "love",
-                            "sadness",
-                            "surprise"
-                        ],
-                        "n_label": 6,
-                        "n_text": 15969,
-                        "n_pair": 15999,
-                        "multi_label": true,
-                        "n_multi_label": 30
-                    },
-                    "test": {
-                        "labels": [
-                            "anger",
-                            "fear",
-                            "joy",
-                            "love",
-                            "sadness",
-                            "surprise"
-                        ],
-                        "n_label": 6,
-                        "n_text": 2000,
-                        "n_pair": 2000,
-                        "multi_label": false,
-                        "n_multi_label": 0
-                    }
-                },
-                "re-txt_avg_tokens": 19.169736768879737,
-                "bert-txt_avg_tokens": 22.773610106294175,
-                "gpt2-txt_avg_tokens": 20.000278256998165,
-                "re-lb_avg_tokens": 1.0,
-                "bert-lb_avg_tokens": 3.0,
-                "gpt2-lb_avg_tokens": 1.7385410300572255
-            },
             "go_emotion": {
                 "path": "UTCD/in-domain/go_emotion",
                 "aspect": "sentiment",
                 "eval_labels_same": true,
                 "domain": "in",
+                "name": "GoEmotions",
+                "name_compact": "GoEmotions",
                 "splits": {
                     "train": {
                         "labels": [
@@ -212,6 +170,8 @@
                 "aspect": "sentiment",
                 "eval_labels_same": true,
                 "domain": "in",
+                "name": "TweetEval",
+                "name_compact": "TweetEval",
                 "splits": {
                     "train": {
                         "labels": [
@@ -245,11 +205,153 @@
                 "bert-lb_avg_tokens": 3.0,
                 "gpt2-lb_avg_tokens": 1.0
             },
+            "emotion": {
+                "path": "UTCD/in-domain/emotion",
+                "aspect": "sentiment",
+                "eval_labels_same": true,
+                "domain": "in",
+                "name": "Emotion",
+                "name_compact": "Emotion",
+                "splits": {
+                    "train": {
+                        "labels": [
+                            "anger",
+                            "fear",
+                            "joy",
+                            "love",
+                            "sadness",
+                            "surprise"
+                        ],
+                        "n_label": 6,
+                        "n_text": 15969,
+                        "n_pair": 15999,
+                        "multi_label": true,
+                        "n_multi_label": 30
+                    },
+                    "test": {
+                        "labels": [
+                            "anger",
+                            "fear",
+                            "joy",
+                            "love",
+                            "sadness",
+                            "surprise"
+                        ],
+                        "n_label": 6,
+                        "n_text": 2000,
+                        "n_pair": 2000,
+                        "multi_label": false,
+                        "n_multi_label": 0
+                    }
+                },
+                "re-txt_avg_tokens": 19.169736768879737,
+                "bert-txt_avg_tokens": 22.773610106294175,
+                "gpt2-txt_avg_tokens": 20.000278256998165,
+                "re-lb_avg_tokens": 1.0,
+                "bert-lb_avg_tokens": 3.0,
+                "gpt2-lb_avg_tokens": 1.7385410300572255
+            },
+            "sgd": {
+                "path": "UTCD/in-domain/sgd",
+                "aspect": "intent",
+                "eval_labels_same": false,
+                "domain": "in",
+                "name": "Schema-Guided Dialogue",
+                "name_compact": "SGD",
+                "splits": {
+                    "train": {
+                        "labels": [
+                            "Book Appointment",
+                            "Book House",
+                            "Buy Bus Ticket",
+                            "Buy Event Tickets",
+                            "Check Balance",
+                            "Find Apartment",
+                            "Find Attractions",
+                            "Find Bus",
+                            "Find Events",
+                            "Find Movies",
+                            "Find Provider",
+                            "Find Restaurants",
+                            "Get Available Time",
+                            "Get Cars Available",
+                            "Get Event Dates",
+                            "Get Events",
+                            "Get Ride",
+                            "Get Times For Movie",
+                            "Get Weather",
+                            "Lookup Music",
+                            "Lookup Song",
+                            "Play Media",
+                            "Play Movie",
+                            "Play Song",
+                            "Reserve Car",
+                            "Reserve Hotel",
+                            "Reserve One way Flight",
+                            "Reserve Restaurant",
+                            "Reserve Round trip Flights",
+                            "Search Hotel",
+                            "Search House",
+                            "Search One way Flight",
+                            "Search Round trip Flights",
+                            "Transfer Money"
+                        ],
+                        "n_label": 34,
+                        "n_text": 16142,
+                        "n_pair": 16142,
+                        "multi_label": false,
+                        "n_multi_label": 0
+                    },
+                    "test": {
+                        "labels": [
+                            "Add Alarm",
+                            "Buy Bus Ticket",
+                            "Buy Event Tickets",
+                            "Buy Movie Tickets",
+                            "Find Attractions",
+                            "Find Bus",
+                            "Find Events",
+                            "Find Home By Area",
+                            "Find Movies",
+                            "Find Provider",
+                            "Find Restaurants",
+                            "Find Trains",
+                            "Get Alarms",
+                            "Get Cars Available",
+                            "Get Ride",
+                            "Get Weather",
+                            "Lookup Music",
+                            "Make Payment",
+                            "Play Movie",
+                            "Request Payment",
+                            "Reserve Restaurant",
+                            "Schedule Visit",
+                            "Search Hotel",
+                            "Search House",
+                            "Search One way Flight",
+                            "Search Round trip Flights"
+                        ],
+                        "n_label": 26,
+                        "n_text": 4201,
+                        "n_pair": 4201,
+                        "multi_label": false,
+                        "n_multi_label": 0
+                    }
+                },
+                "re-txt_avg_tokens": 226.98967703878483,
+                "bert-txt_avg_tokens": 337.6333382490291,
+                "gpt2-txt_avg_tokens": 331.08071572531094,
+                "re-lb_avg_tokens": 2.404168510052598,
+                "bert-lb_avg_tokens": 5.232709039964607,
+                "gpt2-lb_avg_tokens": 2.700290026053188
+            },
             "clinc_150": {
                 "path": "UTCD/in-domain/clinc_150",
                 "aspect": "intent",
                 "eval_labels_same": true,
                 "domain": "in",
+                "name": "Clinc-150",
+                "name_compact": "Clinc-150",
                 "splits": {
                     "train": {
                         "labels": [
@@ -577,103 +679,13 @@
                 "bert-lb_avg_tokens": 4.206666666666667,
                 "gpt2-lb_avg_tokens": 2.433333333333333
             },
-            "sgd": {
-                "path": "UTCD/in-domain/sgd",
-                "aspect": "intent",
-                "eval_labels_same": false,
-                "domain": "in",
-                "splits": {
-                    "train": {
-                        "labels": [
-                            "Book Appointment",
-                            "Book House",
-                            "Buy Bus Ticket",
-                            "Buy Event Tickets",
-                            "Check Balance",
-                            "Find Apartment",
-                            "Find Attractions",
-                            "Find Bus",
-                            "Find Events",
-                            "Find Movies",
-                            "Find Provider",
-                            "Find Restaurants",
-                            "Get Available Time",
-                            "Get Cars Available",
-                            "Get Event Dates",
-                            "Get Events",
-                            "Get Ride",
-                            "Get Times For Movie",
-                            "Get Weather",
-                            "Lookup Music",
-                            "Lookup Song",
-                            "Play Media",
-                            "Play Movie",
-                            "Play Song",
-                            "Reserve Car",
-                            "Reserve Hotel",
-                            "Reserve One way Flight",
-                            "Reserve Restaurant",
-                            "Reserve Round trip Flights",
-                            "Search Hotel",
-                            "Search House",
-                            "Search One way Flight",
-                            "Search Round trip Flights",
-                            "Transfer Money"
-                        ],
-                        "n_label": 34,
-                        "n_text": 16142,
-                        "n_pair": 16142,
-                        "multi_label": false,
-                        "n_multi_label": 0
-                    },
-                    "test": {
-                        "labels": [
-                            "Add Alarm",
-                            "Buy Bus Ticket",
-                            "Buy Event Tickets",
-                            "Buy Movie Tickets",
-                            "Find Attractions",
-                            "Find Bus",
-                            "Find Events",
-                            "Find Home By Area",
-                            "Find Movies",
-                            "Find Provider",
-                            "Find Restaurants",
-                            "Find Trains",
-                            "Get Alarms",
-                            "Get Cars Available",
-                            "Get Ride",
-                            "Get Weather",
-                            "Lookup Music",
-                            "Make Payment",
-                            "Play Movie",
-                            "Request Payment",
-                            "Reserve Restaurant",
-                            "Schedule Visit",
-                            "Search Hotel",
-                            "Search House",
-                            "Search One way Flight",
-                            "Search Round trip Flights"
-                        ],
-                        "n_label": 26,
-                        "n_text": 4201,
-                        "n_pair": 4201,
-                        "multi_label": false,
-                        "n_multi_label": 0
-                    }
-                },
-                "re-txt_avg_tokens": 226.98967703878483,
-                "bert-txt_avg_tokens": 337.6333382490291,
-                "gpt2-txt_avg_tokens": 331.08071572531094,
-                "re-lb_avg_tokens": 2.404168510052598,
-                "bert-lb_avg_tokens": 5.232709039964607,
-                "gpt2-lb_avg_tokens": 2.700290026053188
-            },
             "slurp": {
                 "path": "UTCD/in-domain/slurp",
                 "aspect": "intent",
                 "eval_labels_same": false,
                 "domain": "in",
+                "name": "SLURP",
+                "name_compact": "SLURP",
                 "splits": {
                     "train": {
                         "labels": [
@@ -872,6 +884,8 @@
                 "aspect": "topic",
                 "eval_labels_same": true,
                 "domain": "in",
+                "name": "AG News",
+                "name_compact": "AG News",
                 "splits": {
                     "train": {
                         "labels": [
@@ -912,6 +926,8 @@
                 "aspect": "topic",
                 "eval_labels_same": true,
                 "domain": "in",
+                "name": "DBpedia",
+                "name_compact": "DBpedia",
                 "splits": {
                     "train": {
                         "labels": [
@@ -972,6 +988,8 @@
                 "aspect": "topic",
                 "eval_labels_same": true,
                 "domain": "in",
+                "name": "Yahoo Answer Topics",
+                "name_compact": "Yahoo",
                 "splits": {
                     "train": {
                         "labels": [
@@ -1024,6 +1042,8 @@
                 "aspect": "sentiment",
                 "eval_labels_same": true,
                 "domain": "out",
+                "name": "Amazon Review Polarity",
+                "name_compact": "Amazon Polarity",
                 "splits": {
                     "train": {
                         "labels": [
@@ -1060,6 +1080,8 @@
                 "aspect": "sentiment",
                 "eval_labels_same": true,
                 "domain": "out",
+                "name": "Financial Phrase Bank",
+                "name_compact": "Fin. Phrase Bank",
                 "splits": {
                     "train": {
                         "labels": [
@@ -1098,6 +1120,8 @@
                 "aspect": "sentiment",
                 "eval_labels_same": true,
                 "domain": "out",
+                "name": "Yelp Review",
+                "name_compact": "Yelp",
                 "splits": {
                     "train": {
                         "labels": [
@@ -1136,6 +1160,8 @@
                 "aspect": "intent",
                 "eval_labels_same": true,
                 "domain": "out",
+                "name": "Banking77",
+                "name_compact": "Banking77",
                 "splits": {
                     "train": {
                         "labels": [
@@ -1322,6 +1348,8 @@
                 "aspect": "intent",
                 "eval_labels_same": true,
                 "domain": "out",
+                "name": "SNIPS",
+                "name_compact": "SNIPS",
                 "splits": {
                     "train": {
                         "labels": [
@@ -1368,6 +1396,8 @@
                 "aspect": "intent",
                 "eval_labels_same": true,
                 "domain": "out",
+                "name": "NLU Evaluation",
+                "name_compact": "NLU Eval",
                 "splits": {
                     "train": {
                         "labels": [
@@ -1536,6 +1566,8 @@
                 "aspect": "topic",
                 "eval_labels_same": true,
                 "domain": "out",
+                "name": "MultiEURLEX",
+                "name_compact": "MultiEURLEX",
                 "splits": {
                     "train": {
                         "labels": [
@@ -1610,6 +1642,8 @@
                 "aspect": "topic",
                 "eval_labels_same": true,
                 "domain": "out",
+                "name": "Big Patent",
+                "name_compact": "Patent",
                 "splits": {
                     "train": {
                         "labels": [
@@ -1660,6 +1694,8 @@
                 "aspect": "topic",
                 "eval_labels_same": true,
                 "domain": "out",
+                "name": "Consumer Finance Complaints",
+                "name_compact": "Consumer Finance",
                 "splits": {
                     "train": {
                         "labels": [
@@ -1724,8 +1760,15 @@
                 "gpt2-lb_avg_tokens": 6.611644906949277
             }
         },
-        "aspects": ["sentiment", "intent", "topic"],
-        "domains": ["in", "out"],
+        "aspects": [
+            "sentiment",
+            "intent",
+            "topic"
+        ],
+        "domains": [
+            "in",
+            "out"
+        ],
         "num_aspect": 3,
         "num_dataset_per_aspect": 6,
         "num_dataset_per_domain_per_aspect": 3,

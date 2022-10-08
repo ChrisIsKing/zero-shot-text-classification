@@ -97,38 +97,82 @@ config_dict = {
         datasets=dict(
             # in-domain evaluation has the same labels as training
             go_emotion=dict(
-                path='UTCD/in-domain/go_emotion', aspect='sentiment', eval_labels_same=True, domain='in'),
+                path='UTCD/in-domain/go_emotion', aspect='sentiment', eval_labels_same=True, domain='in',
+                name='GoEmotions', name_compact='GoEmotions'
+            ),
             sentiment_tweets_2020=dict(
-                path='UTCD/in-domain/sentiment_tweets_2020', aspect='sentiment', eval_labels_same=True, domain='in'
+                path='UTCD/in-domain/sentiment_tweets_2020', aspect='sentiment', eval_labels_same=True, domain='in',
+                name='TweetEval', name_compact='TweetEval'
             ),
             emotion=dict(
-                path='UTCD/in-domain/emotion', aspect='sentiment', eval_labels_same=True, domain='in'),
+                path='UTCD/in-domain/emotion', aspect='sentiment', eval_labels_same=True, domain='in',
+                name='Emotion', name_compact='Emotion'
+            ),
             # `eval_labels_same` := has some unique test labels
-            sgd=dict(path='UTCD/in-domain/sgd', aspect='intent', eval_labels_same=False, domain='in'),
+            sgd=dict(
+                path='UTCD/in-domain/sgd', aspect='intent', eval_labels_same=False, domain='in',
+                name='Schema-Guided Dialogue', name_compact='SGD'
+            ),
             clinc_150=dict(
-                path='UTCD/in-domain/clinc_150', aspect='intent', eval_labels_same=True, domain='in'),
-            slurp=dict(path='UTCD/in-domain/slurp', aspect='intent', eval_labels_same=False, domain='in'),
-            ag_news=dict(path='UTCD/in-domain/ag_news', aspect='topic', eval_labels_same=True, domain='in'),
-            dbpedia=dict(path='UTCD/in-domain/dbpedia', aspect='topic', eval_labels_same=True, domain='in'),
-            yahoo=dict(path='UTCD/in-domain/yahoo', aspect='topic', eval_labels_same=True, domain='in'),
+                path='UTCD/in-domain/clinc_150', aspect='intent', eval_labels_same=True, domain='in',
+                name='Clinc-150', name_compact='Clinc-150'
+            ),
+            slurp=dict(
+                path='UTCD/in-domain/slurp', aspect='intent', eval_labels_same=False, domain='in',
+                name='SLURP', name_compact='SLURP'
+            ),
+            ag_news=dict(
+                path='UTCD/in-domain/ag_news', aspect='topic', eval_labels_same=True, domain='in',
+                name='AG News', name_compact='AG News'
+            ),
+            dbpedia=dict(
+                path='UTCD/in-domain/dbpedia', aspect='topic', eval_labels_same=True, domain='in',
+                name='DBpedia', name_compact='DBpedia'
+            ),
+            yahoo=dict(
+                path='UTCD/in-domain/yahoo', aspect='topic', eval_labels_same=True, domain='in',
+                name='Yahoo Answer Topics', name_compact='Yahoo'
+            ),
             # Out-of-domain datasets: test split intended to evaluation
             # TODO: until new multi-label format supported
             amazon_polarity=dict(
-                path='UTCD/out-of-domain/amazon_polarity', aspect='sentiment', eval_labels_same=True, domain='out'),
+                path='UTCD/out-of-domain/amazon_polarity', aspect='sentiment', eval_labels_same=True, domain='out',
+                name='Amazon Review Polarity', name_compact='Amazon Polarity'
+            ),
             finance_sentiment=dict(
-                path='UTCD/out-of-domain/finance_sentiment', aspect='sentiment', eval_labels_same=True, domain='out'),
-            yelp=dict(path='UTCD/out-of-domain/yelp', aspect='sentiment', eval_labels_same=True, domain='out'),
-            banking77=dict(path='UTCD/out-of-domain/banking77', aspect='intent', eval_labels_same=True, domain='out'),
-            snips=dict(path='UTCD/out-of-domain/snips', aspect='intent', eval_labels_same=True, domain='out'),
+                path='UTCD/out-of-domain/finance_sentiment', aspect='sentiment', eval_labels_same=True, domain='out',
+                name='Financial Phrase Bank', name_compact='Fin. Phrase Bank'
+            ),
+            yelp=dict(
+                path='UTCD/out-of-domain/yelp', aspect='sentiment', eval_labels_same=True, domain='out',
+                name='Yelp Review', name_compact='Yelp'
+            ),
+            banking77=dict(
+                path='UTCD/out-of-domain/banking77', aspect='intent', eval_labels_same=True, domain='out',
+                name='Banking77', name_compact='Banking77'
+            ),
+            snips=dict(
+                path='UTCD/out-of-domain/snips', aspect='intent', eval_labels_same=True, domain='out',
+                name='SNIPS', name_compact='SNIPS'
+            ),
             nlu_evaluation=dict(
-                path='UTCD/out-of-domain/nlu_evaluation', aspect='intent', eval_labels_same=True, domain='out'),
+                path='UTCD/out-of-domain/nlu_evaluation', aspect='intent', eval_labels_same=True, domain='out',
+                name='NLU Evaluation', name_compact='NLU Eval'
+            ),
             # Removed for too many options, blowing up GPT2's 1024 token length
             # arxiv=dict(path='UTCD/out-of-domain/arxiv', aspect='topic', eval_labels_same=True, domain='out'),
             multi_eurlex=dict(
-              path='UTCD/out-of-domain/multi_eurlex', aspect='topic', eval_labels_same=True, domain='out'),
-            patent=dict(path='UTCD/out-of-domain/patent', aspect='topic', eval_labels_same=True, domain='out'),
+                path='UTCD/out-of-domain/multi_eurlex', aspect='topic', eval_labels_same=True, domain='out',
+                name='MultiEURLEX', name_compact='MultiEURLEX'
+            ),
+            patent=dict(
+                path='UTCD/out-of-domain/patent', aspect='topic', eval_labels_same=True, domain='out',
+                name='Big Patent', name_compact='Patent'
+            ),
             consumer_finance=dict(
-                path='UTCD/out-of-domain/consumer_finance', aspect='topic', eval_labels_same=True, domain='out')
+                path='UTCD/out-of-domain/consumer_finance', aspect='topic', eval_labels_same=True, domain='out',
+                name='Consumer Finance Complaints', name_compact='Consumer Finance'
+            )
         ),
         aspects=['sentiment', 'intent', 'topic'],
         domains=['in', 'out'],
@@ -190,7 +234,7 @@ ext = config_dict['UTCD']['dataset_ext']
 
 def _re_call() -> Callable[[str], int]:
     if not hasattr(_re_call, 'token_pattern'):
-        # taken from sklearn.CountVectorizer, which was `r"(?u)\b\w\w+\b"`
+        # taken from sklearn.CountVectorizer
         _re_call.token_pattern = re.compile(r'(?u)\b\w+\b')
     return lambda x: len(_re_call.token_pattern.findall(x))
 
@@ -294,8 +338,10 @@ def path2dataset_info(d: Dict) -> Tuple[Dict, Dict, Dict]:
     def counter2mean(c: Counter) -> float:
         lens, counts = zip(*c.items())
         return np.average(lens, weights=counts)
-    avg_toks = {f'{mode}-txt_avg_tokens': counter2mean(txt_n_toks_all[mode]) for mode in tokenize_modes} | \
-               {f'{mode}-lb_avg_tokens': counter2mean(lb_n_toks_all[mode]) for mode in tokenize_modes}
+    avg_toks = {
+        **{f'{mode}-txt_avg_tokens': counter2mean(txt_n_toks_all[mode]) for mode in tokenize_modes},
+        **{f'{mode}-lb_avg_tokens': counter2mean(lb_n_toks_all[mode]) for mode in tokenize_modes}
+    }
     assert set(labels) == set().union(*[set(d['labels']) for d in d_out.values()])
     if d['eval_labels_same']:
         assert d_out['train']['labels'] == d_out['test']['labels']

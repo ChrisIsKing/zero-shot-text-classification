@@ -59,7 +59,9 @@ category_map = {
 }
 
 
-def get_data(path: str, n_sample: int = None, normalize_aspect: Union[bool, int] = False, domain: str = 'in') -> Dict[str, Dict]:
+def get_data(
+        path: str, n_sample: int = None, normalize_aspect: Union[bool, int] = False, domain: str = 'in'
+) -> Dict[str, Dict]:
     """
     :param path: File system path to folder of UTCD dataset
     :param n_sample: If given, a random sample of the entire dataset is selected
@@ -504,4 +506,11 @@ if __name__ == '__main__':
             for txt, lbs in d_dset['train'].items():
                 c.update(lbs)
             ic(c, len(c))
-    check_sampling()
+    # check_sampling()
+
+
+    def save_aspect_norm_dset():
+        seed = sconfig('random-seed')
+        data = get_data(in_domain_data_path, normalize_aspect=seed, domain='in')
+        mic(type(data))
+    save_aspect_norm_dset()

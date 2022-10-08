@@ -252,7 +252,8 @@ class VisualizeOverlap:
 
     @staticmethod
     def get_utcd_overlap(
-        kind: str = 'label', metric: str = 'harmonic', stat='tfidf', stat_args: Dict = None
+            kind: str = 'label', metric: str = 'harmonic', stat='tfidf', stat_args: Dict = None,
+            weighted_average: bool = True
     ) -> pd.DataFrame:
         """
         A normalized score for overlap, between each out-of-domain dataset,
@@ -297,7 +298,6 @@ class VisualizeOverlap:
             else:  # tfidf
                 pbar = tqdm(**pbar_args)
                 stat_args['tokenizer'] = tokenize(pbar)
-                ic(stat_args)
                 v = TfidfVectorizer(**stat_args)
                 v.fit(it)
                 pbar.close()
@@ -337,37 +337,60 @@ class VisualizeOverlap:
                     d_row[dnm_in] = (n_inter_in + n_inter_out) / (n_in + n_out)
             dnms, vals = zip(*d_row.items())
             d_row['average'] = np.mean(vals)
-            d_row['weighted_average'] = np.average(vals, weights=[in_dnm2n_pr[dnm] for dnm in dnms])
+            if weighted_average:
+                d_row['weighted_average'] = np.average(vals, weights=[in_dnm2n_pr[dnm] for dnm in dnms])
             d_row['dataset_name'] = dnm_out
             lst_rows.append(d_row)
         return pd.DataFrame(lst_rows).set_index('dataset_name')
 
     @staticmethod
-    def plot_utcd_overlap(kind: str = 'label', save: bool = False, **kwargs) -> None:
+    def plot_utcd_overlap(
+            kind: str = 'label', save: bool = False, title: str = None,
+            get_overlap_args: Dict = None, fig_args: Dict = None, cbar_ax: bool = True
+    ) -> None:
         d_dset = sconfig('UTCD.datasets')
 
         def dnm2dnm_print(dnm: str) -> str:
             if dnm in d_dset:
-                return dnm.replace('_', '\n')
+                # words = dnm.split('_')
+                # return '\n'.join(w.capitalize() for w in words)
+                return sconfig(f'UTCD.datasets.{dnm}.name_compact')
             else:
                 words = dnm.split('_')
                 return '\n'.join(rf'$\it{{{wd}}}$' for wd in words)
-        df = VisualizeOverlap.get_utcd_overlap(kind=kind, **kwargs)
+        df = VisualizeOverlap.get_utcd_overlap(kind=kind, **(get_overlap_args or dict()))
         df *= 100
         df.rename(lambda s: dnm2dnm_print(s), axis=1, inplace=True)
         df.rename(lambda s: dnm2dnm_print(s), axis=0, inplace=True)
-        fig, (ax, ax_cbar) = plt.subplots(1, 2, figsize=(10+0.25, 8), gridspec_kw=dict(width_ratios=[10, 0.25]))
-        sns.heatmap(df, annot=True, cmap='mako', fmt='.1f', square=True, ax=ax, cbar_ax=ax_cbar)
+        _fig_args = dict(nrows=1, ncols=2 if cbar_ax else 1, figsize=(10 + 0.25, 8))
+        if fig_args:
+            _fig_args.update(fig_args)
+        if cbar_ax:
+            if 'gridspec_kw' not in _fig_args:
+                w, h = _fig_args['figsize']
+                _fig_args['gridspec_kw'] = dict(width_ratios=[w-0.25, 0.25])
+            fig, (ax, ax_cbar) = plt.subplots(**_fig_args)
+        else:
+            assert 'gridspec_kw' not in _fig_args
+            (fig, ax), ax_cbar = plt.subplots(**_fig_args), None
+        ax = sns.heatmap(df, annot=True, cmap='mako', fmt='.1f', square=True, ax=ax, cbar_ax=ax_cbar)
         ax.xaxis.set_ticks_position('top')
         ax.xaxis.set_label_position('top')
         ax.tick_params(axis='y', labelrotation=0)
-        title = f'Out-of-domain eval datasets {kind.capitalize()} overlap against In-domain training datasets'
-        plt.suptitle(title)
-        ax.set_xlabel('In-domain dataset')
-        ax.set_ylabel('Out-of-domain dataset')
-        ax_cbar.set_ylabel('Overlap Score (%)')
+        ax.tick_params(axis='x', top=False)  # hide tick marks
+        title_ = f'Out-of-domain eval datasets {kind.capitalize()} overlap against In-domain training datasets'
+        if title == 'none':
+            title = title_  # for filename export
+        else:
+            title = title or title_
+            plt.suptitle(title)
+        ax.set_xlabel('In-domain dataset', fontsize=12, labelpad=10)
+        ax.set_ylabel('Out-of-domain dataset', fontsize=12)
+        if cbar_ax:
+            ax_cbar.set_ylabel('Overlap Score (%)')
         if save:
-            mt_, st_ = kwargs.get('metric', 'harmonic'), kwargs.get('stat', 'tfidf')  # see `get_utcd_overlap`
+            # see `get_utcd_overlap`
+            mt_, st_ = get_overlap_args.get('metric', 'harmonic'), get_overlap_args.get('stat', 'tfidf')
             mt_ = 'harm' if mt_ == 'harmonic' else 'abs'
             st_ = 'ti' if st_ == 'tfidf' else 'ct'
             save_fig(f'{title}, mt={mt_}, st={st_}')
@@ -606,24 +629,21 @@ class VisualizeOverlap:
 
 
 if __name__ == '__main__':
-    from icecream import ic
-
     from datasets import load_from_disk
 
-    ic.lineWrapWidth = 512
     np.random.seed(sconfig('random-seed'))
 
     def sanity_check(dsets_nm):
         path = os_join(get_output_base(), PROJ_DIR, DSET_DIR, 'processed', dsets_nm)
-        ic(path)
+        mic(path)
         dset = load_from_disk(path)
         te, vl = dset['train'], dset['test']
-        ic(len(te), len(vl))
+        mic(len(te), len(vl))
         lbs = vl.features['labels'].feature
-        ic(lbs)
-        ic(vl[60])
-        ic(lbs.int2str(154))
-    sanity_check('UTCD-in')
+        mic(lbs)
+        mic(vl[60])
+        mic(lbs.int2str(154))
+    # sanity_check('UTCD-in')
 
     def get_utcd_in():
         process_utcd_dataset(domain='in', join=True)
@@ -639,15 +659,15 @@ if __name__ == '__main__':
 
     def sanity_check_ln_eurlex():
         path = os_join(get_output_base(), PROJ_DIR, DSET_DIR, 'processed', 'multi_eurlex')
-        ic(path)
+        mic(path)
         dset = load_from_disk(path)
-        ic(dset, len(dset))
+        mic(dset, len(dset))
     # sanity_check_ln_eurlex()
     # ic(lst2uniq_ids([5, 6, 7, 6, 5, 1]))
 
     def output_utcd_info():
         df = get_utcd_info()
-        ic(df)
+        mic(df)
         df.to_csv(os_join(BASE_PATH, PROJ_DIR, DSET_DIR, 'utcd-info.csv'), float_format='%.3f')
     # output_utcd_info()
 
@@ -667,7 +687,7 @@ if __name__ == '__main__':
                 wicked_txts.append(k)
         assert len(wicked_txts) == 1
         wicked_txt = wicked_txts[0]
-        ic(wicked_txt)
+        mic(wicked_txt)
         # assert wicked_txt in dset['test'] and wicked_lb == set(dset['test'][wicked_txt])
         dset['test'][wicked_txt] = ['positive']
         with open(path, 'w') as f:
@@ -696,20 +716,26 @@ if __name__ == '__main__':
 
     def plot_token_overlap():
         # ic(get_utcd_overlap())
-        # kd = 'label'
-        kd = 'text'
+        kd = 'label'
+        # kd = 'text'
         # st = 'count'
         st = 'tfidf'
-        if kd == 'label':
-            args = dict()
-        else:
-            # args = None
-            args = dict()
+        args = dict()
+        if kd == 'text':
+            args = None
         # sv = False
         sv = True
-        vs.plot_utcd_overlap(kind=kd, save=sv, stat=st, stat_args=args)
+        vs.plot_utcd_overlap(
+            kind=kd, save=sv, title='none',
+            get_overlap_args=dict(stat=st, stat_args=args, weighted_average=False),
+            fig_args=dict(
+                figsize=(11, 7.5),
+                # gridspec_kw=dict(width_ratios=[9, 0.5])
+            ),
+            cbar_ax=False
+        )
         # vs.profile_runtime(lambda: get_utcd_overlap(kind=kd))
-    # plot_token_overlap()
+    plot_token_overlap()
 
     def plot_encoded_overlap():
         kd = 'text'
