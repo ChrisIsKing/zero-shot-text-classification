@@ -25,7 +25,7 @@ class MyTrainer(Trainer):
         paths_ = self.args.output_dir.split(os.sep)
         path_proj = paths_[paths_.index(u.proj_dir):]
         # Keep the logging & plotting inside project directory, not potentially in `scratch`
-        self.log_output_dir = os.path.join(u.base_path, *path_proj)
+        self.log_output_dir = os_join(u.base_path, *path_proj)
 
     def _replace_callback(self):
         callbacks = self.callback_handler.callbacks
@@ -87,7 +87,7 @@ class MyTrainStatsMonitorCallback(TrainerCallback):
         paths_ = self.trainer.args.output_dir.split(os.sep)
         path_proj = paths_[paths_.index(u.proj_dir):]
         # Keep the logging & plotting inside project directory, not potentially in `scratch`
-        self.output_dir = os.path.join(u.base_path, *path_proj)
+        self.output_dir = os_join(u.base_path, *path_proj)
         os.makedirs(self.output_dir, exist_ok=True)
 
         self.name = self.trainer.name

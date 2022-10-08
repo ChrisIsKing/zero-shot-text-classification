@@ -126,8 +126,6 @@ if __name__ == "__main__":
         datasets = list(data.keys())
 
         # load model
-        from icecream import ic
-        ic(args.model_path)
         model = CrossEncoder(args.model_path)
 
         label_map = ["false", "true"]

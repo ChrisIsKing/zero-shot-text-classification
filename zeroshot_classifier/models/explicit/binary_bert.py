@@ -330,7 +330,6 @@ def parse_args():
 
 if __name__ == "__main__":
     import transformers
-    from icecream import ic
 
     transformers.logging.set_verbosity_error()  # disables `longest_first` warning
 

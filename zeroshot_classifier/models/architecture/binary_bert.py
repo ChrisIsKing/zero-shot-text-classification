@@ -44,5 +44,4 @@ def load_sliced_binary_bert(
 
 
 if __name__ == '__main__':
-    from icecream import ic
     load_sliced_binary_bert(max_position_embeddings=256)

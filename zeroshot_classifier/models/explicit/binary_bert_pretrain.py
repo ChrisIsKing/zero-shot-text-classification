@@ -62,8 +62,8 @@ if __name__ == '__main__':
                 ret = {k: torch.stack([torch.tensor(b[k]) for b in batch]) for k in batch[0] if k != 'labels'}
                 ret['labels'] = torch.tensor([b['labels'] for b in batch])
                 return ret
-                # ic(len(batch))
-                # ic(type(batch))
+                # mic(len(batch))
+                # mic(type(batch))
                 # exit(1)
                 # return {k: torch.tensor(v) for k, v in batch.items()}
 
@@ -87,9 +87,9 @@ if __name__ == '__main__':
 
                         if torch.cuda.is_available():
                             inputs = {k: v.cuda() for k, v in inputs.items()}
-                            # ic(inputs.keys())
+                            # mic(inputs.keys())
                             # for k, v in inputs.items():
-                            #     ic(k, v, type(v))
+                            #     mic(k, v, type(v))
                             # inputs = {k: torch.tensor(v) for k, v in inputs.items()}
                         outputs = mdl(**inputs)
                         loss, logits = outputs.loss, outputs.logits.detach()

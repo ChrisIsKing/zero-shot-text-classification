@@ -214,7 +214,6 @@ def train_model(model_train, tokenizer, contexts, candidates, labels, output_dir
         # print('[Saving at]', state_save_path)
         # log_wf.write('[Saving at] %s\n' % state_save_path)
         # torch.save(model.resp_bert.state_dict(), state_save_path_1)
-        # ic(state_save_path, state_save_path_1)
         # torch.save(model.bert.state_dict(), state_save_path)
         # See https://github.com/Jaseci-Labs/jaseci/issues/152
         print(f'[Saving at] {tokenizer_path}, {cand_bert_path} and {cont_bert_path}')

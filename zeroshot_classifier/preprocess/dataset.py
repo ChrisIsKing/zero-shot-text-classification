@@ -1,4 +1,5 @@
 import os
+from os.path import join as os_join
 from typing import List, Tuple, Dict, Callable, Union, Any
 
 from transformers import PreTrainedTokenizerBase
@@ -24,7 +25,7 @@ def get_dataset(
     logger = get_logger('Get Dataset')
     logger.info(f'Loading dataset {logi(dataset_name)}... ')
     if from_disk:
-        path = os.path.join(utcd_util.get_output_base(), u.proj_dir, u.dset_dir, 'processed', dataset_name)
+        path = os_join(utcd_util.get_output_base(), u.proj_dir, u.dset_dir, 'processed', dataset_name)
         dsets = datasets.load_from_disk(path)
 
         if normalize_aspect:  # TODO: ugly but works

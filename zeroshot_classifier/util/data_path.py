@@ -17,5 +17,5 @@ DSET_DIR = 'dataset'
 
 
 if __name__ == '__main__':
-    from icecream import ic
-    ic(BASE_PATH, type(BASE_PATH), PROJ_DIR, PKG_NM)
+    from stefutil import mic
+    mic(BASE_PATH, type(BASE_PATH), PROJ_DIR, PKG_NM)

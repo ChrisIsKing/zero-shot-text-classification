@@ -142,17 +142,15 @@ def compute_metrics(eval_pred):
 
 
 if __name__ == '__main__':
-    from icecream import ic
-
     from stefutil import *
 
-    # ic(sconfig('fine-tune'))
+    # mic(sconfig('fine-tune'))
 
-    ic(fmt_num(124439808))
+    mic(fmt_num(124439808))
 
     # process_utcd_dataset()
 
     # map_ag_news()
 
     # lg = get_logger('test-lang')
-    # ic(lg, type(lg))
+    # mic(lg, type(lg))

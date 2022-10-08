@@ -2,6 +2,7 @@ import sys
 import math
 import logging
 import datetime
+from os.path import join as os_join
 from time import sleep
 from typing import Optional
 from collections import OrderedDict
@@ -83,10 +84,9 @@ class MyLoggingCallback(TrainerCallback):
         if self.trainer.is_local_process_zero():  # For distributed training; TODO: support multi machine?
             self.logger: logging.Logger = get_logger(self.name)
             log_output_dir = self.trainer.log_output_dir
-            self.logger_fl = get_logger(
-                name=self.name, typ='file-write', file_path=os.path.join(log_output_dir, f'{self.log_fnm}.log')
-            )
-            self.tb_writer = SummaryWriter(os.path.join(log_output_dir, f'tb - {self.log_fnm}'))
+            fl_path = os_join(log_output_dir, f'{self.log_fnm}.log')
+            self.logger_fl = get_logger(name=self.name, typ='file-write', file_path=fl_path)
+            self.tb_writer = SummaryWriter(os_join(log_output_dir, f'tb - {self.log_fnm}'))
             conf = self.trainer.model.config.to_dict()
             args = self.trainer.args.to_dict()
             sleep(2)  # otherwise, logging messages missing
@@ -428,7 +428,7 @@ class MyTrainer(Trainer):
         paths_ = self.args.output_dir.split(os.sep)
         path_proj = paths_[paths_.index(PROJ_DIR):]
         # Keep the logging & plotting inside project directory, not potentially in `scratch`
-        self.log_output_dir = os.path.join(BASE_PATH, *path_proj)
+        self.log_output_dir = os_join(BASE_PATH, *path_proj)
 
     def post_init(self):
         callbacks = self.callback_handler.callbacks

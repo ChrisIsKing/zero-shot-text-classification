@@ -13,8 +13,6 @@ import pandas as pd
 import torch
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.manifold import TSNE
-if torch.cuda.is_available():
-    from tsnecuda import TSNE as cuTSNE
 from datasets import Value, Features, ClassLabel, Sequence, Dataset, DatasetDict
 from sentence_transformers import SentenceTransformer
 import spacy
@@ -23,7 +21,6 @@ from matplotlib import transforms
 from matplotlib.patches import Ellipse
 from matplotlib.colors import to_rgba
 from matplotlib.patheffects import withStroke
-from adjustText import adjust_text
 import seaborn as sns
 from tqdm.auto import tqdm
 import gdown
@@ -31,6 +28,11 @@ import gdown
 from stefutil import *
 from zeroshot_classifier.util.util import *
 from zeroshot_classifier.util.data_path import BASE_PATH, PROJ_DIR, DSET_DIR
+
+
+LOAD_TSNE = False
+if LOAD_TSNE and torch.cuda.is_available():
+    from tsnecuda import TSNE as cuTSNE
 
 
 EOT_TOKEN = '[eot]'  # end of turn token for sgd
@@ -139,7 +141,7 @@ def process_utcd_dataset(domain: str = 'in', join=False):
             # The string labels **may overlap** across the datasets
             # Keep internal feature label ordering same as dataset id
             lbs_dset = sorted(dnm2id, key=dnm2id.get)
-            ic(dnm2id, lbs_dset)
+            mic(dnm2id, lbs_dset)
             features = Features(text=Value(dtype='string'), labels=lbs_global, dataset_id=ClassLabel(names=lbs_dset))
             return Dataset.from_pandas(df, features=features)
         tr = dfs2dset([prep_single(dnm, dsets['train']) for dnm, dsets in d_dsets.items()])
@@ -459,6 +461,7 @@ class VisualizeOverlap:
         :param n_sample: If given, plot a subset of each dataset randomly
         :param n_sample: If given, plot a subset of each dataset randomly
         """
+        from adjustText import adjust_text
         ca.check_mismatch('Sample Type', kind, ['label', 'text'])
         ca.check_mismatch('t-SNE Mode', mode, ['sklearn', 'cuda'])
         if aspect is not None:
@@ -663,7 +666,7 @@ if __name__ == '__main__':
         dset = load_from_disk(path)
         mic(dset, len(dset))
     # sanity_check_ln_eurlex()
-    # ic(lst2uniq_ids([5, 6, 7, 6, 5, 1]))
+    # mic(lst2uniq_ids([5, 6, 7, 6, 5, 1]))
 
     def output_utcd_info():
         df = get_utcd_info()
@@ -715,7 +718,7 @@ if __name__ == '__main__':
     vs = VisualizeOverlap()
 
     def plot_token_overlap():
-        # ic(get_utcd_overlap())
+        # mic(get_utcd_overlap())
         kd = 'label'
         # kd = 'text'
         # st = 'count'
@@ -740,7 +743,7 @@ if __name__ == '__main__':
     def plot_encoded_overlap():
         kd = 'text'
         # kd = 'label'
-        # ic(vs.get_utcd_embeddings(kind=kd))
+        # mic(vs.get_utcd_embeddings(kind=kd))
         # sv = False
         sv = True
         cnm = f'{kd} embedding cache'

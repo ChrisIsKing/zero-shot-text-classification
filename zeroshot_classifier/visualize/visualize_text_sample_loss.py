@@ -123,8 +123,8 @@ class AttentionVisualizer:
 if __name__ == '__main__':
     import pickle
 
-    from icecream import ic
-    ic.lineWrapWidth = 5112
+    from stefutil import mic
+    mic.output_width = 512
 
     model_dir_nm = os_join('binary-bert-rand-vanilla-old-shuffle-05.03.22', 'rand')
     mdl_path = os_join(u.proj_path, u.model_dir, model_dir_nm)

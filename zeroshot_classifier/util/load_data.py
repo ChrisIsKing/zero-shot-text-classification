@@ -491,9 +491,7 @@ def binary_explicit_format(dataset):
 
 
 if __name__ == '__main__':
-    from icecream import ic
-
-    ic.lineWrapWidth = 512
+    mic.output_width = 512
 
     random.seed(sconfig('random-seed'))
 
@@ -501,16 +499,17 @@ if __name__ == '__main__':
         data = get_data(in_domain_data_path)
         data = sample_data(data)
         for dnm, d_dset in data.items():
-            ic(dnm, len(d_dset['train']))
+            mic(dnm, len(d_dset['train']))
             c = Counter()
             for txt, lbs in d_dset['train'].items():
                 c.update(lbs)
-            ic(c, len(c))
+            mic(c, len(c))
     # check_sampling()
-
 
     def save_aspect_norm_dset():
         seed = sconfig('random-seed')
         data = get_data(in_domain_data_path, normalize_aspect=seed, domain='in')
-        mic(type(data))
+        out_path = os.path.join(in_domain_data_path, 'aspect-normalized')
+        os.makedirs(out_path, exist_ok=True)
+        mic(data.keys())
     save_aspect_norm_dset()
