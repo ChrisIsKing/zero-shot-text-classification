@@ -20,7 +20,7 @@ if is_torch_tpu_available():
 
 from zeroshot_classifier.util.data_path import BASE_PATH, PROJ_DIR
 from zeroshot_classifier.util.util import *
-from zeroshot_classifier.util.train import *
+from zeroshot_classifier.util.trainer import *
 
 
 class MyLoggingCallback(TrainerCallback):

@@ -13,7 +13,7 @@ from tqdm import tqdm
 
 from stefutil import *
 from zeroshot_classifier.util import *
-from zeroshot_classifier.util.load_data import get_data, binary_cls_format, in_domain_data_path, out_of_domain_data_path
+from zeroshot_classifier.util.load_data import get_datasets, binary_cls_format, in_domain_data_path, out_of_domain_data_path
 import zeroshot_classifier.util.utcd as utcd_util
 
 
@@ -60,7 +60,7 @@ if __name__ == "__main__":
         model_init = args.model_init
 
         dset_args = dict(normalize_aspect=seed) if NORMALIZE_ASPECT else dict()
-        data = get_data(in_domain_data_path, **dset_args)
+        data = get_datasets(in_domain_data_path, **dset_args)
         # get keys from data dict
         dataset_names = [dnm for dnm, d_dset in sconfig('UTCD.datasets').items() if d_dset['domain'] == 'in']
         logger.info(f'Loading datasets {logi(dataset_names)} for training... ')
@@ -121,7 +121,7 @@ if __name__ == "__main__":
         os.makedirs(out_path, exist_ok=True)
 
         dataset_names = utcd_util.get_dataset_names(domain)
-        data = get_data(in_domain_data_path if domain == 'in' else out_of_domain_data_path)
+        data = get_datasets(in_domain_data_path if domain == 'in' else out_of_domain_data_path)
         model = SentenceTransformer(args.model_path)
         md_nm = model.__class__.__qualname__
 

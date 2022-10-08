@@ -25,7 +25,7 @@ from tqdm import tqdm, trange
 from torch.utils.tensorboard import SummaryWriter
 
 from zeroshot_classifier.util.load_data import (
-    get_data, binary_explicit_format, in_domain_data_path, out_of_domain_data_path
+    get_datasets, binary_explicit_format, in_domain_data_path, out_of_domain_data_path
 )
 from stefutil import *
 from zeroshot_classifier.util import *
@@ -353,7 +353,7 @@ if __name__ == "__main__":
         _logger.info('Loading data & model... ')
         # n_sample = 1024 * 8  # TODO: debugging
         n_sample = None
-        data = get_data(in_domain_data_path, n_sample=n_sample)
+        data = get_datasets(in_domain_data_path, n_sample=n_sample)
         # get keys from data dict
         datasets = list(data.keys())
         train = binary_explicit_format(data)
@@ -380,7 +380,7 @@ if __name__ == "__main__":
         out_path = join(model_path, 'eval', f'{domain_str}, {date}')
         os.makedirs(out_path, exist_ok=True)
 
-        data = get_data(in_domain_data_path if domain == 'in' else out_of_domain_data_path)
+        data = get_datasets(in_domain_data_path if domain == 'in' else out_of_domain_data_path)
         model = ExplicitCrossEncoder.from_pretrained(model_path)  # load model
         sep_token = sconfig('training.implicit-on-text.encode-sep.aspect-sep-token')
         aspect2aspect_token = sconfig('training.implicit-on-text.encode-aspect.aspect2aspect-token')

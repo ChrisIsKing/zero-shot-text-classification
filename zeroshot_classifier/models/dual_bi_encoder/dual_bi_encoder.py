@@ -16,7 +16,7 @@ from tqdm import tqdm
 from stefutil import *
 from zeroshot_classifier.util import *
 import zeroshot_classifier.util.utcd as utcd_util
-from zeroshot_classifier.util.load_data import get_data, encoder_cls_format, in_domain_data_path, out_of_domain_data_path
+from zeroshot_classifier.util.load_data import get_datasets, encoder_cls_format, in_domain_data_path, out_of_domain_data_path
 import zeroshot_classifier.models.dual_bi_encoder.jskit.encoders.bi as js_bi
 
 # Cannot import like this cos `bi.py` already imported, could cause duplicate `config_setup` call, loading 2 models
@@ -75,7 +75,7 @@ def run_train(sampling: str = 'rand'):
     logger = get_logger(f'Train {MD_NM_OUT}')
     logger.info('Training launched... ')
 
-    d_dset = get_data(in_domain_data_path)
+    d_dset = get_datasets(in_domain_data_path)
     dnms = [dnm for dnm in d_dset.keys() if dnm != 'all']
     logger.info(f'Gathering datasets: {logi(dnms)}... ')
     dset_tr = sum(
@@ -212,7 +212,7 @@ def evaluate_trained(domain: str = 'in', candidate_batch_size: int = 256, contex
     tokenizer, model = load_model()
     model.eval()
     ew = EncoderWrapper(model, tokenizer)
-    d_dset = get_data(in_domain_data_path if domain == 'in' else out_of_domain_data_path)
+    d_dset = get_datasets(in_domain_data_path if domain == 'in' else out_of_domain_data_path)
     dataset_names = [dnm for dnm in d_dset.keys() if dnm != 'all']
 
     domain_str = f'{domain} domain'

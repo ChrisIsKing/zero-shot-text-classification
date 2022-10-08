@@ -35,7 +35,7 @@ from tqdm.auto import tqdm
 
 from stefutil import *
 from zeroshot_classifier.util import *
-from zeroshot_classifier.util.train import MyEvalPrediction
+from zeroshot_classifier.util.trainer import MyEvalPrediction
 import zeroshot_classifier.util.utcd as utcd_util
 from zeroshot_classifier.preprocess import get_dataset
 

@@ -14,7 +14,7 @@ from tqdm import tqdm
 
 from stefutil import *
 from zeroshot_classifier.util import *
-from zeroshot_classifier.util.load_data import get_data, binary_cls_format, in_domain_data_path, out_of_domain_data_path
+from zeroshot_classifier.util.load_data import get_datasets, binary_cls_format, in_domain_data_path, out_of_domain_data_path
 import zeroshot_classifier.util.utcd as utcd_util
 from zeroshot_classifier.models.architecture import load_sliced_binary_bert
 
@@ -78,7 +78,7 @@ if __name__ == '__main__':
         output_path, sampling, mode, bsz, n_ep = args.output, args.sampling, args.mode, args.batch_size, args.epochs
         model_init, seq_len = args.model_init, args.max_sequence_length
         dset_args = dict(normalize_aspect=seed) if NORMALIZE_ASPECT else dict()
-        data = get_data(in_domain_data_path, **dset_args)
+        data = get_datasets(in_domain_data_path, **dset_args)
         dataset_names = [dnm for dnm, d_dset in sconfig('UTCD.datasets').items() if filt(d_dset, 'in')]
         logger.info(f'Loading datasets {logi(dataset_names)} for training... ')
         train = []
@@ -138,7 +138,7 @@ if __name__ == '__main__':
         out_path = join(model_path, 'eval', domain2eval_dir_nm(domain))
         os.makedirs(out_path, exist_ok=True)
 
-        data = get_data(in_domain_data_path if domain == 'in' else out_of_domain_data_path)
+        data = get_datasets(in_domain_data_path if domain == 'in' else out_of_domain_data_path)
         model = CrossEncoder(model_path)  # load model
 
         logger = get_logger(f'{MODEL_NAME} Eval')

@@ -14,7 +14,7 @@ from tqdm.auto import tqdm
 from stefutil import *
 from zeroshot_classifier.util import *
 import zeroshot_classifier.util.utcd as utcd_util
-from zeroshot_classifier.util.load_data import get_data, seq_cls_format, in_domain_data_path, out_of_domain_data_path
+from zeroshot_classifier.util.load_data import get_datasets, seq_cls_format, in_domain_data_path, out_of_domain_data_path
 
 
 MODEL_NAME = 'BERT Seq CLS'
@@ -62,7 +62,7 @@ if __name__ == "__main__":
         dset_args = dict(domain=domain)
         if NORMALIZE_ASPECT:
             dset_args['normalize_aspect'] = seed
-        data = get_data(in_domain_data_path if domain == 'in' else out_of_domain_data_path, **dset_args)
+        data = get_datasets(in_domain_data_path if domain == 'in' else out_of_domain_data_path, **dset_args)
         if dataset_name == 'all':
             train_dset, test_dset, labels = seq_cls_format(data, all=True)
         else:
@@ -140,7 +140,7 @@ if __name__ == "__main__":
         logger.info(f'Evaluating {logi(domain_str)} datasets {logi(dataset_names)} on model {logi(model_path)}... ')
         logger_fl.info(f'Evaluating {domain_str} datasets {dataset_names} on model {model_path}... ')
 
-        data = get_data(in_domain_data_path if domain == 'in' else out_of_domain_data_path)
+        data = get_datasets(in_domain_data_path if domain == 'in' else out_of_domain_data_path)
         tokenizer = BertTokenizer.from_pretrained(HF_MODEL_NAME if IS_CHRIS else model_path)
         model = BertForSequenceClassification.from_pretrained(model_path)
         model.eval()

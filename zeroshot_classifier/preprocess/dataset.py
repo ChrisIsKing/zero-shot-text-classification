@@ -30,7 +30,7 @@ def get_dataset(
 
         if normalize_aspect:  # TODO: ugly but works
             logger.info(f'Normalizing training data by #sample per aspect with {logi(normalize_aspect)}...')
-            _data = load_data.get_data(load_data.in_domain_data_path, normalize_aspect=normalize_aspect)
+            _data = load_data.get_datasets(load_data.in_domain_data_path, normalize_aspect=normalize_aspect)
             # apply #sample normalization to the training set
             id2nm = sconfig('UTCD.dataset_id2name')
             # cos the same text may appear in multiple datasets
