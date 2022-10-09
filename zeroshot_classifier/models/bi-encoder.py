@@ -8,6 +8,7 @@ from typing import List, Dict
 import numpy as np
 from torch.utils.data import DataLoader
 import transformers
+from models import BiEncoder
 from sentence_transformers import SentenceTransformer, models, losses, evaluation, util as sbert_util
 from tqdm import tqdm
 
@@ -65,10 +66,11 @@ if __name__ == "__main__":
         dataset_names = [dnm for dnm, d_dset in sconfig('UTCD.datasets').items() if d_dset['domain'] == 'in']
         logger.info(f'Loading datasets {logi(dataset_names)} for training... ')
         train = []
+        val = []
         test = []
         for dnm in dataset_names:
             dset = data[dnm]
-            train += binary_cls_format(dset, name=dnm, sampling=sampling, mode=mode)
+            train, val += binary_cls_format(dset, name=dnm, sampling=sampling, mode=mode)
             test += binary_cls_format(dset, train=False, mode=mode)
 
         # seq length for consistency w/ `binary_bert` & `sgd`
@@ -82,11 +84,12 @@ if __name__ == "__main__":
             word_embedding_dimension=word_embedding_model.get_word_embedding_dimension(),
             pooling_mode_mean_tokens=True
         )
-        model = SentenceTransformer(modules=[word_embedding_model, pooling_model])
+        model = BiEncoder(modules=[word_embedding_model, pooling_model])
 
         random.seed(seed)
         random.shuffle(train)
         train_dataloader = DataLoader(train, shuffle=True, batch_size=bsz)
+        val_dataloader = DataLoader(val, shuffle=False, batch_size=bsz)
         train_loss = losses.CosineSimilarityLoss(model)
 
         evaluator = evaluation.EmbeddingSimilarityEvaluator.from_input_examples(test, name='UTCD-test')
@@ -104,6 +107,7 @@ if __name__ == "__main__":
         transformers.set_seed(seed)
         model.fit(
             train_objectives=[(train_dataloader, train_loss)],
+            val_dataloader=val_dataloader,
             epochs=n_ep,
             # internally, passing in an evaluator means after training ends, model not saved...
             evaluator=evaluator,
