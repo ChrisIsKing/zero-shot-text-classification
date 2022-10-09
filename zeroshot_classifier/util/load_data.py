@@ -274,7 +274,7 @@ def get_nli_data():
 
 
 def binary_cls_format(
-        dataset: SplitDataset, dataset_name: str = None, sampling='rand', split: str = 'train', mode='vanilla'
+        dataset: SplitDataset = None, dataset_name: str = None, sampling='rand', split: str = 'train', mode='vanilla'
 ):
     ca.check_mismatch('Data Negative Sampling', sampling, ['rand', 'vect'])
     examples = []

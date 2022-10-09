@@ -8,7 +8,6 @@ from argparse import ArgumentParser
 import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
-from sentence_transformers.cross_encoder import CrossEncoder
 from tqdm import tqdm
 
 from stefutil import *
@@ -80,8 +79,8 @@ if __name__ == '__main__':
         lr, bsz, n_ep = args.learning_rate, args.batch_size, args.epochs
         model_init, seq_len = args.model_init, args.max_sequence_length
 
-        # n = None
-        n = 64
+        n = None
+        # n = 64
 
         dset_args = dict(normalize_aspect=seed) if NORMALIZE_ASPECT else dict()
         data = get_datasets(domain='in', n_sample=n, **dset_args)
@@ -93,9 +92,9 @@ if __name__ == '__main__':
         for dataset_name in dataset_names:
             dset = data[dataset_name]
             args = dict(dataset_name=dataset_name, sampling=sampling, mode=mode)
-            train += binary_cls_format(dset, **args, split='train')
-            val += binary_cls_format(dset, **args, split='eval')
-            test += binary_cls_format(dset, **args, split='test')
+            train += binary_cls_format(dataset=dset, **args, split='train')
+            val += binary_cls_format(dataset=dset, **args, split='eval')
+            test += binary_cls_format(dataset=dset, **args, split='test')
 
         # in case of loading from explicit pre-training,
         # the classification head would be ignored for classifying 3 classes
@@ -147,7 +146,7 @@ if __name__ == '__main__':
         os.makedirs(out_path, exist_ok=True)
 
         data = get_datasets(in_domain_data_path if domain == 'in' else out_of_domain_data_path)
-        model = CrossEncoder(model_path)  # load model
+        model = BinaryBertCrossEncoder(model_path)  # load model
 
         logger = get_logger(f'{MODEL_NAME} Eval')
         d_log = dict(mode=mode, domain=domain, batch_size=bsz, path=model_path)

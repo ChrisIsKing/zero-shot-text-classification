@@ -16,6 +16,9 @@ from tqdm.autonotebook import tqdm, trange
 from stefutil import *
 
 
+pretty = MlPrettier()
+
+
 class BinaryBertCrossEncoder(CrossEncoder):
     logger = get_logger('Bin BERT Trainer')
 
@@ -42,8 +45,10 @@ class BinaryBertCrossEncoder(CrossEncoder):
     ):
 
         train_dataloader.collate_fn = self.smart_batching_collate
+        # ========================== Begin of added ==========================
         if val_dataloader:
             val_dataloader.collate_fn = self.smart_batching_collate
+        # ========================== End of added ==========================
 
         if use_amp:
             from torch.cuda.amp import autocast
@@ -74,20 +79,25 @@ class BinaryBertCrossEncoder(CrossEncoder):
         if loss_fct is None:
             loss_fct = nn.BCEWithLogitsLoss() if self.config.num_labels == 1 else nn.CrossEntropyLoss()
 
+        # ========================== Begin of added ==========================
         best_model = {'best_loss': float('inf'), 'epoch': 0, 'path': None}
+        # ========================== End of added ==========================
 
         skip_scheduler = False
-        pretty = MlPrettier()
+        # ========================== Begin of modified ==========================
         # for epoch in trange(epochs, desc="Epoch", disable=not show_progress_bar):
         for epoch in range(epochs):
             epoch_str = f'Epoch {pl.i(epoch+1)}/{pl.i(epochs)}'
+            # ========================== End of modified ==========================
             training_steps = 0
             self.model.zero_grad()
             self.model.train()
 
+            # ========================== Begin of modified ==========================
             desc = f'Training {epoch_str}'
             it = tqdm(train_dataloader, desc=desc, unit='ba', smoothing=0.05, disable=not show_progress_bar)
             for features, labels in it:
+                # ========================== End of modified ==========================
                 if use_amp:
                     with autocast():
                         model_predictions = self.model(**features, return_dict=True)
@@ -115,19 +125,23 @@ class BinaryBertCrossEncoder(CrossEncoder):
                     optimizer.step()
 
                 optimizer.zero_grad()
+                # ========================== Begin of added ==========================
                 # TODO: not sure why 2 lr vals, w/ same value
                 d_log = pretty(dict(loss=loss_value.item(), lr=scheduler.get_last_lr()[0]))
                 it.set_postfix({k: pl.i(v) for k, v in d_log.items()})
+                # ========================== End of added ==========================
 
                 if not skip_scheduler:
                     scheduler.step()
 
                 training_steps += 1
 
+            # ========================== Begin of added ==========================
             if val_dataloader is not None:
                 self.model.eval()
                 val_loss = 0
                 val_steps = 0
+
 
                 desc = f'Evaluating {epoch_str}'
                 it = tqdm(val_dataloader, desc=desc, unit='ba', smoothing=0.05, disable=not show_progress_bar)
@@ -141,25 +155,32 @@ class BinaryBertCrossEncoder(CrossEncoder):
                         val_steps += 1
                 
                 val_loss /= val_steps
-
                 _val_loss = pretty.single(key='loss', val=val_loss)
                 BinaryBertCrossEncoder.logger.info(f'{pl.i(epoch_str)} eval loss: {pl.i(_val_loss)}')
+
                 if val_loss < best_model['best_loss']:  # save model w/ smallest eval loss
-                    best_loss = best_model['best_loss'] = val_loss
+                    best_model['best_loss'] = val_loss
                     best_model['epoch'] = epoch
                     if save_best_model:
                         best_model['path'] = output_path
                         self.save(output_path)
-                        BinaryBertCrossEncoder.logger.info(f'Best model saved w/ best loss {pl.i(best_loss)}')
-        
-        if val_dataloader is None and output_path is not None:   #No evaluator, but output path: save final model version
+                        BinaryBertCrossEncoder.logger.info(f'Best model found at {epoch_str} & saved ')
+            # ========================== End of added ==========================
+
+        # ========================== Begin of modified ==========================
+        # No evaluator, but output path: save final model version
+        if val_dataloader is None and output_path is not None:
             self.save(output_path)
+        # ========================== End of modified ==========================
 
 
 class BiEncoder(SentenceTransformer):
-    def fit(self,
+    def fit(
+            self,
             train_objectives: Iterable[Tuple[DataLoader, nn.Module]] = None,
+            # ========================== Begin of added ==========================
             val_dataloader: DataLoader = None,
+            # ========================== End of added ==========================
             epochs: int = 1,
             steps_per_epoch = None,
             scheduler: str = 'WarmupLinear',
@@ -177,7 +198,7 @@ class BiEncoder(SentenceTransformer):
             checkpoint_path: str = None,
             checkpoint_save_steps: int = 500,
             checkpoint_save_total_limit: int = 0
-            ):
+    ):
         ##Add info to model card
         #info_loss_functions = "\n".join(["- {} with {} training examples".format(str(loss), len(dataloader)) for dataloader, loss in train_objectives])
         info_loss_functions = []
@@ -201,6 +222,10 @@ class BiEncoder(SentenceTransformer):
         # Use smart batching
         for dataloader in dataloaders:
             dataloader.collate_fn = self.smart_batching_collate
+        # ========================== Begin of added ==========================
+        if val_dataloader:
+            val_dataloader.collate_fn = self.smart_batching_collate
+        # ========================== End of added ==========================
 
         loss_models = [loss for _, loss in train_objectives]
         for loss_model in loss_models:
@@ -213,7 +238,9 @@ class BiEncoder(SentenceTransformer):
 
         num_train_steps = int(steps_per_epoch * epochs)
 
-        best_model = {'best_score': -9999999, 'epoch': 0, 'path' : None}
+        # ========================== Begin of added ==========================
+        best_model = {'best_loss': float('inf'), 'epoch': 0, 'path': None}
+        # ========================== End of added ==========================
 
         # Prepare optimizers
         optimizers = []
@@ -240,17 +267,22 @@ class BiEncoder(SentenceTransformer):
         num_train_objectives = len(train_objectives)
 
         skip_scheduler = False
+        # ========================== Begin of added ==========================
         # for epoch in trange(epochs, desc="Epoch", disable=not show_progress_bar):
         for epoch in range(epochs):
             epoch_str = f'Epoch {pl.i(epoch+1)}/{pl.i(epochs)}'
+            # ========================== End of added ==========================
             training_steps = 0
 
             for loss_model in loss_models:
                 loss_model.zero_grad()
                 loss_model.train()
 
+            # ========================== Begin of modified ==========================
             desc = f'Training {epoch_str}'
-            for _ in trange(steps_per_epoch, desc=desc, unit='ba', smoothing=0.05, disable=not show_progress_bar):
+            it = trange(steps_per_epoch, desc=desc, unit='ba', smoothing=0.05, disable=not show_progress_bar)
+            for _ in it:
+                # ========================== End of modified ==========================
                 for train_idx in range(num_train_objectives):
                     loss_model = loss_models[train_idx]
                     optimizer = optimizers[train_idx]
@@ -287,6 +319,10 @@ class BiEncoder(SentenceTransformer):
                         optimizer.step()
 
                     optimizer.zero_grad()
+                    # ========================== Begin of added ==========================
+                    d_log = pretty(dict(loss=loss_value.item(), lr=scheduler.get_last_lr()[0]))
+                    it.set_postfix({k: pl.i(v) for k, v in d_log.items()})
+                    # ========================== End of added ==========================
 
                     if not skip_scheduler:
                         scheduler.step()
@@ -294,8 +330,9 @@ class BiEncoder(SentenceTransformer):
                 training_steps += 1
                 global_step += 1
 
+            # ========================== Begin of added ==========================
             if val_dataloader is not None:
-                self.model.eval()
+                self.eval()
                 val_loss = 0
                 val_steps = 0
 
@@ -303,20 +340,30 @@ class BiEncoder(SentenceTransformer):
                 it = tqdm(val_dataloader, desc=desc, unit='ba', smoothing=0.05, disable=not show_progress_bar)
                 for features, labels in it:
                     with torch.no_grad():
+                        assert len(loss_models) == 1  # sanity check
+                        loss_model = loss_models[0]
                         loss_value = loss_model(features, labels)
                         val_loss += loss_value.item()
                         val_steps += 1
 
                 val_loss /= val_steps
-                if val_loss < best_model['best_score']:
-                    best_model['best_score'] = val_loss
+                _val_loss = pretty.single(key='loss', val=val_loss)
+                BinaryBertCrossEncoder.logger.info(f'{pl.i(epoch_str)} eval loss: {pl.i(_val_loss)}')
+
+                if val_loss < best_model['best_loss']:
+                    best_model['best_loss'] = val_loss
                     best_model['epoch'] = epoch
                     if save_best_model:
                         best_model['path'] = output_path
                         self.save(output_path)
+                        BinaryBertCrossEncoder.logger.info(f'Best model found at {epoch_str} & saved ')
+            # ========================== End of added ==========================
 
-        if val_dataloader is None and output_path is not None:   #No evaluator, but output path: save final model version
+        # ========================== Begin of modified ==========================
+        # No evaluator, but output path: save final model version
+        if val_dataloader is None and output_path is not None:
             self.save(output_path)
+        # ========================== End of modified ==========================
 
         if checkpoint_path is not None:
             self._save_checkpoint(checkpoint_path, checkpoint_save_total_limit, global_step)

@@ -8,14 +8,16 @@ from typing import List, Dict
 import numpy as np
 from torch.utils.data import DataLoader
 import transformers
-from models import BiEncoder
-from sentence_transformers import SentenceTransformer, models, losses, evaluation, util as sbert_util
+from sentence_transformers import SentenceTransformer, models, losses, util as sbert_util
 from tqdm import tqdm
 
 from stefutil import *
 from zeroshot_classifier.util import *
-from zeroshot_classifier.util.load_data import get_datasets, binary_cls_format, in_domain_data_path, out_of_domain_data_path
+from zeroshot_classifier.util.load_data import (
+    get_datasets, binary_cls_format, in_domain_data_path, out_of_domain_data_path
+)
 import zeroshot_classifier.util.utcd as utcd_util
+from zeroshot_classifier.models.architecture import BiEncoder
 
 
 MODEL_NAME = 'Bi-Encoder'
@@ -35,6 +37,7 @@ def parse_args():
     parser_train.add_argument('--sampling', type=str, choices=['rand', 'vect'], default='rand')
     parser_train.add_argument('--model_init', type=str, default='bert-base-uncased')
     parser_train.add_argument('--mode', type=str, choices=modes, default='vanilla')
+    parser_train.add_argument('--learning_rate', type=float, default=2e-5)
     parser_train.add_argument('--batch_size', type=int, default=16)
     parser_train.add_argument('--epochs', type=int, default=3)
 
@@ -47,38 +50,42 @@ def parse_args():
 
 
 if __name__ == "__main__":
-
-    args = parse_args()
-
-    logger = get_logger(f'{MODEL_NAME} {args.command.capitalize()}')
-
     seed = sconfig('random-seed')
 
     NORMALIZE_ASPECT = True
 
-    if args.command == 'train':
-        output_path, sampling, mode, bsz, n_ep = args.output, args.sampling, args.mode, args.batch_size, args.epochs
+    args = parse_args()
+    cmd = args.command
+    logger = get_logger(f'{MODEL_NAME} {args.command.capitalize()}')
+
+    if cmd == 'train':
+        output_path, sampling, mode = args.output, args.sampling, args.mode
+        lr, bsz, n_ep = args.learning_rate, args.batch_size, args.epochs
         model_init = args.model_init
 
+        n = None
+        # n = 64
+
         dset_args = dict(normalize_aspect=seed) if NORMALIZE_ASPECT else dict()
-        data = get_datasets(in_domain_data_path, **dset_args)
-        # get keys from data dict
+        data = get_datasets(domain='in', n_sample=n, **dset_args)
         dataset_names = [dnm for dnm, d_dset in sconfig('UTCD.datasets').items() if d_dset['domain'] == 'in']
         logger.info(f'Loading datasets {pl.i(dataset_names)} for training... ')
         train = []
         val = []
         test = []
-        for dnm in dataset_names:
-            dset = data[dnm]
-            train, val += binary_cls_format(dset, dataset_name=dnm, sampling=sampling, mode=mode)
-            test += binary_cls_format(dset, train=False, mode=mode)
+        for dataset_name in dataset_names:
+            dset = data[dataset_name]
+            args = dict(dataset_name=dataset_name, sampling=sampling, mode=mode)
+            train += binary_cls_format(dataset=dset, **args, split='train')
+            val += binary_cls_format(dataset=dset, **args, split='eval')
+            test += binary_cls_format(dataset=dset, **args, split='test')
 
         # seq length for consistency w/ `binary_bert` & `sgd`
         word_embedding_model = models.Transformer(model_init, max_seq_length=512)
         add_tok_arg = utcd_util.get_add_special_tokens_args(word_embedding_model.tokenizer, train_strategy=mode)
         if add_tok_arg:
             logger.info(f'Adding special tokens {pl.i(add_tok_arg)} to tokenizer... ')
-            word_embedding_model.tokenizer.get_add_special_tokens_args(special_tokens_dict=add_tok_arg)
+            word_embedding_model.tokenizer.add_special_tokens(special_tokens_dict=add_tok_arg)
             word_embedding_model.auto_model.resize_token_embeddings(len(word_embedding_model.tokenizer))
         pooling_model = models.Pooling(
             word_embedding_dimension=word_embedding_model.get_word_embedding_dimension(),
@@ -91,8 +98,6 @@ if __name__ == "__main__":
         train_dataloader = DataLoader(train, shuffle=True, batch_size=bsz)
         val_dataloader = DataLoader(val, shuffle=False, batch_size=bsz)
         train_loss = losses.CosineSimilarityLoss(model)
-
-        evaluator = evaluation.EmbeddingSimilarityEvaluator.from_input_examples(test, name='UTCD-test')
 
         warmup_steps = math.ceil(len(train_dataloader) * n_ep * 0.1)  # 10% of train data for warm-up
         d_log = {'#data': len(train), 'batch size': bsz, 'epochs': n_ep, 'warmup steps': warmup_steps}
@@ -109,16 +114,11 @@ if __name__ == "__main__":
             train_objectives=[(train_dataloader, train_loss)],
             val_dataloader=val_dataloader,
             epochs=n_ep,
-            # internally, passing in an evaluator means after training ends, model not saved...
-            evaluator=evaluator,
+            optimizer_params=dict(lr=lr),
             warmup_steps=warmup_steps,
-            evaluation_steps=100000,
             output_path=output_path
         )
-        # hence, make explicit call to save model
-        model.save(output_path)
-        mic(os.listdir(output_path))
-    if args.command == 'test':
+    elif cmd == 'test':
         split = 'test'
         mode, domain, model_path = args.mode, args.domain, args.model_path
         out_path = os_join(model_path, 'eval', domain2eval_dir_nm(domain))
