@@ -82,33 +82,37 @@ def get_datasets(
     :param domain: Needed for aspect normalization
         Intended for training directly on out-of-domain data, see `zeroshot_classifier/models/bert.py`
     """
-    path = in_domain_data_path if domain == 'in' else out_of_domain_data_path
+    path = os_join(u.proj_path, in_domain_data_path if domain == 'in' else out_of_domain_data_path)
     if not os.path.exists(path):
-        logger.info('Loading data from Google Drive...')
+        logger.info(f'Downloading {logi(domain)} domain data from GDrive to {logi(path)}...')
         download_data(path)
     data = None
+    _keys = {'train', 'test', 'aspect', 'labels'}
     if normalize_aspect:
         path = os_join(path, ASPECT_NORM_DIRNM)
         if not os.path.exists(path):
             data = save_aspect_normalized_datasets(domain=domain)
+        _keys.add('eval')
     if not data:
         paths = [os_join(path, f) for f in listdir(path) if isfile(os_join(path, f)) and f.endswith('.json')]
         data = dict()
         for path in paths:
             dataset_name = basename(path).split('.')[0]
-            logger.info(f'Loading dataset {logi(dataset_name)}...')
+            logger.info(f'Loading {logi(dataset_name)} JSON dataset...')
             dset = json.load(open(path))
 
-            if n_sample:
-                assert set(dset.keys()) == {'train', 'test', 'aspect', 'labels'}  # sanity check
-                for k in ['train', 'test']:
-                    txt2lb: Dict[str, List[str]] = dset[k]
-                    txts = np.empty(sconfig(f'UTCD.datasets.{dataset_name}.splits.{k}.n_text'), dtype=object)
-                    for i, t in enumerate(txt2lb.keys()):
-                        txts[i] = t
-                    txts = np.random.permutation(txts)[:n_sample]
-                    dset[k] = {t: txt2lb[t] for t in txts}
+            assert set(dset.keys()) == _keys  # sanity check
             data[dataset_name] = dset
+
+    if n_sample:
+        for dnm, dset in data.items():
+            for k in ['train', 'test']:
+                txt2lb: Dataset = dset[k]
+                txts = np.empty(sconfig(f'UTCD.datasets.{dnm}.splits.{k}.n_text'), dtype=object)
+                for i, t in enumerate(txt2lb.keys()):
+                    txts[i] = t
+                txts = np.random.permutation(txts)[:n_sample]
+                dset[k] = {t: txt2lb[t] for t in txts}
     return data
 
 
@@ -256,26 +260,28 @@ def get_nli_data():
     return train_samples, dev_samples
 
 
-def binary_cls_format(data, name=None, sampling='rand', train=True, mode='vanilla'):
+def binary_cls_format(
+        dataset: SplitDataset, dataset_name: str = None, sampling='rand', split: str = 'train', mode='vanilla'
+):
     ca.check_mismatch('Data Negative Sampling', sampling, ['rand', 'vect'])
     examples = []
-    aspect = data['aspect']
-    if train:
+    aspect = dataset['aspect']
+    if split in ['train', 'eval']:
         aspect_token, sep_token = None, None
         label_un_modified = mode != 'implicit'
         ca(training_strategy=mode)
         if mode in ['vanilla', 'implicit-on-text-encode-aspect', 'implicit-on-text-encode-sep', 'explicit']:
-            label_list = data['labels']
+            label_list = dataset['labels']
             if mode == 'implicit-on-text-encode-aspect':
                 aspect_token = sconfig('training.implicit-on-text.encode-aspect.aspect2aspect-token')[aspect]
             elif mode == 'implicit-on-text-encode-sep':
                 sep_token = sconfig('training.implicit-on-text.encode-sep.aspect-sep-token')
         elif mode == 'implicit':
-            label_list = ['{} {}'.format(label, data['aspect']) for label in data['labels']]
+            label_list = ['{} {}'.format(label, dataset['aspect']) for label in dataset['labels']]
         else:
             raise NotImplementedError(f'{logi(mode)} not supported yet')
 
-        example_list = [x for x in data['train'].keys()]
+        example_list = [x for x in dataset[split].keys()]
 
         vects, label_vectors = None, None
         if sampling == 'vect':
@@ -284,12 +290,12 @@ def binary_cls_format(data, name=None, sampling='rand', train=True, mode='vanill
             vects = list(nlp.pipe(example_list, n_process=4, batch_size=128))
             print('Time Elapsed {} ms'.format((time.time() - start) * 1000))
 
-        logger.info(f'Generating {logi(name)} examples')
-        for i, (text, labels) in enumerate(tqdm(data['train'].items(), desc=name)):
+        it = tqdm(dataset[split].items(), desc=f'Formatting {logi(dataset_name)}-{logi(split)} to Binary CLS')
+        for i, (text, labels) in enumerate(it):
             if label_un_modified:
                 true_labels = labels
             else:
-                true_labels = ['{} {}'.format(label, data['aspect']) for label in labels]
+                true_labels = ['{} {}'.format(label, dataset['aspect']) for label in labels]
             other_labels = [label for label in label_list if label not in true_labels]
 
             if mode == 'implicit-on-text-encode-aspect':
@@ -322,10 +328,10 @@ def binary_cls_format(data, name=None, sampling='rand', train=True, mode='vanill
                 elif len(other_labels) > 0:
                     examples.append(InputExample(texts=[text, other_labels[0]], label=float(0)))
 
-    else:
+    else:  # test split
         aspect_token = sconfig('training.implicit-on-text.encode-aspect.aspect2aspect-token')[aspect]
         sep_token = sconfig('training.implicit-on-text.encode-sep.aspect-sep-token')
-        for text, labels in data['test'].items():
+        for text, labels in dataset['test'].items():
             for label in labels:
                 if mode in ['vanilla', 'explicit']:
                     pass

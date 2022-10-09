@@ -8,16 +8,16 @@ from argparse import ArgumentParser
 import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
-from models import BinaryBertCrossEncoder
 from sentence_transformers.cross_encoder import CrossEncoder
-from sentence_transformers.cross_encoder.evaluation import CESoftmaxAccuracyEvaluator
 from tqdm import tqdm
 
 from stefutil import *
 from zeroshot_classifier.util import *
-from zeroshot_classifier.util.load_data import get_datasets, binary_cls_format, in_domain_data_path, out_of_domain_data_path
+from zeroshot_classifier.util.load_data import (
+    get_datasets, binary_cls_format, in_domain_data_path, out_of_domain_data_path
+)
 import zeroshot_classifier.util.utcd as utcd_util
-from zeroshot_classifier.models.architecture import load_sliced_binary_bert
+from zeroshot_classifier.models.architecture import load_sliced_binary_bert, BinaryBertCrossEncoder
 
 
 MODEL_NAME = 'Binary BERT'
@@ -39,6 +39,7 @@ def parse_args():
     # model to initialize weights from, intended for loading weights from local explicit training
     parser_train.add_argument('--model_init', type=str, default=HF_MODEL_NAME)
     parser_train.add_argument('--mode', type=str, choices=modes, default='vanilla')
+    parser_train.add_argument('--learning_rate', type=float, default=2e-5)
     parser_train.add_argument('--batch_size', type=int, default=16)
     parser_train.add_argument('--epochs', type=int, default=3)
 
@@ -76,19 +77,23 @@ if __name__ == '__main__':
     # TODO: verify
 
     if args.command == 'train':
-        output_path, sampling, mode, bsz, n_ep = args.output, args.sampling, args.mode, args.batch_size, args.epochs
+        output_path, sampling, mode = args.output, args.sampling, args.mode
+        lr, bsz, n_ep = args.learning_rate, args.batch_size, args.epochs
         model_init, seq_len = args.model_init, args.max_sequence_length
+
         dset_args = dict(normalize_aspect=seed) if NORMALIZE_ASPECT else dict()
-        data = get_datasets(in_domain_data_path, **dset_args)
+        data = get_datasets(domain='in', **dset_args)
         dataset_names = [dnm for dnm, d_dset in sconfig('UTCD.datasets').items() if filt(d_dset, 'in')]
-        logger.info(f'Loading datasets {logi(dataset_names)} for training... ')
+        logger.info(f'Processing datasets {logi(dataset_names)} for training... ')
         train = []
         val = []
         test = []
         for dataset_name in dataset_names:
             dset = data[dataset_name]
-            train, val += binary_cls_format(dset, name=dataset_name, sampling=args.sampling, mode=mode)
-            test += binary_cls_format(dset, train=False, mode=mode)
+            args = dict(dataset_name=dataset_name, sampling=sampling, mode=mode)
+            train += binary_cls_format(dset, **args, split='train')
+            val += binary_cls_format(dset, **args, split='eval')
+            test += binary_cls_format(dset, **args, split='test')
 
         # in case of loading from explicit pre-training,
         # the classification head would be ignored for classifying 3 classes
@@ -120,6 +125,7 @@ if __name__ == '__main__':
             model_name=MODEL_NAME.replace(' ', '-'), output_path=output_path,
             mode=mode, sampling=sampling, normalize_aspect=NORMALIZE_ASPECT
         )
+        mic(output_path)
         logger.info(f'Model will be saved to {logi(output_path)}')
 
         transformers.set_seed(seed)
@@ -127,7 +133,7 @@ if __name__ == '__main__':
             train_dataloader=train_dataloader,
             val_dataloader=val_dataloader,
             epochs=n_ep,
-            evaluation_steps=100000,
+            optimizer_params=dict(lr=lr),
             warmup_steps=warmup_steps,
             output_path=output_path
         )

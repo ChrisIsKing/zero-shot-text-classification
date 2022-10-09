@@ -1,37 +1,41 @@
-from sentence_transformers.cross_encoder import CrossEncoder
-from transformers import AutoModelForSequenceClassification, AutoTokenizer, AutoConfig
-import numpy as np
-import logging
-import json
-from sentence_transformers import SentenceTransformer
-from sentence_transformers.model_card_templates import ModelCardTemplate
-from sentence_transformers.util import import_from_string, batch_to_device, fullname, snapshot_download
 import os
-from typing import List, Dict, Tuple, Iterable, Type, Union, Callable, Optional
-import transformers
+import json
+from typing import Dict, Tuple, Iterable, Type, Callable
+
 import torch
 from torch import nn
 from torch.optim import Optimizer
 from torch.utils.data import DataLoader
+from sentence_transformers import SentenceTransformer
+from sentence_transformers.util import batch_to_device
+from sentence_transformers.model_card_templates import ModelCardTemplate
+from sentence_transformers.cross_encoder import CrossEncoder
+from sentence_transformers.evaluation import SentenceEvaluator
 from tqdm.autonotebook import tqdm, trange
 
+
 class BinaryBertCrossEncoder(CrossEncoder):
-    def fit(self, 
-    train_dataloader: DataLoader, 
-    val_dataloader: DataLoader,
-    epochs: int = 1, loss_fct=None, 
-    activation_fct = nn.Identity(),
-    scheduler: str = 'WarmupLinear', 
-    warmup_steps: int = 10000, 
-    optimizer_class: Type[Optimizer] = torch.optim.AdamW,
-    optimizer_params: Dict[str, object] = {'lr': 2e-5},
-    weight_decay: float = 0.01,  
-    output_path: str = None, 
-    save_best_model: bool = True, 
-    max_grad_norm: float = 1, 
-    use_amp: bool = False, 
-    callback: Callable[[float, int, int], None] = None, 
-    show_progress_bar: bool = True):
+    def fit(
+            self,
+            train_dataloader: DataLoader = None,
+            evaluator: SentenceEvaluator = None,
+            # ========================== Begin of added ==========================
+            val_dataloader: DataLoader = None,
+            # ========================== End of added ==========================
+            epochs: int = 1, loss_fct=None,
+            activation_fct=nn.Identity(),
+            scheduler: str = 'WarmupLinear',
+            warmup_steps: int = 10000,
+            optimizer_class: Type[Optimizer] = torch.optim.AdamW,
+            optimizer_params: Dict[str, object] = {'lr': 2e-5},
+            weight_decay: float = 0.01,
+            output_path: str = None,
+            save_best_model: bool = True,
+            max_grad_norm: float = 1,
+            use_amp: bool = False,
+            callback: Callable[[float, int, int], None] = None,
+            show_progress_bar: bool = True
+    ):
 
         train_dataloader.collate_fn = self.smart_batching_collate
 
@@ -107,7 +111,6 @@ class BinaryBertCrossEncoder(CrossEncoder):
 
                 training_steps += 1
 
-                
             if val_dataloader is not None:
                 self.model.eval()
                 val_loss = 0
@@ -132,11 +135,12 @@ class BinaryBertCrossEncoder(CrossEncoder):
         
         if val_dataloader is None and output_path is not None:   #No evaluator, but output path: save final model version
             self.save(output_path)
-                
+
+
 class BiEncoder(SentenceTransformer):
     def fit(self,
-            train_objectives: Iterable[Tuple[DataLoader, nn.Module]],
-            val_dataloader = DataLoader,
+            train_objectives: Iterable[Tuple[DataLoader, nn.Module]] = None,
+            val_dataloader: DataLoader = None,
             epochs: int = 1,
             steps_per_epoch = None,
             scheduler: str = 'WarmupLinear',
@@ -155,37 +159,9 @@ class BiEncoder(SentenceTransformer):
             checkpoint_save_steps: int = 500,
             checkpoint_save_total_limit: int = 0
             ):
-        """
-        Train the model with the given training objective
-        Each training objective is sampled in turn for one batch.
-        We sample only as many batches from each objective as there are in the smallest one
-        to make sure of equal training with each dataset.
-        :param train_objectives: Tuples of (DataLoader, LossFunction). Pass more than one for multi-task learning
-        :param evaluator: An evaluator (sentence_transformers.evaluation) evaluates the model performance during training on held-out dev data. It is used to determine the best model that is saved to disc.
-        :param epochs: Number of epochs for training
-        :param steps_per_epoch: Number of training steps per epoch. If set to None (default), one epoch is equal the DataLoader size from train_objectives.
-        :param scheduler: Learning rate scheduler. Available schedulers: constantlr, warmupconstant, warmuplinear, warmupcosine, warmupcosinewithhardrestarts
-        :param warmup_steps: Behavior depends on the scheduler. For WarmupLinear (default), the learning rate is increased from o up to the maximal learning rate. After these many training steps, the learning rate is decreased linearly back to zero.
-        :param optimizer_class: Optimizer
-        :param optimizer_params: Optimizer parameters
-        :param weight_decay: Weight decay for model parameters
-        :param evaluation_steps: If > 0, evaluate the model using evaluator after each number of training steps
-        :param output_path: Storage path for the model and evaluation files
-        :param save_best_model: If true, the best model (according to evaluator) is stored at output_path
-        :param max_grad_norm: Used for gradient normalization.
-        :param use_amp: Use Automatic Mixed Precision (AMP). Only for Pytorch >= 1.6.0
-        :param callback: Callback function that is invoked after each evaluation.
-                It must accept the following three parameters in this order:
-                `score`, `epoch`, `steps`
-        :param show_progress_bar: If True, output a tqdm progress bar
-        :param checkpoint_path: Folder to save checkpoints during training
-        :param checkpoint_save_steps: Will save a checkpoint after so many steps
-        :param checkpoint_save_total_limit: Total number of checkpoints to store
-        """
-
         ##Add info to model card
         #info_loss_functions = "\n".join(["- {} with {} training examples".format(str(loss), len(dataloader)) for dataloader, loss in train_objectives])
-        info_loss_functions =  []
+        info_loss_functions = []
         for dataloader, loss in train_objectives:
             info_loss_functions.extend(ModelCardTemplate.get_train_objective_info(dataloader, loss))
         info_loss_functions = "\n\n".join([text for text in info_loss_functions])

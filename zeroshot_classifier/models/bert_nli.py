@@ -82,7 +82,7 @@ if __name__ == "__main__":
         test = []
         for dataset in datasets:
             if args.mode == 'vanilla':
-                train += binary_cls_format(data[dataset], name=dataset, sampling=args.sampling, mode=args.mode)
+                train += binary_cls_format(data[dataset], dataset_name=dataset, sampling=args.sampling, mode=args.mode)
                 test += binary_cls_format(data[dataset], train=False, mode=args.mode)
             elif args.mode == 'implicit':
                 train += nli_cls_format(data[dataset], name=dataset, sampling=args.sampling)

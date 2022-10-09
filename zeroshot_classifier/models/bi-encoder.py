@@ -70,7 +70,7 @@ if __name__ == "__main__":
         test = []
         for dnm in dataset_names:
             dset = data[dnm]
-            train, val += binary_cls_format(dset, name=dnm, sampling=sampling, mode=mode)
+            train, val += binary_cls_format(dset, dataset_name=dnm, sampling=sampling, mode=mode)
             test += binary_cls_format(dset, train=False, mode=mode)
 
         # seq length for consistency w/ `binary_bert` & `sgd`
