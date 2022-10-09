@@ -13,8 +13,12 @@ from sentence_transformers.cross_encoder import CrossEncoder
 from sentence_transformers.evaluation import SentenceEvaluator
 from tqdm.autonotebook import tqdm, trange
 
+from stefutil import *
+
 
 class BinaryBertCrossEncoder(CrossEncoder):
+    logger = get_logger('Bin BERT Trainer')
+
     def fit(
             self,
             train_dataloader: DataLoader = None,
@@ -38,6 +42,8 @@ class BinaryBertCrossEncoder(CrossEncoder):
     ):
 
         train_dataloader.collate_fn = self.smart_batching_collate
+        if val_dataloader:
+            val_dataloader.collate_fn = self.smart_batching_collate
 
         if use_amp:
             from torch.cuda.amp import autocast
@@ -68,16 +74,20 @@ class BinaryBertCrossEncoder(CrossEncoder):
         if loss_fct is None:
             loss_fct = nn.BCEWithLogitsLoss() if self.config.num_labels == 1 else nn.CrossEntropyLoss()
 
-        best_model = {'best_score': -9999999, 'epoch': 0, 'path' : None}
-
+        best_model = {'best_loss': float('inf'), 'epoch': 0, 'path': None}
 
         skip_scheduler = False
-        for epoch in trange(epochs, desc="Epoch", disable=not show_progress_bar):
+        pretty = MlPrettier()
+        # for epoch in trange(epochs, desc="Epoch", disable=not show_progress_bar):
+        for epoch in range(epochs):
+            epoch_str = f'Epoch {pl.i(epoch+1)}/{pl.i(epochs)}'
             training_steps = 0
             self.model.zero_grad()
             self.model.train()
 
-            for features, labels in tqdm(train_dataloader, desc="Iteration", smoothing=0.05, disable=not show_progress_bar):
+            desc = f'Training {epoch_str}'
+            it = tqdm(train_dataloader, desc=desc, unit='ba', smoothing=0.05, disable=not show_progress_bar)
+            for features, labels in it:
                 if use_amp:
                     with autocast():
                         model_predictions = self.model(**features, return_dict=True)
@@ -105,6 +115,9 @@ class BinaryBertCrossEncoder(CrossEncoder):
                     optimizer.step()
 
                 optimizer.zero_grad()
+                # TODO: not sure why 2 lr vals, w/ same value
+                d_log = pretty(dict(loss=loss_value.item(), lr=scheduler.get_last_lr()[0]))
+                it.set_postfix({k: pl.i(v) for k, v in d_log.items()})
 
                 if not skip_scheduler:
                     scheduler.step()
@@ -115,8 +128,10 @@ class BinaryBertCrossEncoder(CrossEncoder):
                 self.model.eval()
                 val_loss = 0
                 val_steps = 0
-            
-                for features, labels in tqdm(val_dataloader, desc="Validation", smoothing=0.05, disable=not show_progress_bar):
+
+                desc = f'Evaluating {epoch_str}'
+                it = tqdm(val_dataloader, desc=desc, unit='ba', smoothing=0.05, disable=not show_progress_bar)
+                for features, labels in it:
                     with torch.no_grad():
                         model_predictions = self.model(**features, return_dict=True)
                         logits = activation_fct(model_predictions.logits)
@@ -126,12 +141,16 @@ class BinaryBertCrossEncoder(CrossEncoder):
                         val_steps += 1
                 
                 val_loss /= val_steps
-                if val_loss < best_model['best_score']:
-                    best_model['best_score'] = val_loss
+
+                _val_loss = pretty.single(key='loss', val=val_loss)
+                BinaryBertCrossEncoder.logger.info(f'{pl.i(epoch_str)} eval loss: {pl.i(_val_loss)}')
+                if val_loss < best_model['best_loss']:  # save model w/ smallest eval loss
+                    best_loss = best_model['best_loss'] = val_loss
                     best_model['epoch'] = epoch
                     if save_best_model:
                         best_model['path'] = output_path
                         self.save(output_path)
+                        BinaryBertCrossEncoder.logger.info(f'Best model saved w/ best loss {pl.i(best_loss)}')
         
         if val_dataloader is None and output_path is not None:   #No evaluator, but output path: save final model version
             self.save(output_path)
@@ -221,14 +240,17 @@ class BiEncoder(SentenceTransformer):
         num_train_objectives = len(train_objectives)
 
         skip_scheduler = False
-        for epoch in trange(epochs, desc="Epoch", disable=not show_progress_bar):
+        # for epoch in trange(epochs, desc="Epoch", disable=not show_progress_bar):
+        for epoch in range(epochs):
+            epoch_str = f'Epoch {pl.i(epoch+1)}/{pl.i(epochs)}'
             training_steps = 0
 
             for loss_model in loss_models:
                 loss_model.zero_grad()
                 loss_model.train()
 
-            for _ in trange(steps_per_epoch, desc="Iteration", smoothing=0.05, disable=not show_progress_bar):
+            desc = f'Training {epoch_str}'
+            for _ in trange(steps_per_epoch, desc=desc, unit='ba', smoothing=0.05, disable=not show_progress_bar):
                 for train_idx in range(num_train_objectives):
                     loss_model = loss_models[train_idx]
                     optimizer = optimizers[train_idx]
@@ -272,24 +294,26 @@ class BiEncoder(SentenceTransformer):
                 training_steps += 1
                 global_step += 1
 
-        if val_dataloader is not None:
-            self.model.eval()
-            val_loss = 0
-            val_steps = 0
-        
-            for features, labels in tqdm(val_dataloader, desc="Validation", smoothing=0.05, disable=not show_progress_bar):
-                with torch.no_grad():
-                    loss_value = loss_model(features, labels)
-                    val_loss += loss_value.item()
-                    val_steps += 1
-            
-            val_loss /= val_steps
-            if val_loss < best_model['best_score']:
-                best_model['best_score'] = val_loss
-                best_model['epoch'] = epoch
-                if save_best_model:
-                    best_model['path'] = output_path
-                    self.save(output_path)
+            if val_dataloader is not None:
+                self.model.eval()
+                val_loss = 0
+                val_steps = 0
+
+                desc = f'Evaluating {epoch_str}'
+                it = tqdm(val_dataloader, desc=desc, unit='ba', smoothing=0.05, disable=not show_progress_bar)
+                for features, labels in it:
+                    with torch.no_grad():
+                        loss_value = loss_model(features, labels)
+                        val_loss += loss_value.item()
+                        val_steps += 1
+
+                val_loss /= val_steps
+                if val_loss < best_model['best_score']:
+                    best_model['best_score'] = val_loss
+                    best_model['epoch'] = epoch
+                    if save_best_model:
+                        best_model['path'] = output_path
+                        self.save(output_path)
 
         if val_dataloader is None and output_path is not None:   #No evaluator, but output path: save final model version
             self.save(output_path)

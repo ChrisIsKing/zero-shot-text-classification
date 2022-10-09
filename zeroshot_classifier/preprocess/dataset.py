@@ -23,13 +23,13 @@ def get_dataset(
         splits: Union[str, List[str], Tuple[str]] = ('train', 'test'), pbar: bool = False
 ) -> List[Dataset]:
     logger = get_logger('Get Dataset')
-    logger.info(f'Loading dataset {logi(dataset_name)}... ')
+    logger.info(f'Loading dataset {pl.i(dataset_name)}... ')
     if from_disk:
         path = os_join(utcd_util.get_output_base(), u.proj_dir, u.dset_dir, 'processed', dataset_name)
         dsets = datasets.load_from_disk(path)
 
         if normalize_aspect:  # TODO: ugly but works
-            logger.info(f'Normalizing training data by #sample per aspect with {logi(normalize_aspect)}...')
+            logger.info(f'Normalizing training data by #sample per aspect with {pl.i(normalize_aspect)}...')
             _data = load_data.get_datasets(load_data.in_domain_data_path, normalize_aspect=normalize_aspect)
             # apply #sample normalization to the training set
             id2nm = sconfig('UTCD.dataset_id2name')
@@ -39,7 +39,7 @@ def get_dataset(
             n = len(dsets['train'])
             # sanity check, same # of pairs as in Chris' data loading
             assert n == sum(len(d['train']) for d in _data.values())
-            logger.info(f'Remaining #train pairs: {logi(n)}')
+            logger.info(f'Remaining #train pairs: {pl.i(n)}')
     else:
         dsets = datasets.load_dataset(dataset_name)
     if isinstance(splits, str):
@@ -56,10 +56,10 @@ def get_dataset(
         logger.info('Filtering...')
         dsets = [dset.filter(filter_func, num_proc=num_proc) for dset in dsets]
     if shuffle_seed:
-        logger.info(f'Shuffling with seed {logi(shuffle_seed)}...')
+        logger.info(f'Shuffling with seed {pl.i(shuffle_seed)}...')
         dsets = [dset.shuffle(seed=shuffle_seed) for dset in dsets]
     if n_sample is not None:
-        logger.info(f'Selecting the first {logi(n_sample)} samples...')
+        logger.info(f'Selecting the first {pl.i(n_sample)} samples...')
         dsets = [d.select(range(min(n_sample, len(d)))) for d in dsets]
     if map_func is not None:
         logger.info('Mapping...')

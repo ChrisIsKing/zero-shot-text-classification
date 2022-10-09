@@ -43,7 +43,7 @@ if __name__ == '__main__':
         if NORMALIZE_ASPECT:
             dset_args['normalize_aspect'] = seed
         tr, vl = get_explicit_dataset(**dset_args)
-        logger.info(f'Loaded {logi(len(tr))} training samples, {logi(len(vl))} eval samples')
+        logger.info(f'Loaded {pl.i(len(tr))} training samples, {pl.i(len(vl))} eval samples')
         transformers.set_seed(seed)
 
         sanity_check_speed = False
@@ -92,7 +92,7 @@ if __name__ == '__main__':
                             #     mic(k, v, type(v))
                             # inputs = {k: torch.tensor(v) for k, v in inputs.items()}
                         outputs = mdl(**inputs)
-                        loss, logits = outputs.loss, outputs.logits.detach()
+                        loss, lg.its = outputs.loss, outputs.lg.its.detach()
                         # labels = inputs['labels'].detach()
                         loss_scalar = loss.detach().item()
 
@@ -180,9 +180,9 @@ if __name__ == '__main__':
                     if torch.cuda.is_available():
                         inputs = {k: v.cuda() for k, v in inputs.items()}
                     outputs = model(**inputs)
-                    logits = outputs.logits.detach()
+                    lg.its = outputs.lg.its.detach()
                     labels = inputs['labels'].detach()
-                    preds = torch.argmax(logits, dim=-1)
+                    preds = torch.argmax(lg.its, dim=-1)
                     acc_ = (preds == labels).float().mean().item()
                     it.set_postfix(acc=acc_)
                     lst_preds.append(preds)

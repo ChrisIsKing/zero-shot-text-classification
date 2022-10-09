@@ -20,8 +20,8 @@ def load_sliced_binary_bert(
     conf = BertConfig.from_pretrained(model_name)
     n_tok_ori = conf.max_position_embeddings
     assert max_position_embeddings < n_tok_ori, \
-        f'Intended for a {logi("max_position_embeddings")} smaller than original model size of {logi(n_tok_ori)}, ' \
-        f'but got {logi(max_position_embeddings)}'
+        f'Intended for a {pl.i("max_position_embeddings")} smaller than original model size of {pl.i(n_tok_ori)}, ' \
+        f'but got {pl.i(max_position_embeddings)}'
     conf.max_position_embeddings = max_position_embeddings
     tokenizer = BertTokenizer.from_pretrained(model_name, model_max_length=max_position_embeddings)
     model = BertForSequenceClassification.from_pretrained(model_name, config=conf, ignore_mismatched_sizes=True)

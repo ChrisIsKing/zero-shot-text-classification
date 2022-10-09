@@ -353,7 +353,7 @@ def extract_utcd_meta() -> Dict:
     logger = get_logger('Process UTCD')
     d_n_toks = dict()
     for dnm, d_dset in d_dsets.items():
-        logger.info(f'Processing {logi(dnm)}... ')
+        logger.info(f'Processing {pl.i(dnm)}... ')
         d_meta, d_avg_tok, d_n_toks[dnm] = path2dataset_info(d_dset)
         d_dset['splits'] = d_meta
         d_dset.update(d_avg_tok)
@@ -402,7 +402,7 @@ def plot_utcd_n_toks(d_n_toks: Dict, domain: str, save=True):
     d_df = dict()
     text_types = ['text', 'label']
     for text_type, mode in itertools.product(text_types, tokenize_modes):
-        logger.info(f'Processing {logi(text_type)} with {logi(mode)} tokenization')
+        logger.info(f'Processing {pl.i(text_type)} with {pl.i(mode)} tokenization')
 
         def dnm2dset(dnm: str) -> List[Tuple[int, int, str]]:
             counter = d_n_toks[dnm][text_type][mode]
@@ -416,7 +416,7 @@ def plot_utcd_n_toks(d_n_toks: Dict, domain: str, save=True):
     n_tt, n_tm = len(text_types), len(tokenize_modes)
     for i_row, i_col in itertools.product(range(n_tt), range(n_tm)):
         text_type, mode = text_types[i_row], tokenize_modes[i_col]
-        logger.info(f'Plotting {logi(text_type)} with {logi(mode)} tokenization')
+        logger.info(f'Plotting {pl.i(text_type)} with {pl.i(mode)} tokenization')
         ax = axes[i_row, i_col]
         df = d_df[(text_type, mode)]
         legend = i_row == 0 and i_col == 0

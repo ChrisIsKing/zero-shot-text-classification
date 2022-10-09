@@ -85,10 +85,10 @@ def process_utcd_dataset(domain: str = 'in', join=False):
     ext = sconfig('UTCD.dataset_ext')
     path_dsets = os_join(BASE_PATH, PROJ_DIR, DSET_DIR)
     path_out = os_join(get_output_base(), PROJ_DIR, DSET_DIR, 'processed')
-    logger.info(f'Processing UTCD datasets with {log_dict(dict(domain=domain, join=join))}... ')
+    logger.info(f'Processing UTCD datasets with {pl.i(dict(domain=domain, join=join))}... ')
 
     def path2dsets(dnm: str, d_dset: Dict) -> Union[DatasetDict, Dict[str, pd.DataFrame]]:
-        logger.info(f'Processing dataset {logi(dnm)}... ')
+        logger.info(f'Processing dataset {pl.i(dnm)}... ')
         path = d_dset['path']
         path = os_join(path_dsets, f'{path}.{ext}')
         with open(path) as f:
@@ -149,11 +149,11 @@ def process_utcd_dataset(domain: str = 'in', join=False):
         dsets = DatasetDict(train=tr, test=vl)
         path = os_join(path_out, output_dir)
         dsets.save_to_disk(path)
-        logger.info(f'{logi("Joined")} Dataset saved to {logi(path)} ')
+        logger.info(f'{pl.i("Joined")} Dataset saved to {pl.i(path)} ')
     else:
         for dnm, dsets in d_dsets.items():
             dsets.save_to_disk(os_join(path_out, dnm))
-            logger.info(f'Dataset {logi(dnm)} saved to {logi(path_out)}')
+            logger.info(f'Dataset {pl.i(dnm)} saved to {pl.i(path_out)}')
 
 
 def map_ag_news():
@@ -267,7 +267,7 @@ class VisualizeOverlap:
         ca.check_mismatch('Overlap Metric', metric, ['harmonic', 'absolute'])
         ca.check_mismatch('Word Statistics', stat, ['count', 'tfidf'])
         logger = get_logger('Get UTCD Overlap')
-        logger.info(f'Getting UTCD Overlap for {log_dict(kind=kind, metric=metric, stat=stat, stat_args=stat_args)}')
+        logger.info(f'Getting UTCD Overlap for {pl.i(kind=kind, metric=metric, stat=stat, stat_args=stat_args)}')
         if stat == 'tfidf':
             def tokenize(pbar) -> Callable:
                 def _tokenize(txt: str) -> List[str]:
@@ -280,7 +280,7 @@ class VisualizeOverlap:
             assert 'token_pattern' not in stat_args and 'tokenizer' not in stat_args
             stat_args['token_pattern'] = None
         elif stat_args is not None:
-            raise NotImplementedError(f'{logi("stat_args")} supported for {logi("tfidf")} only')
+            raise NotImplementedError(f'{pl.i("stat_args")} supported for {pl.i("tfidf")} only')
 
         nlp = spacy.load('en_core_web_sm')
         nlp.max_length *= 10  # for `multi_eurlex`
@@ -308,10 +308,10 @@ class VisualizeOverlap:
         in_dnms, out_dnms = VisualizeOverlap.in_dnms, VisualizeOverlap.out_dnms
         for dnm in in_dnms:
             dnm2lemma_count[dnm] = _dnm2lemma_count(dnm, 'train')
-            logger.info(f'Lemmatizing {logi("in-domain")} dataset {logi(dnm)}, {logi("train")} split')
+            logger.info(f'Lemmatizing {pl.i("in-domain")} dataset {pl.i(dnm)}, {pl.i("train")} split')
         for dnm in out_dnms:
             dnm2lemma_count[dnm] = _dnm2lemma_count(dnm, 'test')
-            logger.info(f'Lemmatizing {logi("out-of-domain")} dataset {logi(dnm)}, {logi("test")} split')
+            logger.info(f'Lemmatizing {pl.i("out-of-domain")} dataset {pl.i(dnm)}, {pl.i("test")} split')
         lst_rows = []
         # See below, weighted by #samples for each in-domain dataset; TODO: weight also by label support?
         in_dnm2n_pr = {dnm: sconfig(f'UTCD.datasets.{dnm}.splits.train.n_pair') for dnm in in_dnms}
@@ -468,7 +468,7 @@ class VisualizeOverlap:
             ca.check_mismatch('Dataset Aspect', aspect, ['sentiment', 'intent', 'topic'])
         logger = get_logger('UTCD Embedding Plot')
         d_log = dict(kind=kind, aspect=aspect, mode=mode)
-        logger.info(f'Plotting embeddings on {log_dict(d_log)}... ')
+        logger.info(f'Plotting embeddings on {pl.i(d_log)}... ')
         d_vect = VisualizeOverlap.get_utcd_embeddings(kind=kind, aspect=aspect, **kwargs)
         if n_sample:
             def _get_sample(dnm):
@@ -494,7 +494,7 @@ class VisualizeOverlap:
             args['init'] = 'random'
             del args['random_state']
 
-        logger.info(f'Running t-SNE on {logi(len(vect))} vectors with args {log_dict(args)}... ')
+        logger.info(f'Running t-SNE on {pl.i(len(vect))} vectors with args {pl.i(args)}... ')
         mapped = cls(**args).fit_transform(vect)
 
         logger.info('Plotting... ')
@@ -712,7 +712,7 @@ if __name__ == '__main__':
             for text, labels in dsets.items():
                 if len(labels) > 1:
                     d = dict(dset=dnm, labels=labels, text=text)
-                    print(log_dict(d))
+                    print(pl.i(d))
     # chore_check_multi_label()
 
     vs = VisualizeOverlap()

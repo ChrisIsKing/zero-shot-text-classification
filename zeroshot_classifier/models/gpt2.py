@@ -138,7 +138,7 @@ class ZsGPT2Tokenizer(GPT2TokenizerFast):
 
         self.logger = get_logger(self.__class__.__qualname__)
         d_log = dict(form=form, added_vocab=list(self.get_added_vocab().keys()), vocab_size=self.vocab_size)
-        self.logger.info(f'{logi(self.__class__.__qualname__)} initialized with {log_dict(d_log)}')
+        self.logger.info(f'{pl.i(self.__class__.__qualname__)} initialized with {pl.i(d_log)}')
 
     @property
     def max_len_single_sentence(self) -> int:
@@ -253,9 +253,9 @@ class ZsGPT2Tokenizer(GPT2TokenizerFast):
                     ln_t_ = room - ((1+ln_q+1) + (1+1) + 1)
                     assert ln_t_ > 0
                     self.logger.warning(f'Sample without answer longer than model max sequence length and '
-                                        f'dataset {logi(dset_nm)} labels: '
-                                        f'{logi(ln_cont)} > {logi(self.model_max_length)} - '
-                                        f'Text portion cropped: {logi(ln_t)} > {logi(ln_t_)} for inference')
+                                        f'dataset {pl.i(dset_nm)} labels: '
+                                        f'{pl.i(ln_cont)} > {pl.i(self.model_max_length)} - '
+                                        f'Text portion cropped: {pl.i(ln_t)} > {pl.i(ln_t_)} for inference')
                     ids_text = ids_text[:ln_t_]
             elif mode == 'train':
                 ln_ids = ln_q + ln_t + ln_a
@@ -265,8 +265,8 @@ class ZsGPT2Tokenizer(GPT2TokenizerFast):
                     ln_t_ = self.max_len_single_sentence - (ln_q + ln_a)
                     assert ln_t_ > 0
                     self.logger.warning(f'Sample with answer longer than model max sequence length for '
-                                        f'dataset {logi(dset_nm)}: {logi(ln_ids+6)} > {logi(self.model_max_length)} - '
-                                        f'Text portion cropped: {logi(ln_t)} > {logi(ln_t_)} for training')
+                                        f'dataset {pl.i(dset_nm)}: {pl.i(ln_ids+6)} > {pl.i(self.model_max_length)} - '
+                                        f'Text portion cropped: {pl.i(ln_t)} > {pl.i(ln_t_)} for training')
                     ids_text = ids_text[:ln_t_]
             # else, `stats`, no truncation
             # Number of contex tokens, up until answer token, inclusive
@@ -312,10 +312,10 @@ class ZsGPT2Tokenizer(GPT2TokenizerFast):
         # See `zeroshot_classifier.util.util.py::process_utcd_dataset`
         keys_ = ['dataset_id', 'text', 'labels', 'label_options']
         if mode == 'inference-sample':
-            assert not is_batched, f'Batched {logi("inference-sample")} not supported'
+            assert not is_batched, f'Batched {pl.i("inference-sample")} not supported'
         else:
             assert 'label_options' not in samples, \
-                f'{logi("label_options")} supported for {logi("inference-sample")} only'
+                f'{pl.i("label_options")} supported for {pl.i("inference-sample")} only'
         if is_batched:
             ds = [call_single(i, d_id, txt, lb) for i, (d_id, txt, lb) in enumerate(zip(
                 *[samples[k] for k in keys_ if k in samples]  # only `label_options` may not be required
@@ -769,7 +769,7 @@ def load_trained(
 ) -> Tuple[ZsGPT2LMHeadModel, ZsGPT2Tokenizer]:
     logger = get_logger('Load ZS-GPT2 Trained')
     d_log = dict(form=form, epoch=epoch, normalize_aspect=normalize_aspect)
-    logger.info(f'Loading model with {logi(d_log)}... ')
+    logger.info(f'Loading model with {pl.i(d_log)}... ')
     tokenizer_name = 'gpt2'
     if normalize_aspect:
         assert epoch in [3, 5]
@@ -851,8 +851,8 @@ def evaluate(
         f'{logger_name} file-write', typ='file-write',
         file_path=os_join(output_path, f'{now(for_path=True)}_{logger_name}, bsz={batch_size}, {domain}.log')
     )
-    logger.info(f'Running evaluation {logi(domain)} on model {log_dict(d_model)}, with {log_dict(d_eval)}... ')
-    logger_fl.info(f'Running evaluation {domain} on model {log_dict_nc(d_model)}, with {log_dict_nc(d_eval)}... ')
+    logger.info(f'Running evaluation {pl.i(domain)} on model {pl.i(d_model)}, with {pl.i(d_eval)}... ')
+    logger_fl.info(f'Running evaluation {domain} on model {pl.nc(d_model)}, with {pl.nc(d_eval)}... ')
 
     for dnm_ in dataset_names:
         if dnm_ != 'consumer_finance':  # TODO: debugging
@@ -885,8 +885,8 @@ def evaluate(
             start=[]
         )
         n_bch = len(idxs_batches)
-        logger.info(f'Running evaluation on dataset {logi(dnm_)}, with labels {logi(labels)}, '
-                    f'of {logi(len(dset))} unique texts in {logi(n_bch)} batches... ')
+        logger.info(f'Running evaluation on dataset {pl.i(dnm_)}, with labels {pl.i(labels)}, '
+                    f'of {pl.i(len(dset))} unique texts in {pl.i(n_bch)} batches... ')
         logger_fl.info(f'Running evaluation on dataset {dnm_}, with labels {labels}, '
                        f'of {len(dset)} unique texts in {n_bch} batches... ')
 
@@ -913,16 +913,16 @@ def evaluate(
                 # **try to be as lenient**: try to extract the text part if possible
                 answer_with_eos = generated[idxs_boa[-1] + len(tokenizer.boa_token):]
                 if len(idxs_boa) > 1:
-                    logger.warning(f'{logi(model_cnm)} generated {logi(len(idxs_boa))} boa_token '
-                                   f'instead of {logi(1)} with [{logi(answer_with_eos)}]')
+                    logger.warning(f'{pl.i(model_cnm)} generated {pl.i(len(idxs_boa))} boa_token '
+                                   f'instead of {pl.i(1)} with [{pl.i(answer_with_eos)}]')
                     logger_fl.warning(f'{model_cnm} generated {len(idxs_boa)} boa_token '
                                       f'instead of {1} with [{answer_with_eos}]')
                 assert len(idxs_boa) == 1
                 idxs_eos = get_substr_indices(answer_with_eos, s_sub=tokenizer.eos_token)
                 # GPT2 would generate multiple `eos_token` for the samples in the batch that terminates early
                 if len(idxs_eos) == 0:  # Still, **try to be as lenient**
-                    logger.warning(f'{logi(model_cnm)} didn\'t finish generating answer '
-                                   f'with [{logi(answer_with_eos)}]')
+                    logger.warning(f'{pl.i(model_cnm)} didn\'t finish generating answer '
+                                   f'with [{pl.i(answer_with_eos)}]')
                     logger_fl.warning(f'{model_cnm} didn\'t finish generating answer with [{answer_with_eos}]')
                     answer = answer_with_eos
                 else:
@@ -939,7 +939,7 @@ def evaluate(
                 ids_pred: List[int] = [lb2id[a.lower()] for a in answers]
                 assert len(ids_pred) >= 1  # sanity check
                 if embed_sim and all(i == -1 for i in ids_pred):  # all generated answer are non-label
-                    logger.warning(f'{logi(model_cnm)} didn\'t generate any valid label option with {logi(answers)}')
+                    logger.warning(f'{pl.i(model_cnm)} didn\'t generate any valid label option with {pl.i(answers)}')
                     logger_fl.warning(f'{model_cnm} didn\'t generate any valid label option with {answers}')
                     ids_pred = []
                     answ_embeds = encoder.encode(answers, batch_size=batch_size)
@@ -968,7 +968,7 @@ def evaluate(
             )
             it.set_postfix(d_log)
             d_log.update(dict(ids_pred=list(preds_batch), ids_true=list(trues_batch)))
-            logger_fl.info(log_dict_nc(d_log))
+            logger_fl.info(pl.nc(d_log))
 
         def check_labels_filled(lbs):  # sanity check, every index is assigned a label
             return np.all((-1 <= lbs) & (lbs < len(labels)))
@@ -983,13 +983,13 @@ def evaluate(
         )
         report = classification_report(trues, preds, **args)
         acc = f'{report["accuracy"]:.3f}'
-        logger.info(f'{logi(dnm_)} Classification Accuracy: {logi(acc)}')
+        logger.info(f'{pl.i(dnm_)} Classification Accuracy: {pl.i(acc)}')
         logger_fl.info(f'{dnm_} Classification Accuracy: {acc}')
 
         df = pd.DataFrame(report).transpose()
         path = os_join(output_path, f'{dnm_}.csv')
         df.to_csv(path)
-        logger.info(f'Evaluation on {logi(dnm_)} written to CSV at {logi(path)}')
+        logger.info(f'Evaluation on {pl.i(dnm_)} written to CSV at {pl.i(path)}')
         logger_fl.info(f'Evaluation on {dnm_} written to CSV at {path}')
 
 

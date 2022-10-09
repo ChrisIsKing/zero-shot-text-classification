@@ -54,8 +54,8 @@ class MyTrainer(Trainer):
 
         # ========================== Begin of added ==========================
         if model.training:
-            labels_, logits = inputs['labels'].detach(), outputs.logits.detach()
-            acc = self.acc.compute(predictions=logits.argmax(dim=-1), references=labels_)['accuracy']
+            labels_, lg.its = inputs['labels'].detach(), outputs.lg.its.detach()
+            acc = self.acc.compute(predictions=lg.its.argmax(dim=-1), references=labels_)['accuracy']
             self.log(dict(src='compute_loss', acc=acc))
         # ========================== End of added ==========================
 
@@ -112,24 +112,24 @@ class MyTrainStatsMonitorCallback(TrainerCallback):
 
         conf = self.trainer.model.config.to_dict()
         train_args = self.trainer.args.to_dict()
-        self.logger.info(f'Training launched on model {logi(mdl_type)}, {log_dict_pg(conf)} '
-                         f'with training args {log_dict_pg(train_args)}... ')
-        self.logger_fl.info(f'Training launched on model {logi(mdl_type)}, {log_dict_id(conf)} '
+        self.logger.info(f'Training launched on model {pl.i(mdl_type)}, {pl.fmt(conf)} '
+                         f'with training args {pl.fmt(train_args)}... ')
+        self.logger_fl.info(f'Training launched on model {pl.i(mdl_type)}, {log_dict_id(conf)} '
                             f'with training args {log_dict_id(train_args)}... ')
         self.t_strt = datetime.datetime.now()
 
     def on_train_end(self, args: TrainingArguments, state, control, **kwargs):
         self.t_end = datetime.datetime.now()
         t = fmt_delta(self.t_end - self.t_strt)
-        self.logger.info(f'Training completed in {logi(t)} ')
+        self.logger.info(f'Training completed in {pl.i(t)} ')
         self.logger_fl.info(f'Training completed in {t} ')
         self.mode = 'eval'
 
     def _log(self, d, to_console: bool = True):
         d = self.prettier(d)
         if to_console:
-            self.logger.info(log_dict(d))
-        self.logger_fl.info(log_dict_nc(d))
+            self.logger.info(pl.i(d))
+        self.logger_fl.info(pl.nc(d))
 
     def on_log(self, args, state, control, logs=None, **kwargs):
         if state.is_local_process_zero:
@@ -163,5 +163,5 @@ class MyTrainStatsMonitorCallback(TrainerCallback):
                 self.writer.add_scalar('Eval/asp_cls_acc', acc, step)
                 self._log(d_log, to_console=True)
             else:
-                self.logger.info(log_dict(logs))
-                self.logger_fl.info(log_dict_nc(logs))
+                self.logger.info(pl.i(logs))
+                self.logger_fl.info(pl.nc(logs))

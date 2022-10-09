@@ -77,7 +77,7 @@ def run_train(sampling: str = 'rand'):
 
     d_dset = get_datasets(in_domain_data_path)
     dnms = [dnm for dnm in d_dset.keys() if dnm != 'all']
-    logger.info(f'Gathering datasets: {logi(dnms)}... ')
+    logger.info(f'Gathering datasets: {pl.i(dnms)}... ')
     dset_tr = sum(
         (encoder_cls_format(
             d_dset[dnm]['train'], name=dnm, sampling=sampling, neg_sample_for_multi=True, show_warnings=False
@@ -121,8 +121,8 @@ def run_train(sampling: str = 'rand'):
         ('candidate size', sz_cand), ('context size', sz_cont)
     ])
     train_args |= dict(n_step=n_step, gradient_accumulation_steps=gas)
-    logger.info(f'Starting training on model {log_dict(d_model)} with training args: {log_dict(train_args)}, '
-                f'dataset size: {logi(n_tr)}... ')
+    logger.info(f'Starting training on model {pl.i(d_model)} with training args: {pl.i(train_args)}, '
+                f'dataset size: {pl.i(n_tr)}... ')
     model_ = zeroshot_classifier.models.dual_bi_encoder.jskit.encoders.utils.train.train_model(
         model_train=js_bi.model,
         tokenizer=js_bi.tokenizer,
@@ -234,8 +234,8 @@ def evaluate_trained(domain: str = 'in', candidate_batch_size: int = 256, contex
         f'{logger_name} file-write', typ='file-write',
         file_path=os_join(output_dir, f'{logger_name}, {domain_str}.log')
     )
-    logger.info(f'Running evaluation {logi(domain_str)} on model {log_dict(d_model)}, with {log_dict(d_eval)}... ')
-    logger_fl.info(f'Running evaluation {domain_str} on model {log_dict_nc(d_model)}, with {log_dict_nc(d_eval)}... ')
+    logger.info(f'Running evaluation {pl.i(domain_str)} on model {pl.i(d_model)}, with {pl.i(d_eval)}... ')
+    logger_fl.info(f'Running evaluation {domain_str} on model {pl.nc(d_model)}, with {pl.nc(d_eval)}... ')
 
     for dnm in dataset_names:
         dset = d_dset[dnm]['test']
@@ -247,14 +247,14 @@ def evaluate_trained(domain: str = 'in', candidate_batch_size: int = 256, contex
         vects_lb = torch.cat([e for e in ew(labels, embed_type='candidate', batch_size=candidate_batch_size)[1]])
         lst_preds, lst_labels = [], []
         n, it = ew(list(txt2lbs.keys()), embed_type='candidate', return_text=True, batch_size=context_batch_size)
-        logger.info(f'Running evaluation on dataset {logi(dnm)}, with labels {logi(labels)}, '
-                    f'of {logi(len(txt2lbs))} unique texts in {logi(n)} batches... ')
+        logger.info(f'Running evaluation on dataset {pl.i(dnm)}, with labels {pl.i(labels)}, '
+                    f'of {pl.i(len(txt2lbs))} unique texts in {pl.i(n)} batches... ')
         logger_fl.info(
             f'Running evaluation on dataset {dnm}, with labels {labels}, '
             f'of {len(txt2lbs)} unique texts in {n} batches... ')
         for txts, vects_txt in tqdm(it, total=n):
-            logits = vects_txt @ vects_lb.t()
-            preds = logits.argmax(dim=-1)
+            lg.its = vects_txt @ vects_lb.t()
+            preds = lg.its.argmax(dim=-1)
 
             def get_true_label(pred, txt):
                 pos_lb_pool = txt2lbs[txt]
@@ -273,7 +273,7 @@ def evaluate_trained(domain: str = 'in', candidate_batch_size: int = 256, contex
         ).transpose()
         path = os_join(output_dir, f'{dnm}.csv')
         df.to_csv(path)
-        logger.info(f'Evaluation on {logi(dnm)} written to CSV at {logi(path)}')
+        logger.info(f'Evaluation on {pl.i(dnm)} written to CSV at {pl.i(path)}')
         logger_fl.info(f'Evaluation on {dnm} written to CSV at {path}')
 
 

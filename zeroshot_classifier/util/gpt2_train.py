@@ -90,9 +90,9 @@ class MyLoggingCallback(TrainerCallback):
             conf = self.trainer.model.config.to_dict()
             args = self.trainer.args.to_dict()
             sleep(2)  # otherwise, logging messages missing
-            self.logger.info(f'Training started on model{log_dict_pg(conf)}, {log_dict(self.train_meta)} and '
-                             f'training args: {log_dict_pg(args)}...  ')
-            self.logger_fl.info(f'Training started on model{log_dict_id(conf)}, {log_dict_nc(self.train_meta)} and '
+            self.logger.info(f'Training started on model{pl.fmt(conf)}, {pl.i(self.train_meta)} and '
+                             f'training args: {pl.fmt(args)}...  ')
+            self.logger_fl.info(f'Training started on model{log_dict_id(conf)}, {pl.nc(self.train_meta)} and '
                                 f'training args: {log_dict_id(args)}...  ')
             sleep(2)
             self.t_strt = datetime.datetime.now()
@@ -106,7 +106,7 @@ class MyLoggingCallback(TrainerCallback):
 
             self.t_end = datetime.datetime.now()
             t = fmt_delta(self.t_end - self.t_strt)
-            self.logger.info(f'Training completed in {logi(t)} ')
+            self.logger.info(f'Training completed in {pl.i(t)} ')
             self.logger_fl.info(f'Training completed in {t} ')
 
     def on_evaluate(self, args: TrainingArguments, state, control, **kwargs):
@@ -122,8 +122,8 @@ class MyLoggingCallback(TrainerCallback):
             eval_meta = OrderedDict([
                 ('#data', n_eval), ('model size', md_sz), ('batch shape', (bsz, seq_max_len)), ('#batches', n_bch)
             ])
-            self.logger.info(f'Ran evaluation with {log_dict(eval_meta)}')
-            self.logger_fl.info(f'Ran evaluation with {log_dict(eval_meta, with_color=False)}')
+            self.logger.info(f'Ran evaluation with {pl.i(eval_meta)}')
+            self.logger_fl.info(f'Ran evaluation with {pl.i(eval_meta, with_color=False)}')
 
     def on_log(self, args: TrainingArguments, state, control, logs: Dict = None, **kwargs):
         def log_update(d_out):
@@ -135,8 +135,8 @@ class MyLoggingCallback(TrainerCallback):
                     # This creates plots not under the same plot
                 # self.tb_writer.add_scalar(main_tag='Train', tag_scalar_dict=d_out_, global_step=d_out['step'])
             d_out = pretty_log_dict(d_out, ref=self.train_meta, prefix='train')
-            self.logger.info(log_dict(d_out))
-            self.logger_fl.info(log_dict_nc(d_out))
+            self.logger.info(pl.i(d_out))
+            self.logger_fl.info(pl.nc(d_out))
 
         def acc_stats2dict(out_dict: Dict) -> Dict:
             """
@@ -163,8 +163,8 @@ class MyLoggingCallback(TrainerCallback):
             }
 
         def log_default(d_stats: Dict):
-            self.logger.info(log_dict(d_stats) if isinstance(d_stats, dict) else d_stats)
-            self.logger_fl.info(log_dict(d_stats, with_color=False) if isinstance(d_stats, dict) else d_stats)
+            self.logger.info(pl.i(d_stats) if isinstance(d_stats, dict) else d_stats)
+            self.logger_fl.info(pl.i(d_stats, with_color=False) if isinstance(d_stats, dict) else d_stats)
 
         # basically only log the main process; `state.is_local_process_zero` is wrong in DDP eval
         if self.trainer.is_local_process_zero():
@@ -254,7 +254,7 @@ class MyLoggingCallback(TrainerCallback):
                         print('unhandled case', logs)
                         exit(1)
                 else:  # Only training without evaluation supported
-                    # self.logger.info(log_dict(logs) if isinstance(logs, dict) else logs)
+                    # self.logger.info(pl.i(logs) if isinstance(logs, dict) else logs)
                     if 'src' in logs and logs['src'] == 'compute_loss':
                         # For gradient_accumulation, many batches of `compute_loss` may be called,
                         # before going into train logging
@@ -282,7 +282,7 @@ class MyLoggingCallback(TrainerCallback):
                         log_update(self.out_dict_tr)
                         self.out_dict_tr = None  # Rest for next global step
                     elif any('runtime' in k for k in logs.keys()):
-                        self.logger.info(log_dict(logs) if isinstance(logs, dict) else logs)
+                        self.logger.info(pl.i(logs) if isinstance(logs, dict) else logs)
                     else:
                         print('unhandled case', logs)
                         exit(1)
@@ -309,7 +309,7 @@ class ColoredPrinterCallback(TrainerCallback):
 
     def on_log(self, args, state, control, logs=None, **kwargs):
         if state.is_local_process_zero:
-            self.logger.info(log_dict(logs) if isinstance(logs, dict) else logs)
+            self.logger.info(pl.i(logs) if isinstance(logs, dict) else logs)
 
 
 def get_accs(
@@ -423,7 +423,7 @@ class MyTrainer(Trainer):
 
         self.post_init()
         # Sanity check for distributed training
-        print(f'Trainer instantiated with is_local_process_zero: {logi(self.is_local_process_zero())}')
+        print(f'Trainer instantiated with is_local_process_zero: {pl.i(self.is_local_process_zero())}')
 
         paths_ = self.args.output_dir.split(os.sep)
         path_proj = paths_[paths_.index(PROJ_DIR):]

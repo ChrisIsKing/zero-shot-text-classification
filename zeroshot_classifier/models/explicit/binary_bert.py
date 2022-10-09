@@ -346,7 +346,7 @@ if __name__ == "__main__":
         save_path = os_join(*dirs[:-1], dir_nm_last)
         _logger = get_logger('BinaryBERT Explicit Training')
         d_log = dict(mode=mode, sampling=sampling, batch_size=bsz, epochs=n_ep, learning_rate=lr, save_path=save_path)
-        _logger.info(f'Running training on {log_dict(d_log)}.. ')
+        _logger.info(f'Running training on {pl.i(d_log)}.. ')
 
         dvc = 'cuda' if torch.cuda.is_available() else 'cpu'
 
@@ -363,7 +363,7 @@ if __name__ == "__main__":
         model = ExplicitCrossEncoder('bert-base-uncased', device=dvc)
 
         warmup_steps_ = math.ceil(len(dl) * n_ep * 0.1)  # 10% of train data for warm-up
-        _logger.info(f'Launched training on {logi(len(train))} samples and {logi(warmup_steps_)} warmup steps... ')
+        _logger.info(f'Launched training on {pl.i(len(train))} samples and {pl.i(warmup_steps_)} warmup steps... ')
 
         model.fit(
             train_dataloader=dl,
@@ -387,7 +387,7 @@ if __name__ == "__main__":
 
         logger = get_logger('Binary Bert Eval')
         d_log = dict(mode=mode, domain=domain, batch_size=bsz, path=model_path)
-        logger.info(f'Evaluating Binary Bert with {log_dict(d_log)} and saving to {logi(out_path)}... ')
+        logger.info(f'Evaluating Binary Bert with {pl.i(d_log)} and saving to {pl.i(out_path)}... ')
 
         eval_loss: Dict[str, np.array] = dict()  # a sense of how badly the model makes the prediction
         dataset_names = [dnm for dnm, d_dset in sconfig('UTCD.datasets').items() if d_dset['domain'] == domain]
@@ -404,7 +404,7 @@ if __name__ == "__main__":
             label2id = {lbl: i for i, lbl in enumerate(label_options)}
             n_txt = sconfig(f'UTCD.datasets.{dnm}.splits.{split}.n_text')
             d_log = {'#text': n_txt, '#label': n_options}
-            logger.info(f'Evaluating {logi(dnm)} with {log_dict(d_log)}...')
+            logger.info(f'Evaluating {pl.i(dnm)} with {pl.i(d_log)}...')
             arr_preds, arr_labels = np.empty(n_txt, dtype=int), np.empty(n_txt, dtype=int)
 
             txt_n_lbs2query = None
@@ -441,6 +441,6 @@ if __name__ == "__main__":
             args = dict(zero_division=0, target_names=label_options, output_dict=True)  # disables warning
             report = classification_report(arr_labels, arr_preds, **args)
             acc = f'{report["accuracy"]:.3f}'
-            logger.info(f'{logi(dnm)} Classification Accuracy: {logi(acc)}')
+            logger.info(f'{pl.i(dnm)} Classification Accuracy: {pl.i(acc)}')
             df = pd.DataFrame(report).transpose()
             df.to_csv(join(out_path, f'{dnm}.csv'))

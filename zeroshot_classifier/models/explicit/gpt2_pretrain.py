@@ -52,7 +52,7 @@ if __name__ == '__main__':
         if NORMALIZE_ASPECT:
             dset_args['normalize_aspect'] = seed
         tr, vl = get_explicit_dataset(**dset_args)
-        logger.info(f'Loaded {logi(len(tr))} training samples, {logi(len(vl))} eval samples')
+        logger.info(f'Loaded {pl.i(len(tr))} training samples, {pl.i(len(vl))} eval samples')
 
         transformers.set_seed(seed)
         train_args = dict(

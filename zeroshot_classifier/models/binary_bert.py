@@ -72,19 +72,21 @@ if __name__ == '__main__':
             return d['domain'] == dom
 
     args = parse_args()
+    cmd = args.command
     logger = get_logger(f'{MODEL_NAME} {args.command.capitalize()}')
 
-    # TODO: verify
-
-    if args.command == 'train':
+    if cmd == 'train':
         output_path, sampling, mode = args.output, args.sampling, args.mode
         lr, bsz, n_ep = args.learning_rate, args.batch_size, args.epochs
         model_init, seq_len = args.model_init, args.max_sequence_length
 
+        # n = None
+        n = 64
+
         dset_args = dict(normalize_aspect=seed) if NORMALIZE_ASPECT else dict()
-        data = get_datasets(domain='in', **dset_args)
+        data = get_datasets(domain='in', n_sample=n, **dset_args)
         dataset_names = [dnm for dnm, d_dset in sconfig('UTCD.datasets').items() if filt(d_dset, 'in')]
-        logger.info(f'Processing datasets {logi(dataset_names)} for training... ')
+        logger.info(f'Processing datasets {pl.i(dataset_names)} for training... ')
         train = []
         val = []
         test = []
@@ -100,14 +102,14 @@ if __name__ == '__main__':
         d_log = dict(model_init=model_init)
         if model_init != HF_MODEL_NAME:
             d_log['files'] = os.listdir(model_init)
-        logger.info(f'Loading model with {logi(d_log)}...')
+        logger.info(f'Loading model with {pl.i(d_log)}...')
         model = BinaryBertCrossEncoder(model_init, num_labels=2, automodel_args=dict(ignore_mismatched_sizes=True))
         if seq_len != 512:  # Intended for `bert-base-uncased` only; TODO: binary bert seems to support this already?
             model.tokenizer, model.model = load_sliced_binary_bert(model_init, seq_len)
 
         spec_tok_arg = utcd_util.get_add_special_tokens_args(model.tokenizer, train_strategy=mode)
         if spec_tok_arg:
-            logger.info(f'Adding special tokens {log_dict(spec_tok_arg)} to tokenizer... ')
+            logger.info(f'Adding special tokens {pl.i(spec_tok_arg)} to tokenizer... ')
             model.tokenizer.add_special_tokens(special_tokens_dict=spec_tok_arg)
             model.model.resize_token_embeddings(len(model.tokenizer))
 
@@ -119,14 +121,13 @@ if __name__ == '__main__':
 
         warmup_steps = math.ceil(len(train_dataloader) * n_ep * 0.1)  # 10% of train data for warm-up
         d_log = {'#data': len(train), 'batch size': bsz, 'epochs': n_ep, 'warmup steps': warmup_steps}
-        logger.info(f'Launched training with {log_dict(d_log)}... ')
+        logger.info(f'Launched training with {pl.i(d_log)}... ')
 
         output_path = map_model_output_path(
             model_name=MODEL_NAME.replace(' ', '-'), output_path=output_path,
             mode=mode, sampling=sampling, normalize_aspect=NORMALIZE_ASPECT
         )
-        mic(output_path)
-        logger.info(f'Model will be saved to {logi(output_path)}')
+        logger.info(f'Model will be saved to {pl.i(output_path)}')
 
         transformers.set_seed(seed)
         model.fit(
@@ -137,7 +138,7 @@ if __name__ == '__main__':
             warmup_steps=warmup_steps,
             output_path=output_path
         )
-    if args.command == 'test':
+    elif cmd == 'test':
         WITH_EVAL_LOSS = False
         mode, domain, model_path, bsz = args.mode, args.domain, args.model_path, args.batch_size
         split = 'test'
@@ -150,7 +151,7 @@ if __name__ == '__main__':
 
         logger = get_logger(f'{MODEL_NAME} Eval')
         d_log = dict(mode=mode, domain=domain, batch_size=bsz, path=model_path)
-        logger.info(f'Evaluating Binary Bert with {log_dict(d_log)} and saving to {logi(out_path)}... ')
+        logger.info(f'Evaluating Binary Bert with {pl.i(d_log)} and saving to {pl.i(out_path)}... ')
 
         eval_loss: Dict[str, np.array] = dict()  # a sense of how badly the model makes the prediction
         dataset_names = [dnm for dnm, d_dset in sconfig('UTCD.datasets').items() if filt(d_dset, domain)]
@@ -164,7 +165,7 @@ if __name__ == '__main__':
             label2id = {lbl: i for i, lbl in enumerate(label_options)}
             n_txt = sconfig(f'UTCD.datasets.{dnm}.splits.{split}.n_text')
             d_log = {'#text': n_txt, '#label': n_options, 'labels': label_options}
-            logger.info(f'Evaluating {logi(dnm)} with {log_dict(d_log)}...')
+            logger.info(f'Evaluating {pl.i(dnm)} with {pl.i(d_log)}...')
             arr_preds, arr_labels = np.empty(n_txt, dtype=int), np.empty(n_txt, dtype=int)
             arr_loss = torch.empty(n_txt, dtype=torch.float32) if WITH_EVAL_LOSS else None
 
@@ -203,7 +204,7 @@ if __name__ == '__main__':
 
             args = dict(zero_division=0, target_names=label_options, output_dict=True)  # disables warning
             df, acc = eval_res2df(arr_labels, arr_preds, report_args=args)
-            logger.info(f'{logi(dnm)} Classification Accuracy: {logi(acc)}')
+            logger.info(f'{pl.i(dnm)} Classification Accuracy: {pl.i(acc)}')
             df.to_csv(join(out_path, f'{dnm}.csv'))
 
         if WITH_EVAL_LOSS:

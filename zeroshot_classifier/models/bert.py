@@ -68,7 +68,7 @@ if __name__ == "__main__":
         else:
             train_dset, test_dset, labels = seq_cls_format(data[dataset_name])
         d_log = {'#train': len(train_dset), '#test': len(test_dset), 'labels': list(labels.keys())}
-        logger.info(f'Loaded {logi(domain_str)} datasets {logi(dataset_name)} with {log_dict(d_log)} ')
+        logger.info(f'Loaded {pl.i(domain_str)} datasets {pl.i(dataset_name)} with {pl.i(d_log)} ')
 
         num_labels = len(labels)
         tokenizer = BertTokenizer.from_pretrained(HF_MODEL_NAME)
@@ -96,7 +96,7 @@ if __name__ == "__main__":
         proj_output_path = os_join(u.base_path, u.proj_dir, u.model_path, dir_nm, 'trained')
         mic(dir_nm, proj_output_path)
         d_log = {'batch size': bsz, 'epochs': n_ep, 'warmup steps': warmup_steps, 'save path': output_path}
-        logger.info(f'Launched training with {log_dict(d_log)}... ')
+        logger.info(f'Launched training with {pl.i(d_log)}... ')
 
         training_args = TrainingArguments(  # TODO: learning rate
             output_dir=output_path,
@@ -137,7 +137,7 @@ if __name__ == "__main__":
         lg_fl = os_join(output_path, f'{now(for_path=True)}_{lg_nm}, dom={domain}.log')
         logger_fl = get_logger(lg_nm, typ='file-write', file_path=lg_fl)
         domain_str = 'in-domain' if domain == 'in' else 'out-of-domain'
-        logger.info(f'Evaluating {logi(domain_str)} datasets {logi(dataset_names)} on model {logi(model_path)}... ')
+        logger.info(f'Evaluating {pl.i(domain_str)} datasets {pl.i(dataset_names)} on model {pl.i(model_path)}... ')
         logger_fl.info(f'Evaluating {domain_str} datasets {dataset_names} on model {model_path}... ')
 
         data = get_datasets(in_domain_data_path if domain == 'in' else out_of_domain_data_path)
@@ -160,7 +160,7 @@ if __name__ == "__main__":
                 if label not in lb2id:
                     lb2id[label] = len(lb2id)
         _lbs = list(lb2id.keys())
-        logger.info(f'Loaded labels: {logi(_lbs)}')
+        logger.info(f'Loaded labels: {pl.i(_lbs)}')
         logger_fl.info(f'Loaded labels: {_lbs}')
 
         def tokenize(examples):
@@ -168,12 +168,12 @@ if __name__ == "__main__":
         for dnm in dataset_names:
             pairs: Dict[str, List[str]] = data[dnm][split]
             asp = sconfig(f'UTCD.datasets.{dnm}.aspect')
-            logger.info(f'Evaluating {logi(asp)} dataset {logi(dnm)}... ')
+            logger.info(f'Evaluating {pl.i(asp)} dataset {pl.i(dnm)}... ')
             logger_fl.info(f'Evaluating {asp} dataset {dnm}... ')
 
             n_txt = sconfig(f'UTCD.datasets.{dnm}.splits.{split}.n_text')
             arr_preds, arr_labels = np.empty(n_txt, dtype=int), np.empty(n_txt, dtype=int)
-            logger.info(f'Loading {logi(n_txt)} samples... ')
+            logger.info(f'Loading {pl.i(n_txt)} samples... ')
             logger_fl.info(f'Loading {n_txt} samples... ')
 
             df = pd.DataFrame([dict(text=txt, label=[lb2id[lb] for lb in lb]) for txt, lb in pairs.items()])
@@ -202,9 +202,9 @@ if __name__ == "__main__":
                 zero_division=0, target_names=list(lb2id.keys()), labels=list(range(len(lb2id))), output_dict=True
             )  # disables warning
             df, acc = eval_res2df(arr_labels, arr_preds, report_args=args, pretty=False)
-            logger.info(f'{logi(dnm)} Classification Accuracy: {logi(acc)}')
+            logger.info(f'{pl.i(dnm)} Classification Accuracy: {pl.i(acc)}')
             logger_fl.info(f'{dnm} Classification Accuracy: {acc}')
             out = os_join(output_path, f'{dnm}.csv')
             df.to_csv(out)
-            logger.info(f'{logi(dnm)} Eval CSV written to {logi(out)}')
+            logger.info(f'{pl.i(dnm)} Eval CSV written to {pl.i(out)}')
             logger_fl.info(f'{dnm} Eval CSV written to {out}')
