@@ -6,7 +6,7 @@ import gzip
 import random
 import itertools
 from os import listdir
-from os.path import isfile, join, basename
+from os.path import isfile, join as os_join, basename
 from zipfile import ZipFile
 from collections import Counter, defaultdict
 from typing import List, Tuple, Set, Dict, Union
@@ -39,6 +39,7 @@ out_of_domain_url = 'https://drive.google.com/uc?id=1nd32_UrFbgoCgH4bDtFFD_YFZhz
 dataset_path = './dataset'
 in_domain_data_path = './dataset/in-domain'
 out_of_domain_data_path = './dataset/out-of-domain'
+ASPECT_NORM_DIRNM = 'aspect-normalized'
 nlp = spacy.load("en_core_web_md")
 nlp.disable_pipes(['tagger', 'parser', 'attribute_ruler', 'lemmatizer', 'ner'])
 
@@ -70,10 +71,9 @@ SplitDataset = Dict[str, Union[Dataset, List[str], str]]  # train & test splits 
 
 
 def get_datasets(
-        path: str, n_sample: int = None, normalize_aspect: Union[bool, int] = False, domain: str = 'in'
+        domain: str = 'in', n_sample: int = None, normalize_aspect: Union[bool, int] = False
 ) -> [str, SplitDataset]:
     """
-    :param path: File system path to folder of UTCD dataset
     :param n_sample: If given, a random sample of the entire dataset is selected
         Intended for debugging
     :param normalize_aspect: If true, # of training samples for each aspect is normalized
@@ -82,29 +82,33 @@ def get_datasets(
     :param domain: Needed for aspect normalization
         Intended for training directly on out-of-domain data, see `zeroshot_classifier/models/bert.py`
     """
+    path = in_domain_data_path if domain == 'in' else out_of_domain_data_path
     if not os.path.exists(path):
         logger.info('Loading data from Google Drive...')
         download_data(path)
-    paths = [join(path, f) for f in listdir(path) if isfile(join(path, f)) and f.endswith('.json')]
-    data = dict()
-    for path in paths:
-        dataset_name = basename(path).split('.')[0]
-        logger.info(f'Loading dataset {logi(dataset_name)}...')
-        dset = json.load(open(path))
-
-        if n_sample:
-            assert set(dset.keys()) == {'train', 'test', 'aspect', 'labels'}  # sanity check
-            for k in ['train', 'test']:
-                txt2lb: Dict[str, List[str]] = dset[k]
-                txts = np.empty(sconfig(f'UTCD.datasets.{dataset_name}.splits.{k}.n_text'), dtype=object)
-                for i, t in enumerate(txt2lb.keys()):
-                    txts[i] = t
-                txts = np.random.permutation(txts)[:n_sample]
-                dset[k] = {t: txt2lb[t] for t in txts}
-        data[dataset_name] = dset
+    data = None
     if normalize_aspect:
-        seed = None if isinstance(normalize_aspect, bool) else normalize_aspect
-        data = to_aspect_normalized_datasets(data, seed=seed, domain=domain)
+        path = os_join(path, ASPECT_NORM_DIRNM)
+        if not os.path.exists(path):
+            data = save_aspect_normalized_datasets(domain=domain)
+    if not data:
+        paths = [os_join(path, f) for f in listdir(path) if isfile(os_join(path, f)) and f.endswith('.json')]
+        data = dict()
+        for path in paths:
+            dataset_name = basename(path).split('.')[0]
+            logger.info(f'Loading dataset {logi(dataset_name)}...')
+            dset = json.load(open(path))
+
+            if n_sample:
+                assert set(dset.keys()) == {'train', 'test', 'aspect', 'labels'}  # sanity check
+                for k in ['train', 'test']:
+                    txt2lb: Dict[str, List[str]] = dset[k]
+                    txts = np.empty(sconfig(f'UTCD.datasets.{dataset_name}.splits.{k}.n_text'), dtype=object)
+                    for i, t in enumerate(txt2lb.keys()):
+                        txts[i] = t
+                    txts = np.random.permutation(txts)[:n_sample]
+                    dset[k] = {t: txt2lb[t] for t in txts}
+            data[dataset_name] = dset
     return data
 
 
@@ -201,18 +205,21 @@ def dataset2train_eval_split(dataset: Dataset, eval_ratio: float = 0.1, seed: in
 def save_aspect_normalized_datasets(domain: str = 'in'):
     seed = sconfig('random-seed')
     path = in_domain_data_path if domain == 'in' else out_of_domain_data_path
-    dsets = get_datasets(path=path, normalize_aspect=seed, domain=domain)
-    out_path = os.path.join(path, 'aspect-normalized')
+    dsets = get_datasets(domain=domain)
+    dsets = to_aspect_normalized_datasets(dsets, seed=seed, domain=domain)
+
+    out_path = os.path.join(path, ASPECT_NORM_DIRNM)
     os.makedirs(out_path, exist_ok=True)
 
     ret = dict()
     for dnm, dsets_ in dsets.items():
         dsets__ = dataset2train_eval_split(dsets_.pop('train'), seed=seed)
         dsets__.update(dsets_)
-        path = os.path.join(out_path, f'{dnm}.json')
-        logger.info(f'Saving normalized {logi(dnm)} dataset to {logi(path)}... ')
+        mic(dsets__.keys())
+        path_out = os.path.join(out_path, f'{dnm}.json')
+        logger.info(f'Saving normalized {logi(dnm)} dataset to {logi(path_out)}... ')
         with open(path, 'w') as f:
-            json.dump(dsets__, f, indent=4)
+            json.dump(dsets__, f)
         ret[dnm] = dsets__
     return ret
 
@@ -574,5 +581,5 @@ if __name__ == '__main__':
             mic(c, len(c))
     # check_sampling()
 
-    # save_aspect_normalized_datasets(domain='in')
+    save_aspect_normalized_datasets(domain='in')
     save_aspect_normalized_datasets(domain='out')
