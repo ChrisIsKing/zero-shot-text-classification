@@ -8,6 +8,7 @@ from argparse import ArgumentParser
 import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
+from models import BinaryBertCrossEncoder
 from sentence_transformers.cross_encoder import CrossEncoder
 from sentence_transformers.cross_encoder.evaluation import CESoftmaxAccuracyEvaluator
 from tqdm import tqdm
@@ -82,10 +83,11 @@ if __name__ == '__main__':
         dataset_names = [dnm for dnm, d_dset in sconfig('UTCD.datasets').items() if filt(d_dset, 'in')]
         logger.info(f'Loading datasets {logi(dataset_names)} for training... ')
         train = []
+        val = []
         test = []
         for dataset_name in dataset_names:
             dset = data[dataset_name]
-            train += binary_cls_format(dset, name=dataset_name, sampling=args.sampling, mode=mode)
+            train, val += binary_cls_format(dset, name=dataset_name, sampling=args.sampling, mode=mode)
             test += binary_cls_format(dset, train=False, mode=mode)
 
         # in case of loading from explicit pre-training,
@@ -94,7 +96,7 @@ if __name__ == '__main__':
         if model_init != HF_MODEL_NAME:
             d_log['files'] = os.listdir(model_init)
         logger.info(f'Loading model with {logi(d_log)}...')
-        model = CrossEncoder(model_init, num_labels=2, automodel_args=dict(ignore_mismatched_sizes=True))
+        model = BinaryBertCrossEncoder(model_init, num_labels=2, automodel_args=dict(ignore_mismatched_sizes=True))
         if seq_len != 512:  # Intended for `bert-base-uncased` only; TODO: binary bert seems to support this already?
             model.tokenizer, model.model = load_sliced_binary_bert(model_init, seq_len)
 
@@ -108,8 +110,7 @@ if __name__ == '__main__':
         random.seed(seed)
         random.shuffle(train)
         train_dataloader = DataLoader(train, shuffle=True, batch_size=bsz)
-
-        evaluator = CESoftmaxAccuracyEvaluator.from_input_examples(test, name='UTCD-test')
+        val_dataloader = DataLoader(val, shuffle=False, batch_size=bsz)
 
         warmup_steps = math.ceil(len(train_dataloader) * n_ep * 0.1)  # 10% of train data for warm-up
         d_log = {'#data': len(train), 'batch size': bsz, 'epochs': n_ep, 'warmup steps': warmup_steps}
@@ -124,7 +125,7 @@ if __name__ == '__main__':
         transformers.set_seed(seed)
         model.fit(
             train_dataloader=train_dataloader,
-            evaluator=evaluator,
+            val_dataloader=val_dataloader,
             epochs=n_ep,
             evaluation_steps=100000,
             warmup_steps=warmup_steps,
