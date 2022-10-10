@@ -543,7 +543,7 @@ def get_model_n_tokenizer(model_name='gpt2', form: str = 'vanilla', save_gpu_mem
 
 def get_train_setup(
         model_name='gpt2', do_eval=True, dir_name: str = None, train_args: Dict = None,
-        save_gpu_memory: bool = True
+        save_gpu_memory: bool = True, normalize_aspect: bool = False
 ) -> TrainingArguments:
     d_train_args = {
         'debug': dict(
@@ -595,7 +595,7 @@ def get_train_setup(
         output_dir=os_join(utcd_util.get_output_base(), PROJ_DIR, MODEL_DIR, dir_nm),
         do_train=True,
         do_eval=do_eval,
-        evaluation_strategy='steps' if do_eval else 'no',
+        evaluation_strategy='epoch' if do_eval else 'no',
         per_device_train_batch_size=bsz_tr,
         per_device_eval_batch_size=bsz_vl,
         gradient_accumulation_steps=gas,
@@ -611,15 +611,13 @@ def get_train_setup(
         num_train_epochs=n_ep,
         lr_scheduler_type=sch,
         warmup_ratio=1e-2,
-        log_level='info',
-        # log_on_each_node=False,
+        log_level='warning',
         log_level_replica='info',
         logging_strategy='steps',
         logging_steps=1,
         save_strategy='epoch',
         fp16=torch.cuda.is_available(),
         fp16_full_eval=False,
-        # fp16_full_eval=False,  # As in doc, harms metric
         optim=OptimizerNames.ADAMW_TORCH,
         disable_tqdm=True,
         # Pass dataset name information down to `compute_loss` for computing text classification accuracy
@@ -628,6 +626,12 @@ def get_train_setup(
         # Set to True on CPU gives warning; Enable for fitting in `clarity1` memory
         gradient_checkpointing=torch.cuda.is_available() and save_gpu_memory
     )
+    if normalize_aspect:
+        args.update(dict(
+            load_best_model_at_end=True,
+            metric_for_best_model='eval_loss',
+            greater_is_better=False,
+        ))
     if train_args is None:
         train_args = dict()
     args = {k: v for k, v in args.items() if v is not None}
@@ -642,17 +646,22 @@ def compute_metrics(eval_pred: MyEvalPrediction):
     # Intended to work with `CustomTrainer.prediction_step`
     if not hasattr(compute_metrics, 'metric'):
         compute_metrics.metric = datasets.load_metric('accuracy')
-    # Labels are per-sample already, see `CustomTrainer.prediction_step`
+    # Labels are per-sample already, see `MyTrainer::prediction_step`
     preds, trues, dids = eval_pred.predictions, eval_pred.label_ids, eval_pred.dataset_ids
-    return compute_metrics.metric.compute(predictions=preds, references=trues)
+    # mic(preds, trues)
+    # raise NotImplementedError('acc')
+    return dict(cls_acc=compute_metrics.metric.compute(predictions=preds, references=trues)['accuracy'])
 
 
 def get_all_setup(
         model_name: str = None, dataset_name: str = 'ag_news', form: str = 'vanilla',
         n_sample=None, random_seed=None, do_eval=True, custom_logging=True,
         train_args: Dict = None, dataset_args: Dict = None,
-        is_ddp: Union[bool, int] = False  # so that my own logging is correct
-) -> Tuple[GPT2LMHeadModel, Union[GPT2TokenizerFast, ZsGPT2Tokenizer], datasets.Dataset, datasets.Dataset, Trainer]:
+        is_ddp: Union[bool, int] = False, use_tqdm: bool = True  # so that my own logging is correct
+) -> Tuple[GPT2LMHeadModel, Union[GPT2TokenizerFast, ZsGPT2Tokenizer], Trainer]:
+    dataset_args = dataset_args or dict()
+    normalize_aspect = dataset_args.get('normalize_aspect', None)
+
     if model_name == 'debug-gpt-ori':  # Sanity check: As if keep training GPT-2, with padding for simplicity
         conf = AutoConfig.from_pretrained('gpt2')
         conf.update(dict(use_cache=False))
@@ -676,7 +685,7 @@ def get_all_setup(
             }
             result['labels'] = result['input_ids'].copy()
             return result
-        tr_map_func = vl_map_func = group_texts
+        tr_map_func = vl_map_func = ts_map_func = group_texts
     else:
         save_gpu_mem = 'arc-ts' not in get_hostname()
         # save_gpu_mem = True  # Gradient checkpointing still needed - otherwise doesn't fit in 44G GPU
@@ -687,29 +696,33 @@ def get_all_setup(
             sampling=None, normalize_aspect=dataset_args.get('normalize_aspect', None)
         )
         train_args_ = get_train_setup(
-            model_name, do_eval=do_eval, dir_name=dir_nm, train_args=train_args, save_gpu_memory=save_gpu_mem
+            model_name, do_eval=do_eval, dir_name=dir_nm, train_args=train_args,
+            save_gpu_memory=save_gpu_mem, normalize_aspect=normalize_aspect
         )
         tr_map_func = Tokenize(tokenizer, dataset_name=dataset_name, split='train')
-        vl_map_func = Tokenize(tokenizer, dataset_name=dataset_name, split='test')
+        # Evaluation set has the same set of labels as training set by construction,
+        # see `load_data:dataset2train_eval_split`
+        # All `Tokenize` care about is the corresponding set of labels
+        vl_map_func = Tokenize(tokenizer, dataset_name=dataset_name, split='train')
+        ts_map_func = Tokenize(tokenizer, dataset_name=dataset_name, split='test')
 
-    if dataset_args is None:
-        dataset_args = dict()
-    dset_tr_, dset_vl_ = get_dataset(
+    splits = ('train', 'eval', 'test') if normalize_aspect else ('train', 'test')
+    dsets = get_dataset(
         dataset_name=dataset_name,
-        map_func=dict(train=tr_map_func, test=vl_map_func), remove_columns=['text', 'labels'],
-        n_sample=n_sample, shuffle_seed=random_seed, pbar=True,
+        map_func=dict(train=tr_map_func, eval=vl_map_func, test=ts_map_func), remove_columns=['text', 'labels'],
+        n_sample=n_sample, shuffle_seed=random_seed, pbar=True, splits=splits,
         fast='debug' not in model_name, **dataset_args
     )
     trainer_args = dict(
         model=model, args=train_args_, data_collator=data_collator_,
-        train_dataset=dset_tr_, eval_dataset=dset_vl_, compute_metrics=compute_metrics
+        train_dataset=dsets['train'], eval_dataset=dsets.get('eval', None), compute_metrics=compute_metrics
     )
     trainer_ = GPT2Trainer(
         tokenizer=tokenizer, custom_logging=custom_logging, compute_cls_acc=model_name != 'debug-gpt-ori',
-        is_ddp=is_ddp,
+        is_ddp=is_ddp, use_tqdm=use_tqdm,
         **trainer_args
     )
-    return model, tokenizer, dset_tr_, dset_vl_, trainer_
+    return model, tokenizer, trainer_
 
 
 def plot_dataset_token_length_stats(domain: str = 'in'):
@@ -1010,6 +1023,8 @@ def gpt2_inference(text: str, label_options: List[str]) -> str:
 
 
 if __name__ == '__main__':
+    mic.output_width = 512
+
     seed = sconfig('random-seed')
 
 
@@ -1019,19 +1034,20 @@ if __name__ == '__main__':
         # md_nm = 'debug'
         md_nm = 'gpt2-medium'
 
-        # form = 'vanilla'
+        form = 'vanilla'
         # form = 'implicit'
-        form = 'explicit'
+        # form = 'explicit'
         if form == 'explicit':
             dir_nm = '2022-06-20_22-50-06_Explicit-Pretrain-Aspect-NVIDIA-GPT2-gpt2-medium-explicit-aspect-norm'
             md_nm = os_join(u.proj_path, u.model_dir, dir_nm, 'trained')
             mic(os.listdir(md_nm))
             # exit(1)
 
-        # n = 32
+        n = 32
+        mic(n)
         # n = 128
         # n = 256
-        n = None
+        # n = None
 
         asp_norm = True
         dataset_args = dict(normalize_aspect=seed) if asp_norm else dict()
@@ -1059,28 +1075,29 @@ if __name__ == '__main__':
             # dataset_args = dict()
             train_args = dict(  # Distribute among GPUs & fit in memory; Effectively batch size 128 as in paper
                 # num_train_epochs=3,
-                num_train_epochs=5,
+                num_train_epochs=8,
                 per_device_train_batch_size=4,
-                gradient_accumulation_steps=8 * 4,
+                per_device_eval_batch_size=4,
+                gradient_accumulation_steps=2,
+                # gradient_accumulation_steps=8 * 4,
             )
-            # ddp = False
-            ddp = 4
-            mic(trasin_args, ddp)
-        model, tokenizer, dset_tr, dset_vl, trainer = get_all_setup(  # eval set is too large
-            model_name=md_nm, dataset_name=dnm, form=form, do_eval=False, custom_logging=True, n_sample=n,
+            ddp = False
+            # ddp = 4
+        mic(asp_norm, ddp, train_args)
+        model, tokenizer, trainer_ = get_all_setup(
+            model_name=md_nm, dataset_name=dnm, form=form, do_eval=True, custom_logging=True, n_sample=n,
             random_seed=seed,
-            # random_seed=1,
             train_args=train_args, dataset_args=dataset_args,
             is_ddp=ddp
         )
-        save_path = os_join(trainer.log_output_dir, 'trained')
+        save_path = os_join(trainer_.log_output_dir, 'trained')
         mic(save_path)
-        trainer.train()
+        trainer_.train()
 
-        trainer.save_model(save_path)
+        trainer_.save_model(save_path)
         tokenizer.save_pretrained(save_path)
         os.listdir(save_path)
-    # train()
+    train()
 
     def run_eval():
         transformers.set_seed(seed)  # cos explicit 3 epoch doesn't generate BOA token...
@@ -1099,7 +1116,7 @@ if __name__ == '__main__':
             domain=dom, batch_size=48, form=form, load_model_args=dict(normalize_aspect=True, epoch=n_ep),
             embed_sim=True
         )
-    run_eval()
+    # run_eval()
 
     def sanity_check_trained_generate():
         text = 'hello world'

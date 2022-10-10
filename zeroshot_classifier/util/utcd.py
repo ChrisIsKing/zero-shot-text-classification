@@ -35,6 +35,10 @@ if LOAD_TSNE and torch.cuda.is_available():
     from tsnecuda import TSNE as cuTSNE
 
 
+logger = get_logger('UTCD')
+
+
+
 EOT_TOKEN = '[eot]'  # end of turn token for sgd
 
 
@@ -51,8 +55,8 @@ def get_output_base():
 
 
 def get_utcd_from_gdrive(domain: str = 'in'):
-    ca(domain=domain)
-    path = os_join(BASE_PATH, PROJ_DIR, DSET_DIR, 'UTCD')
+    ca(dataset_domain=domain)
+    path = os_join(u.proj_path, u.dset_dir, 'UTCD')
     os.makedirs(path, exist_ok=True)
     if domain == 'in':
         url = 'https://drive.google.com/uc?id=1V7IzdZ9HQbFUQz9NzBDjmqYBdPd9Yfe3'
@@ -61,7 +65,10 @@ def get_utcd_from_gdrive(domain: str = 'in'):
         url = 'https://drive.google.com/uc?id=1nd32_UrFbgoCgH4bDtFFD_YFZhzcts3x'
         fnm = os_join(path, 'out-of-domain')
     fnm = f'{fnm}.zip'
+    logger.info(f'Downloading from GDrive url {pl.i(url)} to {pl.i(fnm)}... ')
     gdown.download(url=url, output=fnm, quiet=False)
+
+    logger.info(f'Extracting {pl.i(fnm)} to {pl.i(path)}... ')
     with ZipFile(fnm, 'r') as zip_:
         zip_.extractall(path)
         zip_.close()
@@ -79,19 +86,20 @@ def process_utcd_dataset(domain: str = 'in', join=False):
 
     Save processed datasets to disk
     """
-    logger = get_logger('Process UTCD')
     ca(dataset_domain=domain)
     output_dir = 'UTCD-in' if domain == 'in' else 'UTCD-out'
-    ext = sconfig('UTCD.dataset_ext')
-    path_dsets = os_join(BASE_PATH, PROJ_DIR, DSET_DIR)
+    path_dsets = os_join(u.proj_path, u.dset_dir)
+    domain_str = 'in-domain' if domain == 'in' else 'out-of-domain'
+    if not os.path.exists(os_join(path_dsets, 'UTCD', domain_str)):
+        get_utcd_from_gdrive(domain=domain)
     path_out = os_join(get_output_base(), PROJ_DIR, DSET_DIR, 'processed')
     logger.info(f'Processing UTCD datasets with {pl.i(dict(domain=domain, join=join))}... ')
 
     def path2dsets(dnm: str, d_dset: Dict) -> Union[DatasetDict, Dict[str, pd.DataFrame]]:
         logger.info(f'Processing dataset {pl.i(dnm)}... ')
-        path = d_dset['path']
-        path = os_join(path_dsets, f'{path}.{ext}')
-        with open(path) as f:
+        path_ = d_dset['path']
+        path_ = os_join(path_dsets, f'{path_}.json')
+        with open(path_) as f:
             dsets_: Dict = json.load(f)
 
         def json2dset(split: str, dset: Dict[str, List[str]]) -> Union[Dataset, pd.DataFrame]:
@@ -141,7 +149,6 @@ def process_utcd_dataset(domain: str = 'in', join=False):
             # The string labels **may overlap** across the datasets
             # Keep internal feature label ordering same as dataset id
             lbs_dset = sorted(dnm2id, key=dnm2id.get)
-            mic(dnm2id, lbs_dset)
             features = Features(text=Value(dtype='string'), labels=lbs_global, dataset_id=ClassLabel(names=lbs_dset))
             return Dataset.from_pandas(df, features=features)
         tr = dfs2dset([prep_single(dnm, dsets['train']) for dnm, dsets in d_dsets.items()])
@@ -634,6 +641,8 @@ class VisualizeOverlap:
 if __name__ == '__main__':
     from datasets import load_from_disk
 
+    mic.output_width = 512
+
     np.random.seed(sconfig('random-seed'))
 
     def sanity_check(dsets_nm):
@@ -658,7 +667,7 @@ if __name__ == '__main__':
     def get_utcd_out():
         process_utcd_dataset(domain='out', join=True)
         sanity_check('UTCD-out')
-    # get_utcd_out()
+    get_utcd_out()
 
     def sanity_check_ln_eurlex():
         path = os_join(get_output_base(), PROJ_DIR, DSET_DIR, 'processed', 'multi_eurlex')
@@ -738,7 +747,7 @@ if __name__ == '__main__':
             cbar_ax=False
         )
         # vs.profile_runtime(lambda: get_utcd_overlap(kind=kd))
-    plot_token_overlap()
+    # plot_token_overlap()
 
     def plot_encoded_overlap():
         kd = 'text'

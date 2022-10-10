@@ -98,9 +98,10 @@ def get_datasets(
     if not datasets:
         paths = [os_join(path, f) for f in listdir(path) if isfile(os_join(path, f)) and f.endswith('.json')]
         datasets = dict()
-        for path in paths:
+        it = tqdm(paths, desc='Loading JSON datasets')
+        for path in it:
             dataset_name = basename(path).split('.')[0]
-            logger.info(f'Loading {pl.i(dataset_name)} JSON dataset...')
+            it.set_postfix(dataset=pl.i(dataset_name))
             dset = json.load(open(path))
 
             assert set(dset.keys()) == _keys  # sanity check
@@ -125,7 +126,7 @@ def get_datasets(
                     txts = np.random.permutation(txts)[:n_sample]
                 dsets[sp] = {t: dset[t] for t in txts}
     counts = {dnm: {sp: len(dsets[sp]) for sp in splits} for dnm, dsets in datasets.items()}
-    logger.info(f'Datasets loaded w/ {pl.fmt(counts)}')
+    logger.info(f'Datasets loaded w/ {pl.i(counts)}')
     return datasets
 
 

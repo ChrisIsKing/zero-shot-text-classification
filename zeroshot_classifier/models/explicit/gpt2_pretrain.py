@@ -1,7 +1,11 @@
+import os
 from os.path import join as os_join
 
+import torch
+import transformers
 from transformers import GPT2TokenizerFast, GPT2ForSequenceClassification
 
+from stefutil import *
 from zeroshot_classifier.util import *
 import zeroshot_classifier.util.utcd as utcd_util
 from zeroshot_classifier.preprocess import get_explicit_dataset
@@ -14,14 +18,6 @@ TRAIN_STRATEGY = 'explicit'
 
 
 if __name__ == '__main__':
-    import os
-
-    import torch
-    import transformers
-
-    from stefutil import *
-    import zeroshot_classifier.util.utcd as utcd_util
-
     seed = sconfig('random-seed')
 
     NORMALIZE_ASPECT = True

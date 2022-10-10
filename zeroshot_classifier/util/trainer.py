@@ -10,47 +10,10 @@ import seaborn as sns
 from stefutil import *
 
 
+__all__ = ['PT_LOSS_PAD', 'TrainPlot', 'MyEvalPrediction']
+
+
 PT_LOSS_PAD = -100  # Pytorch indicator value for ignoring loss, used in huggingface for padding tokens
-
-
-def _pretty_single(key: str, val, ref: Dict = None):
-    if key in ['step', 'epoch']:
-        k = next(iter(k for k in ref.keys() if key in k))
-        lim = ref[k]
-        assert isinstance(val, (int, float))
-        len_lim = len(str(lim))
-        if isinstance(val, int):
-            s_val = f'{val:>{len_lim}}'
-        else:
-            fmt = f'%{len_lim+4}.3f'
-            s_val = fmt % val
-        return f'{s_val}/{lim}'  # Pad integer
-    elif 'loss' in key:
-        return f'{round(val, 4):7.4f}'
-    elif any(k in key for k in ('acc', 'recall', 'auc')):
-        def _single(v):
-            return f'{round(v * 100, 2):6.2f}' if v is not None else '-'
-
-        if isinstance(val, list):
-            return [_single(v) for v in val]
-        elif isinstance(val, dict):
-            return {k: _single(v) for k, v in val.items()}
-        else:
-            return _single(val)
-    elif 'learning_rate' in key or 'lr' in key:
-        return f'{round(val, 7):.3e}'
-    else:
-        return val
-
-
-def prefix_key(key: str, prefix: str = ''):
-    if prefix:
-        prefix = f'{prefix}/'
-    return f'{prefix}{key}' if (prefix and not any(k_ in key for k_ in ['epoch', 'step'])) else key
-
-
-def pretty_log_dict(d_log: Dict, ref: Dict = None, prefix: str = ''):
-    return {prefix_key(k, prefix=prefix): _pretty_single(k, v, ref=ref) for k, v in d_log.items()}
 
 
 class TrainPlot:

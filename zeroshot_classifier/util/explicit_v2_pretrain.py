@@ -114,8 +114,8 @@ class MyTrainStatsMonitorCallback(TrainerCallback):
         train_args = self.trainer.args.to_dict()
         self.logger.info(f'Training launched on model {pl.i(mdl_type)}, {pl.fmt(conf)} '
                          f'with training args {pl.fmt(train_args)}... ')
-        self.logger_fl.info(f'Training launched on model {pl.i(mdl_type)}, {log_dict_id(conf)} '
-                            f'with training args {log_dict_id(train_args)}... ')
+        self.logger_fl.info(f'Training launched on model {pl.i(mdl_type)}, {pl.id(conf)} '
+                            f'with training args {pl.id(train_args)}... ')
         self.t_strt = datetime.datetime.now()
 
     def on_train_end(self, args: TrainingArguments, state, control, **kwargs):
