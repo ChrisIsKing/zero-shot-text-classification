@@ -103,6 +103,7 @@ def get_datasets(
             dataset_name = basename(path).split('.')[0]
             it.set_postfix(dataset=pl.i(dataset_name))
             dset = json.load(open(path))
+            dset: SplitDataset
 
             assert set(dset.keys()) == _keys  # sanity check
             datasets[dataset_name] = dset
@@ -304,8 +305,9 @@ def binary_cls_format(
             vects = list(nlp.pipe(example_list, n_process=4, batch_size=128))
             print('Time Elapsed {} ms'.format((time.time() - start) * 1000))
 
-        it = tqdm(dataset[split].items(), desc=f'Formatting {pl.i(dataset_name)}-{pl.i(split)} to Binary CLS')
-        for i, (text, labels) in enumerate(it):
+        # it = tqdm(dataset[split].items(), desc=f'Formatting {pl.i(dataset_name)}-{pl.i(split)} to Binary CLS')
+        # for i, (text, labels) in enumerate(it):
+        for i, (text, labels) in enumerate(dataset[split].items()):
             if label_un_modified:
                 true_labels = labels
             else:

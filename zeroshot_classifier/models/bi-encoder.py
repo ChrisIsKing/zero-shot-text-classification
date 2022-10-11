@@ -73,12 +73,13 @@ if __name__ == "__main__":
         train = []
         val = []
         test = []
-        for dataset_name in dataset_names:
+        it = tqdm(dataset_names, desc='Formatting into Binary CLS')
+        for dataset_name in it:
             dset = data[dataset_name]
             args = dict(dataset_name=dataset_name, sampling=sampling, mode=mode)
-            train += binary_cls_format(dataset=dset, **args, split='train')
-            val += binary_cls_format(dataset=dset, **args, split='eval')
-            test += binary_cls_format(dataset=dset, **args, split='test')
+            for split, ds in zip(['train', 'val', 'test'], [train, val, test]):
+                it.set_postfix(dnm=f'{pl.i(dataset_name)}-{pl.i(split)}')
+                ds.extend(binary_cls_format(dset, **args, split=split))
 
         # seq length for consistency w/ `binary_bert` & `sgd`
         word_embedding_model = models.Transformer(model_init, max_seq_length=512)
@@ -100,7 +101,9 @@ if __name__ == "__main__":
         train_loss = losses.CosineSimilarityLoss(model)
 
         warmup_steps = math.ceil(len(train_dataloader) * n_ep * 0.1)  # 10% of train data for warm-up
-        d_log = {'#data': len(train), 'batch size': bsz, 'epochs': n_ep, 'warmup steps': warmup_steps}
+        d_log = {
+            '#data': len(train), 'learning_rate': lr, 'batch size': bsz, 'epochs': n_ep, 'warmup steps': warmup_steps
+        }
         logger.info(f'Launched training with {pl.i(d_log)}... ')
 
         output_path = map_model_output_path(

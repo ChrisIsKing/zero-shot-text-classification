@@ -89,12 +89,18 @@ if __name__ == '__main__':
         train = []
         val = []
         test = []
-        for dataset_name in dataset_names:
+        it = tqdm(dataset_names, desc='Formatting into Binary CLS')
+        for dataset_name in it:
             dset = data[dataset_name]
             args = dict(dataset_name=dataset_name, sampling=sampling, mode=mode)
-            train += binary_cls_format(dataset=dset, **args, split='train')
-            val += binary_cls_format(dataset=dset, **args, split='eval')
-            test += binary_cls_format(dataset=dset, **args, split='test')
+            for split, ds in zip(['train', 'val', 'test'], [train, val, test]):
+                it.set_postfix(dnm=f'{pl.i(dataset_name)}-{pl.i(split)}')
+                ds.extend(binary_cls_format(dset, **args, split=split))
+            # train += binary_cls_format(dataset=dset, **args, split='train')
+            # it.set_postfix(dnm=f'{pl.i(dataset_name)} eval')
+            # val += binary_cls_format(dataset=dset, **args, split='eval')
+            # it.set_postfix(dnm=f'{pl.i(dataset_name)} test')
+            # test += binary_cls_format(dataset=dset, **args, split='test')
 
         # in case of loading from explicit pre-training,
         # the classification head would be ignored for classifying 3 classes
@@ -119,7 +125,9 @@ if __name__ == '__main__':
         val_dataloader = DataLoader(val, shuffle=False, batch_size=bsz)
 
         warmup_steps = math.ceil(len(train_dataloader) * n_ep * 0.1)  # 10% of train data for warm-up
-        d_log = {'#data': len(train), 'batch size': bsz, 'epochs': n_ep, 'warmup steps': warmup_steps}
+        d_log = {
+            '#data': len(train), 'learning_rate': lr, 'batch size': bsz, 'epochs': n_ep, 'warmup steps': warmup_steps
+        }
         logger.info(f'Launched training with {pl.i(d_log)}... ')
 
         output_path = map_model_output_path(

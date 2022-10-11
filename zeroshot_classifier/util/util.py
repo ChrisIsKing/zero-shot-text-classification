@@ -17,6 +17,7 @@ from zeroshot_classifier.util.data_path import BASE_PATH, PROJ_DIR, DSET_DIR, PK
 
 __all__ = [
     'sconfig', 'u', 'save_fig', 'plot_points',
+    'on_great_lakes', 'get_base_path',
     'map_model_dir_nm', 'map_model_output_path', 'domain2eval_dir_nm', 'TrainStrategy2PairMap',
     'eval_res2df', 'compute_metrics'
 ]
@@ -42,6 +43,22 @@ def plot_points(arr, **kwargs):
     kwargs_ = dict(marker='.', lw=0.5, ms=1, c='orange')
     kwargs = {**kwargs_, **kwargs}  # python3.6 compatibility
     plt.plot(arr[:, 0], arr[:, 1], **kwargs)
+
+
+def on_great_lakes():
+    return 'arc-ts' in get_hostname()
+
+
+def get_base_path():
+    # For remote machines, save heavy-duty data somewhere else to save `/home` disk space
+    hnm = get_hostname()
+    if 'clarity' in hnm:  # Clarity lab
+        return '/data'
+    elif on_great_lakes():  # Great Lakes; `profmars0` picked arbitrarily among [`profmars0`, `profmars1`]
+        # Per https://arc.umich.edu/greatlakes/user-guide/
+        return os_join('/scratch', 'profmars_root', 'profmars0', 'stefanhg')
+    else:
+        return BASE_PATH
 
 
 def config_parser2dict(conf: configparser.ConfigParser) -> Dict:
@@ -151,6 +168,3 @@ if __name__ == '__main__':
     # process_utcd_dataset()
 
     # map_ag_news()
-
-    # lg = get_logger('test-lang')
-    # mic(lg, type(lg))

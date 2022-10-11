@@ -38,20 +38,7 @@ if LOAD_TSNE and torch.cuda.is_available():
 logger = get_logger('UTCD')
 
 
-
 EOT_TOKEN = '[eot]'  # end of turn token for sgd
-
-
-def get_output_base():
-    # For remote machines, save heavy-duty data somewhere else to save `/home` disk space
-    hnm = get_hostname()
-    if 'clarity' in hnm:  # Clarity lab
-        return '/data'
-    elif 'arc-ts' in hnm:  # Great Lakes; `profmars0` picked arbitrarily among [`profmars0`, `profmars1`]
-        # Per https://arc.umich.edu/greatlakes/user-guide/
-        return os_join('/scratch', 'profmars_root', 'profmars0', 'stefanhg')
-    else:
-        return BASE_PATH
 
 
 def get_utcd_from_gdrive(domain: str = 'in'):
@@ -92,7 +79,7 @@ def process_utcd_dataset(domain: str = 'in', join=False):
     domain_str = 'in-domain' if domain == 'in' else 'out-of-domain'
     if not os.path.exists(os_join(path_dsets, 'UTCD', domain_str)):
         get_utcd_from_gdrive(domain=domain)
-    path_out = os_join(get_output_base(), PROJ_DIR, DSET_DIR, 'processed')
+    path_out = os_join(get_base_path(), PROJ_DIR, DSET_DIR, 'processed')
     logger.info(f'Processing UTCD datasets with {pl.i(dict(domain=domain, join=join))}... ')
 
     def path2dsets(dnm: str, d_dset: Dict) -> Union[DatasetDict, Dict[str, pd.DataFrame]]:
@@ -646,7 +633,7 @@ if __name__ == '__main__':
     np.random.seed(sconfig('random-seed'))
 
     def sanity_check(dsets_nm):
-        path = os_join(get_output_base(), PROJ_DIR, DSET_DIR, 'processed', dsets_nm)
+        path = os_join(get_base_path(), PROJ_DIR, DSET_DIR, 'processed', dsets_nm)
         mic(path)
         dset = load_from_disk(path)
         te, vl = dset['train'], dset['test']
@@ -670,7 +657,7 @@ if __name__ == '__main__':
     get_utcd_out()
 
     def sanity_check_ln_eurlex():
-        path = os_join(get_output_base(), PROJ_DIR, DSET_DIR, 'processed', 'multi_eurlex')
+        path = os_join(get_base_path(), PROJ_DIR, DSET_DIR, 'processed', 'multi_eurlex')
         mic(path)
         dset = load_from_disk(path)
         mic(dset, len(dset))

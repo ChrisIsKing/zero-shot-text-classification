@@ -61,7 +61,6 @@ if __name__ == '__main__':
             model_name=MODEL_NAME.replace(' ', '-'), output_path=HF_MODEL_NAME, mode='explicit',
             sampling=None, normalize_aspect=NORMALIZE_ASPECT
         )
-        mic(dir_nm)
         train_args = get_train_args(model_name=GPT2_MODEL_NAME, dir_name=dir_nm, **train_args)
         trainer_args = dict(
             model=model, args=train_args, train_dataset=tr, eval_dataset=vl, compute_metrics=compute_metrics
@@ -80,7 +79,7 @@ if __name__ == '__main__':
         mic(save_path)
         mic(os.listdir(save_path))
     dir_nm_ = '2022-06-19_13-13-54_Explicit-Pretrain-Aspect-NVIDIA-GPT2-gpt2-medium-explicit-aspect-norm'
-    ckpt_path = os_join(utcd_util.get_output_base(), u.proj_dir, u.model_dir, dir_nm_, 'checkpoint-31984')
+    ckpt_path = os_join(utcd_util.get_base_path(), u.proj_dir, u.model_dir, dir_nm_, 'checkpoint-31984')
     mic(ckpt_path)
     train(resume=ckpt_path)
 

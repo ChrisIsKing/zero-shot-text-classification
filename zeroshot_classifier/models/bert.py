@@ -92,7 +92,7 @@ if __name__ == "__main__":
             model_name=MODEL_NAME.replace(' ', '-'), output_path=f'{domain}-{dataset_name}', mode=None,
             sampling=None, normalize_aspect=NORMALIZE_ASPECT
         )
-        output_path = os_join(utcd_util.get_output_base(), u.proj_dir, u.model_dir, dir_nm)
+        output_path = os_join(utcd_util.get_base_path(), u.proj_dir, u.model_dir, dir_nm)
         proj_output_path = os_join(u.base_path, u.proj_dir, u.model_path, dir_nm, 'trained')
         mic(dir_nm, proj_output_path)
         d_log = {'batch size': bsz, 'epochs': n_ep, 'warmup steps': warmup_steps, 'save path': output_path}

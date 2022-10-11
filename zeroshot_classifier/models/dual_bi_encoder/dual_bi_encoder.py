@@ -29,7 +29,7 @@ MD_NM_OUT = 'Dual Bi-encoder'
 def get_train_args() -> Dict:
     # Keep the same as in `zeroshot_classifier.models.bi-encoder`
     return dict(  # To override `jskit.encoders.bi` defaults
-        output_dir=os_join(utcd_util.get_output_base(), PROJ_DIR, MODEL_DIR, MODEL_NAME, now(for_path=True)),
+        output_dir=os_join(utcd_util.get_base_path(), PROJ_DIR, MODEL_DIR, MODEL_NAME, now(for_path=True)),
         train_batch_size=16,  # pe `bi-encoder.py` default
         eval_batch_size=32,
         learning_rate=2e-5,  # not specified by `bi-encoder.py`, go with default `SentenceTransformer`
@@ -134,7 +134,7 @@ def run_train(sampling: str = 'rand'):
 
 
 def load_model() -> Tuple[BertTokenizer, zeroshot_classifier.models.dual_bi_encoder.jskit.encoders.utils.models.BiEncoder]:
-    path = os_join(utcd_util.get_output_base(), PROJ_DIR, MODEL_DIR, MODEL_NAME, '2022-03-21_15-46-17')
+    path = os_join(utcd_util.get_base_path(), PROJ_DIR, MODEL_DIR, MODEL_NAME, '2022-03-21_15-46-17')
     js_bi.load_model(path)
     return js_bi.tokenizer, js_bi.model
 

@@ -62,10 +62,6 @@ if __name__ == '__main__':
                 ret = {k: torch.stack([torch.tensor(b[k]) for b in batch]) for k in batch[0] if k != 'labels'}
                 ret['labels'] = torch.tensor([b['labels'] for b in batch])
                 return ret
-                # mic(len(batch))
-                # mic(type(batch))
-                # exit(1)
-                # return {k: torch.tensor(v) for k, v in batch.items()}
 
             dl = DataLoader(tr, batch_size=bsz, shuffle=True, pin_memory=True, collate_fn=collate_fn)
             optimizer = torch.optim.AdamW(mdl.parameters(), lr=lr, weight_decay=decay)
@@ -87,13 +83,8 @@ if __name__ == '__main__':
 
                         if torch.cuda.is_available():
                             inputs = {k: v.cuda() for k, v in inputs.items()}
-                            # mic(inputs.keys())
-                            # for k, v in inputs.items():
-                            #     mic(k, v, type(v))
-                            # inputs = {k: torch.tensor(v) for k, v in inputs.items()}
                         outputs = mdl(**inputs)
-                        loss, lg.its = outputs.loss, outputs.lg.its.detach()
-                        # labels = inputs['labels'].detach()
+                        loss, logits = outputs.loss, outputs.logits.detach()
                         loss_scalar = loss.detach().item()
 
                         loss.backward()
@@ -152,7 +143,7 @@ if __name__ == '__main__':
 
         # dir_nm = '2022-05-16_21-25-30/checkpoint-274088'
         dir_nm = '2022-05-19_23-33-50/checkpoint-411132'
-        path = os_join(utcd_util.get_output_base(), PROJ_DIR, MODEL_DIR, MODEL_NAME.replace(' ', '-'), dir_nm)
+        path = os_join(utcd_util.get_base_path(), PROJ_DIR, MODEL_DIR, MODEL_NAME.replace(' ', '-'), dir_nm)
         mic(path)
         tokenizer = BertTokenizer.from_pretrained(HF_MODEL_NAME)  # TODO: should add eot token as in updated training
         # tokenizer = BertTokenizer.from_pretrained(path)
@@ -199,7 +190,7 @@ if __name__ == '__main__':
         """
         # dir_nm = '2022-05-19_23-33-50/checkpoint-411132'
         dir_nm = '2022-06-03_17-02-19/checkpoint-23988'
-        path = os_join(utcd_util.get_output_base(), PROJ_DIR, MODEL_DIR, MODEL_NAME.replace(' ', '-'), dir_nm)
+        path = os_join(utcd_util.get_base_path(), PROJ_DIR, MODEL_DIR, MODEL_NAME.replace(' ', '-'), dir_nm)
         tokenizer = BertTokenizer.from_pretrained(HF_MODEL_NAME)  # TODO: should add eot token as in updated training
         tokenizer.save_pretrained(path)
     # fix_save_tokenizer()

@@ -1,6 +1,6 @@
 import os
 from os.path import join as os_join
-from typing import List, Tuple, Dict, Callable, Union, Any
+from typing import List, Tuple, Dict, Callable, Union, Any, Optional
 
 from transformers import PreTrainedTokenizerBase
 import datasets
@@ -16,6 +16,12 @@ __all__ = ['get_dataset', 'get_explicit_dataset']
 
 
 logger = get_logger('Dataset')
+
+
+def _get_num_proc(dsets: Union[DatasetDict, Dict[str, Dataset]]) -> Optional[int]:
+    n_cpu = os.cpu_count()
+    if n_cpu >= 2 and min(len(d) for d in dsets) > 4096:
+        return n_cpu
 
 
 class _FilterSplit:
@@ -35,7 +41,7 @@ class _FilterSplit:
 
 def filter_split(
         hf_dataset: DatasetDict, asp_norm_dataset: Dict[str, load_data.SplitDataset],
-        dataset_id2name: Dict[int, str], split: str = None
+        dataset_id2name: Dict[int, str], split: str = None, **filter_args
 ) -> Dataset:
     # cos the same text may appear in multiple datasets
     # ret = hf_dataset['train'].filter(
@@ -44,7 +50,7 @@ def filter_split(
     #     # i.e. when called again w/ `eval`, incorrectly load up cache from `train`
     #     load_from_cache_file=False
     # )
-    ret = hf_dataset['train'].filter(_FilterSplit(hf_dataset, asp_norm_dataset, dataset_id2name, split))
+    ret = hf_dataset['train'].filter(_FilterSplit(hf_dataset, asp_norm_dataset, dataset_id2name, split), **filter_args)
     n = len(ret)
     # sanity check, same # of pairs as in Chris' `load_data`
     assert n == sum(len(ds[split]) for ds in asp_norm_dataset.values())
@@ -61,15 +67,17 @@ def get_dataset(
 ) -> Dict[str, Dataset]:
     logger.info(f'Loading dataset {pl.i(dataset_name)}... ')
     if from_disk:
-        path = os_join(utcd_util.get_output_base(), u.proj_dir, u.dset_dir, 'processed', dataset_name)
+        path = os_join(utcd_util.get_base_path(), u.proj_dir, u.dset_dir, 'processed', dataset_name)
         dsets = datasets.load_from_disk(path)
 
         if normalize_aspect:  # TODO: ugly but works
+            n_proc = _get_num_proc(dsets) if fast else None
+
             logger.info(f'Normalizing training data by #sample per aspect with {pl.i(normalize_aspect)}...')
             _data = load_data.get_datasets(domain='in', normalize_aspect=normalize_aspect)
             # apply #sample normalization to the training set
             id2nm = sconfig('UTCD.dataset_id2name')
-            args = dict(hf_dataset=dsets, asp_norm_dataset=_data, dataset_id2name=id2nm)
+            args = dict(hf_dataset=dsets, asp_norm_dataset=_data, dataset_id2name=id2nm, num_proc=n_proc)
             # Local function not good for dataset caching
             dsets['train'], dsets['eval'] = filter_split(**args, split='train'), filter_split(**args, split='eval')
     else:
@@ -77,16 +85,13 @@ def get_dataset(
     if isinstance(splits, str):
         splits = [splits]
     dsets = {s: dsets[s] for s in splits}
-    num_proc = None
-    n_cpu = os.cpu_count()
-    if fast and n_cpu >= 2 and min(len(d) for d in dsets) > 4096:
-        num_proc = n_cpu
-        if not pbar:
-            datasets.set_progress_bar_enabled(False)
+    if not pbar:
+        datasets.set_progress_bar_enabled(False)
     # ordering of filter, shuffle, then select determined for debugging
+    n_proc = _get_num_proc(dsets) if fast else None
     if filter_func is not None:
         logger.info('Filtering...')
-        dsets = {s: dset.filter(filter_func, num_proc=num_proc) for s, dset in dsets.items()}
+        dsets = {s: dset.filter(filter_func, num_proc=n_proc) for s, dset in dsets.items()}
     if shuffle_seed:
         logger.info(f'Shuffling with seed {pl.i(shuffle_seed)}...')
         dsets = {s: dset.shuffle(seed=shuffle_seed) for s, dset in dsets.items()}
@@ -99,7 +104,7 @@ def get_dataset(
             map_func = {s: map_func for s in splits}
         dsets = {
             s: dset.map(
-                map_func[s], batched=True, remove_columns=remove_columns, num_proc=num_proc,
+                map_func[s], batched=True, remove_columns=remove_columns, num_proc=n_proc,
                 load_from_cache_file=False
             )
             for s, dset in dsets.items()

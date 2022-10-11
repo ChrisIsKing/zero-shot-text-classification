@@ -35,7 +35,7 @@ from tqdm.auto import tqdm
 
 from stefutil import *
 from zeroshot_classifier.util import *
-from zeroshot_classifier.util.trainer import MyEvalPrediction
+from zeroshot_classifier.util.training import MyEvalPrediction
 import zeroshot_classifier.util.utcd as utcd_util
 from zeroshot_classifier.preprocess import get_dataset
 
@@ -80,7 +80,7 @@ class ZsGPT2Tokenizer(GPT2TokenizerFast):
             dataset_name, split = key
             key = f'{dataset_name}-{split}'
             if key not in self:
-                path = os_join(utcd_util.get_output_base(), PROJ_DIR, DSET_DIR, 'processed', dataset_name)
+                path = os_join(utcd_util.get_base_path(), PROJ_DIR, DSET_DIR, 'processed', dataset_name)
                 dset = datasets.load_from_disk(path)[split]
                 # See `zeroshot_classifier.util.util.py::process_utcd_dataset`
                 feats = dset.features['labels'].feature
@@ -198,7 +198,7 @@ class ZsGPT2Tokenizer(GPT2TokenizerFast):
                 n_cls = len(descs)
                 # `label` is shared across all datasets, map to local label within dataset
                 if self.cache_utcd is None:
-                    path = os_join(utcd_util.get_output_base(), PROJ_DIR, DSET_DIR, 'processed', dataset_name)
+                    path = os_join(utcd_util.get_base_path(), PROJ_DIR, DSET_DIR, 'processed', dataset_name)
                     # cos `Sequential`; each split, the label is the same
                     self.cache_utcd = datasets.load_from_disk(path)[split].features['labels'].feature
                 # The ordering indicates int<=>str label mapping, i.e., index is int label,
@@ -252,10 +252,9 @@ class ZsGPT2Tokenizer(GPT2TokenizerFast):
                     # Crop the text portion so that the longest label can be generated
                     ln_t_ = room - ((1+ln_q+1) + (1+1) + 1)
                     assert ln_t_ > 0
-                    self.logger.warning(f'Sample without answer longer than model max sequence length and '
-                                        f'dataset {pl.i(dset_nm)} labels: '
-                                        f'{pl.i(ln_cont)} > {pl.i(self.model_max_length)} - '
-                                        f'Text portion cropped: {pl.i(ln_t)} > {pl.i(ln_t_)} for inference')
+                    self.logger.warning(f'{pl.i(dset_nm)} sample w/o answer longer than model max sequence length and '
+                                        f'labels: {pl.i(ln_cont)} > {pl.i(self.model_max_length)} - '
+                                        f'Text portion cropped for inference: ({pl.i(ln_t)} > {pl.i(ln_t_)})')
                     ids_text = ids_text[:ln_t_]
             elif mode == 'train':
                 ln_ids = ln_q + ln_t + ln_a
@@ -264,9 +263,9 @@ class ZsGPT2Tokenizer(GPT2TokenizerFast):
                     # i.e., ensure no classification label is cropped
                     ln_t_ = self.max_len_single_sentence - (ln_q + ln_a)
                     assert ln_t_ > 0
-                    self.logger.warning(f'Sample with answer longer than model max sequence length for '
-                                        f'dataset {pl.i(dset_nm)}: {pl.i(ln_ids+6)} > {pl.i(self.model_max_length)} - '
-                                        f'Text portion cropped: {pl.i(ln_t)} > {pl.i(ln_t_)} for training')
+                    self.logger.warning(f'{pl.i(dset_nm)} sample w/ answer longer than model sequence length'
+                                        f': {pl.i(ln_ids+6)} > {pl.i(self.model_max_length)} - '
+                                        f'Text portion cropped for training: ({pl.i(ln_t)} => {pl.i(ln_t_)})')
                     ids_text = ids_text[:ln_t_]
             # else, `stats`, no truncation
             # Number of contex tokens, up until answer token, inclusive
@@ -590,9 +589,8 @@ def get_train_setup(
     else:
         bsz_tr = bsz_vl = bsz
     dir_nm = dir_name or f'{now(for_path=True)}_{MODEL_NAME}-{model_name}'
-    mic(dir_nm)
     args = dict(
-        output_dir=os_join(utcd_util.get_output_base(), PROJ_DIR, MODEL_DIR, dir_nm),
+        output_dir=os_join(utcd_util.get_base_path(), PROJ_DIR, MODEL_DIR, dir_nm),
         do_train=True,
         do_eval=do_eval,
         evaluation_strategy='epoch' if do_eval else 'no',
@@ -648,15 +646,13 @@ def compute_metrics(eval_pred: MyEvalPrediction):
         compute_metrics.metric = datasets.load_metric('accuracy')
     # Labels are per-sample already, see `MyTrainer::prediction_step`
     preds, trues, dids = eval_pred.predictions, eval_pred.label_ids, eval_pred.dataset_ids
-    # mic(preds, trues)
-    # raise NotImplementedError('acc')
     return dict(cls_acc=compute_metrics.metric.compute(predictions=preds, references=trues)['accuracy'])
 
 
 def get_all_setup(
         model_name: str = None, dataset_name: str = 'ag_news', form: str = 'vanilla',
         n_sample=None, random_seed=None, do_eval=True, custom_logging=True,
-        train_args: Dict = None, dataset_args: Dict = None,
+        train_args: Dict = None, dataset_args: Dict = None, trainer_args: Dict = None,
         is_ddp: Union[bool, int] = False, use_tqdm: bool = True  # so that my own logging is correct
 ) -> Tuple[GPT2LMHeadModel, Union[GPT2TokenizerFast, ZsGPT2Tokenizer], Trainer]:
     dataset_args = dataset_args or dict()
@@ -717,12 +713,13 @@ def get_all_setup(
         model=model, args=train_args_, data_collator=data_collator_,
         train_dataset=dsets['train'], eval_dataset=dsets.get('eval', None), compute_metrics=compute_metrics
     )
-    trainer_ = GPT2Trainer(
-        tokenizer=tokenizer, custom_logging=custom_logging, compute_cls_acc=model_name != 'debug-gpt-ori',
+    trainer_args.update(trainer_args or dict())
+    trainer = GPT2Trainer(
+        tokenizer=tokenizer, custom_logging=custom_logging,
         is_ddp=is_ddp, use_tqdm=use_tqdm,
         **trainer_args
     )
-    return model, tokenizer, trainer_
+    return model, tokenizer, trainer
 
 
 def plot_dataset_token_length_stats(domain: str = 'in'):
@@ -1043,14 +1040,16 @@ if __name__ == '__main__':
             mic(os.listdir(md_nm))
             # exit(1)
 
-        n = 32
-        mic(n)
+        # n = 32
         # n = 128
         # n = 256
-        # n = None
+        n = None
 
         asp_norm = True
         dataset_args = dict(normalize_aspect=seed) if asp_norm else dict()
+
+        # debug = True
+        debug = False
 
         if 'debug' in md_nm:
             # train_args = dict(  # overfit small
@@ -1077,24 +1076,25 @@ if __name__ == '__main__':
                 # num_train_epochs=3,
                 num_train_epochs=8,
                 per_device_train_batch_size=4,
-                per_device_eval_batch_size=4,
-                gradient_accumulation_steps=2,
-                # gradient_accumulation_steps=8 * 4,
+                per_device_eval_batch_size=4 if debug else 8,
+                gradient_accumulation_steps=2 if debug else 8 * 4,
+                dataloader_num_workers=4
             )
             ddp = False
             # ddp = 4
-        mic(asp_norm, ddp, train_args)
-        model, tokenizer, trainer_ = get_all_setup(
+        mic(debug, n, asp_norm, ddp)
+        mic(train_args)
+        model, tokenizer, trainer = get_all_setup(
             model_name=md_nm, dataset_name=dnm, form=form, do_eval=True, custom_logging=True, n_sample=n,
             random_seed=seed,
-            train_args=train_args, dataset_args=dataset_args,
+            train_args=train_args, dataset_args=dataset_args, trainer_args=dict(compute_cls_acc=False),
             is_ddp=ddp
         )
-        save_path = os_join(trainer_.log_output_dir, 'trained')
+        save_path = os_join(trainer.log_output_dir, 'trained')
         mic(save_path)
-        trainer_.train()
+        trainer.train()
 
-        trainer_.save_model(save_path)
+        trainer.save_model(save_path)
         tokenizer.save_pretrained(save_path)
         os.listdir(save_path)
     train()
