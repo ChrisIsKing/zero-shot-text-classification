@@ -62,6 +62,7 @@ def get_train_args(model_name: str, dir_name: str = None, **kwargs) -> TrainingA
         eval_accumulation_steps=128,  # Saves GPU memory
         warmup_ratio=1e-1,
         adam_epsilon=1e-6,
+        log_level='warning',
         logging_strategy='steps',
         logging_steps=1,
         save_strategy='epoch',

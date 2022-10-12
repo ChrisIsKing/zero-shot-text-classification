@@ -709,15 +709,15 @@ def get_all_setup(
         n_sample=n_sample, shuffle_seed=random_seed, pbar=True, splits=splits,
         fast='debug' not in model_name, **dataset_args
     )
-    trainer_args = dict(
+    _trainer_args = dict(
         model=model, args=train_args_, data_collator=data_collator_,
         train_dataset=dsets['train'], eval_dataset=dsets.get('eval', None), compute_metrics=compute_metrics
     )
-    trainer_args.update(trainer_args or dict())
+    _trainer_args.update(trainer_args or dict())
     trainer = GPT2Trainer(
         tokenizer=tokenizer, custom_logging=custom_logging,
-        is_ddp=is_ddp, use_tqdm=use_tqdm,
-        **trainer_args
+        is_ddp=is_ddp, with_tqdm=use_tqdm,
+        **_trainer_args
     )
     return model, tokenizer, trainer
 
@@ -1078,7 +1078,7 @@ if __name__ == '__main__':
                 per_device_train_batch_size=4,
                 per_device_eval_batch_size=4 if debug else 8,
                 gradient_accumulation_steps=2 if debug else 8 * 4,
-                dataloader_num_workers=4
+                dataloader_num_workers=None if debug else 4
             )
             ddp = False
             # ddp = 4
@@ -1087,10 +1087,10 @@ if __name__ == '__main__':
         model, tokenizer, trainer = get_all_setup(
             model_name=md_nm, dataset_name=dnm, form=form, do_eval=True, custom_logging=True, n_sample=n,
             random_seed=seed,
-            train_args=train_args, dataset_args=dataset_args, trainer_args=dict(compute_cls_acc=False),
+            train_args=train_args, dataset_args=dataset_args, trainer_args=dict(compute_cls_acc=True),
             is_ddp=ddp
         )
-        save_path = os_join(trainer.log_output_dir, 'trained')
+        save_path = os_join(trainer.args.output_dir, 'trained')
         mic(save_path)
         trainer.train()
 

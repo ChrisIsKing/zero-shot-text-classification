@@ -260,7 +260,6 @@ class VisualizeOverlap:
         ca.check_mismatch('Sample Type', kind, ['label', 'text'])
         ca.check_mismatch('Overlap Metric', metric, ['harmonic', 'absolute'])
         ca.check_mismatch('Word Statistics', stat, ['count', 'tfidf'])
-        logger = get_logger('Get UTCD Overlap')
         logger.info(f'Getting UTCD Overlap for {pl.i(kind=kind, metric=metric, stat=stat, stat_args=stat_args)}')
         if stat == 'tfidf':
             def tokenize(pbar) -> Callable:
@@ -460,7 +459,6 @@ class VisualizeOverlap:
         ca.check_mismatch('t-SNE Mode', mode, ['sklearn', 'cuda'])
         if aspect is not None:
             ca.check_mismatch('Dataset Aspect', aspect, ['sentiment', 'intent', 'topic'])
-        logger = get_logger('UTCD Embedding Plot')
         d_log = dict(kind=kind, aspect=aspect, mode=mode)
         logger.info(f'Plotting embeddings on {pl.i(d_log)}... ')
         d_vect = VisualizeOverlap.get_utcd_embeddings(kind=kind, aspect=aspect, **kwargs)
@@ -608,10 +606,10 @@ class VisualizeOverlap:
             title = f'{title} on {aspect.capitalize()}'
         plt.suptitle(title)
 
-        l = ax.get_legend()  # need to have the seaborn legend added first
-        l.remove()
-        l = fig.legend(title=k_dnm.replace('_', ' '), loc='lower center', bbox_transform=fig.transFigure, ncol=3)
-        for t in l.get_texts():
+        lgd = ax.get_legend()  # need to have the seaborn legend added first
+        lgd.remove()
+        lgd = fig.legend(title=k_dnm.replace('_', ' '), loc='lower center', bbox_transform=fig.transFigure, ncol=3)
+        for t in lgd.get_texts():
             t.set_text(map_label(t.get_text()))
         legend_v_ratio = 0.15
         plt.subplots_adjust(bottom=legend_v_ratio)

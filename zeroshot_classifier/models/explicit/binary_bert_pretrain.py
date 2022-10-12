@@ -29,8 +29,15 @@ if __name__ == '__main__':
         logger = get_logger(MODEL_NAME)
         logger.info('Setting up training... ')
 
-        # n = 128
+        # n = 256
         n = None
+
+        lr = 1e-5
+
+        bsz = 32
+
+        n_ep = 8
+
         logger.info('Loading tokenizer & model... ')
         tokenizer = BertTokenizer.from_pretrained(HF_MODEL_NAME)
         mdl = AutoModelForSequenceClassification.from_pretrained(HF_MODEL_NAME, num_labels=len(sconfig('UTCD.aspects')))
@@ -41,9 +48,10 @@ if __name__ == '__main__':
         dnm = 'UTCD-in'  # concatenated 9 in-domain datasets in UTCD
         dset_args = dict(dataset_name=dnm, tokenizer=tokenizer, n_sample=n, shuffle_seed=seed)
         if NORMALIZE_ASPECT:
-            dset_args['normalize_aspect'] = seed
-        tr, vl = get_explicit_dataset(**dset_args)
-        logger.info(f'Loaded {pl.i(len(tr))} training samples, {pl.i(len(vl))} eval samples')
+            dset_args.update(dict(normalize_aspect=seed, splits=['train', 'eval', 'test']))
+        dsets = get_explicit_dataset(**dset_args)
+        tr, vl, ts = dsets['train'], dsets['eval'], dsets['test']
+        logger.info(f'Loaded #example {pl.i({k: len(v) for k, v in dsets.items()})}')
         transformers.set_seed(seed)
 
         sanity_check_speed = False
@@ -105,34 +113,34 @@ if __name__ == '__main__':
                     # save_strategy='no'
                 )
             else:
-                dir_nm = map_model_output_path(
+                path = map_model_output_path(
                     model_name=MODEL_NAME.replace(' ', '-'), mode='explicit',
                     sampling=None, normalize_aspect=NORMALIZE_ASPECT
                 )
-                mic(dir_nm)
 
                 with_tqdm = True
                 args = get_train_args(
                     model_name=BERT_MODEL_NAME,
-                    dir_name=dir_nm,
-                    per_device_eval_batch_size=128
+                    output_dir=path,
+                    learning_rate=lr,
+                    per_device_train_batch_size=bsz,
+                    per_device_eval_batch_size=bsz,
+                    num_train_epochs=n_ep,
+                    dataloader_num_workers=4
                 )
             trainer_args = dict(
                 model=mdl, args=args, train_dataset=tr, eval_dataset=vl, compute_metrics=compute_metrics
             )
-            trainer = ExplicitTrainer(name=f'{MODEL_NAME} Training', with_tqdm=with_tqdm, **trainer_args)
-            mic(trainer.log_output_dir)
-            # exit(1)
+            trainer = ExplicitTrainer(name=f'{MODEL_NAME} Train', with_tqdm=with_tqdm, **trainer_args)
             logger.info('Launching Training... ')
             if resume:
                 trainer.train(resume_from_checkpoint=resume)
             else:
                 trainer.train()
-            save_path = os_join(trainer.log_output_dir, 'trained')
+            save_path = os_join(trainer.args.output_dir, 'trained')
             trainer.save_model(save_path)
             tokenizer.save_pretrained(save_path)
-            mic(save_path)
-            mic(os.listdir(save_path))
+            logger.info(f'Tokenizer & Model saved to {pl.i(save_path)}')
     train()
     # dir_nm_ = '2022-05-16_21-25-30/checkpoint-274088'
     # ckpt_path = os_join(utcd_util.get_output_base(), PROJ_DIR, MODEL_DIR, MODEL_NAME.replace(' ', '-'), dir_nm_)
@@ -171,9 +179,9 @@ if __name__ == '__main__':
                     if torch.cuda.is_available():
                         inputs = {k: v.cuda() for k, v in inputs.items()}
                     outputs = model(**inputs)
-                    lg.its = outputs.lg.its.detach()
+                    logits = outputs.logits.detach()
                     labels = inputs['labels'].detach()
-                    preds = torch.argmax(lg.its, dim=-1)
+                    preds = torch.argmax(logits, dim=-1)
                     acc_ = (preds == labels).float().mean().item()
                     it.set_postfix(acc=acc_)
                     lst_preds.append(preds)

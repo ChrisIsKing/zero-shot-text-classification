@@ -20,7 +20,7 @@ pretty = MlPrettier()
 
 
 class BinaryBertCrossEncoder(CrossEncoder):
-    logger = get_logger('Bin BERT Trainer')
+    logger = get_logger('Bin BERT Train')
 
     def fit(
             self,
@@ -175,6 +175,8 @@ class BinaryBertCrossEncoder(CrossEncoder):
 
 
 class BiEncoder(SentenceTransformer):
+    logger = get_logger('Bi-Encoder Train')
+
     def fit(
             self,
             train_objectives: Iterable[Tuple[DataLoader, nn.Module]] = None,
@@ -348,7 +350,7 @@ class BiEncoder(SentenceTransformer):
 
                 val_loss /= val_steps
                 _val_loss = pretty.single(key='loss', val=val_loss)
-                BinaryBertCrossEncoder.logger.info(f'{pl.i(epoch_str)} eval loss: {pl.i(_val_loss)}')
+                BiEncoder.logger.info(f'{pl.i(epoch_str)} eval loss: {pl.i(_val_loss)}')
 
                 if val_loss < best_model['best_loss']:
                     best_model['best_loss'] = val_loss
@@ -356,7 +358,7 @@ class BiEncoder(SentenceTransformer):
                     if save_best_model:
                         best_model['path'] = output_path
                         self.save(output_path)
-                        BinaryBertCrossEncoder.logger.info(f'Best model found at {epoch_str} & saved ')
+                        BiEncoder.logger.info(f'Best model found at {epoch_str} & saved ')
             # ========================== End of added ==========================
 
         # ========================== Begin of modified ==========================

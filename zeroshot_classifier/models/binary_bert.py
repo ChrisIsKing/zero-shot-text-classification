@@ -89,7 +89,8 @@ if __name__ == '__main__':
         train = []
         val = []
         test = []
-        it = tqdm(dataset_names, desc='Formatting into Binary CLS')
+
+        it = tqdm(dataset_names, desc=f'Formatting into Binary CLS w/ {pl.i(dict(sampling=sampling, mode=mode))}')
         for dataset_name in it:
             dset = data[dataset_name]
             args = dict(dataset_name=dataset_name, sampling=sampling, mode=mode)

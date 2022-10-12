@@ -66,7 +66,7 @@ if __name__ == '__main__':
             model=model, args=train_args, train_dataset=tr, eval_dataset=vl, compute_metrics=compute_metrics
         )
         trainer = ExplicitTrainer(name=f'{MODEL_NAME} Train', with_tqdm=True, **trainer_args)
-        save_path = os_join(trainer.log_output_dir, 'trained')
+        save_path = os_join(trainer.args.output_dir, 'trained')
         mic(save_path)
         logger.info('Launching Training... ')
         if resume:

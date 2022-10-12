@@ -40,8 +40,13 @@ dataset_path = './dataset'
 in_domain_data_path = './dataset/in-domain'
 out_of_domain_data_path = './dataset/out-of-domain'
 ASPECT_NORM_DIRNM = 'aspect-normalized'
-nlp = spacy.load("en_core_web_md")
-nlp.disable_pipes(['tagger', 'parser', 'attribute_ruler', 'lemmatizer', 'ner'])
+
+
+def _get_nlp():
+    if not hasattr(_get_nlp, 'nlp'):
+        _get_nlp.nlp = spacy.load("en_core_web_md")
+        _get_nlp.nlp.disable_pipes(['tagger', 'parser', 'attribute_ruler', 'lemmatizer', 'ner'])
+    return _get_nlp.nlp
 
 
 category_map = {
@@ -276,7 +281,7 @@ def get_nli_data():
 
 
 def binary_cls_format(
-        dataset: SplitDataset = None, dataset_name: str = None, sampling='rand', split: str = 'train', mode='vanilla'
+        dataset: SplitDataset = None, sampling='rand', split: str = 'train', mode='vanilla'
 ):
     ca.check_mismatch('Data Negative Sampling', sampling, ['rand', 'vect'])
     examples = []
@@ -300,6 +305,7 @@ def binary_cls_format(
 
         vects, label_vectors = None, None
         if sampling == 'vect':
+            nlp = _get_nlp()
             label_vectors = {label: nlp(label) for label in label_list}
             start = time.time()
             vects = list(nlp.pipe(example_list, n_process=4, batch_size=128))
@@ -380,6 +386,7 @@ def nli_cls_format(data, name=None, sampling='rand', train=True):
 
         vects, label_vectors = None, None
         if sampling == 'vect':
+            nlp = _get_nlp()
             label_vectors = {label: nlp(label) for label in label_list}
             start = time.time()
             vects = list(nlp.pipe(example_list, n_process=4, batch_size=128))
@@ -441,6 +448,7 @@ def encoder_cls_format(
     """
     examples = []
     if train:
+        nlp = _get_nlp()
         label_list = list(dict.fromkeys([example[1] for example in arr]))
         label_vectors = {label: nlp(label) for label in label_list}
         example_list = [x[0] for x in arr]
@@ -487,7 +495,7 @@ def encoder_cls_format(
                         neg_label = list(neg_pool)[0]
                     examples.extend([neg_sample2label(neg_label), neg_sample2label(neg_label)])
                     if show_warnings:
-                        logger.warning(f'{log_s(warn_name, c="y", bold=True)}: # negative labels for text less '
+                        logger.warning(f'{pl.s(warn_name, c="y", bold=True)}: # negative labels for text less '
                                        f'than {2}: {pl.i(text=txt, pos_labels=txt2lbs[txt], neg_labels=neg_pool)}')
                 else:
                     examples.extend([neg_sample2label(neg_label) for neg_label in random.sample(neg_pool, k=2)])

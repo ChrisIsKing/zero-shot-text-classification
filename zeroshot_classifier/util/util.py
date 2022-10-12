@@ -92,7 +92,7 @@ def map_model_output_path(
         output_dir = _map(paths[-1])
         return os_join(*paths[:-1], output_dir)
     else:
-        return os_join(u.proj_path, u.model_dir, _map(None))
+        return os_join(get_base_path(), u.proj_dir, u.model_dir, _map(None))
 
 
 def domain2eval_dir_nm(domain: str = 'in'):
@@ -163,8 +163,13 @@ if __name__ == '__main__':
 
     # mic(sconfig('fine-tune'))
 
-    mic(fmt_num(124439808))
+    # mic(fmt_num(124439808))
 
     # process_utcd_dataset()
 
     # map_ag_news()
+
+    def check_gl():
+        mic(on_great_lakes())
+        mic(get_base_path())
+    check_gl()

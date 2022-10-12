@@ -8,24 +8,27 @@ from transformers import Trainer, TrainingArguments, TrainerCallback
 import datasets
 
 from stefutil import *
-from zeroshot_classifier.util.util import *
+from zeroshot_classifier.util import *
+
+
+logger = get_logger('Explicit Trainer')
 
 
 class MyTrainer(Trainer):
     """
     Override `compute_loss` for getting training stats
     """
-    def __init__(self, name: str = None, with_tqdm: bool = True, **kwargs):
+    def __init__(self, name: str = None, with_tqdm: bool = True, disable_train_metrics: bool = True, **kwargs):
         super().__init__(**kwargs)
         self.name = name
         self.with_tqdm = with_tqdm
+        self.disable_train_metrics = disable_train_metrics
         self._replace_callback()
         self.acc = datasets.load_metric('accuracy')
 
-        paths_ = self.args.output_dir.split(os.sep)
-        path_proj = paths_[paths_.index(u.proj_dir):]
-        # Keep the logging & plotting inside project directory, not potentially in `scratch`
-        self.log_output_dir = os_join(u.base_path, *path_proj)
+        d_log = dict(with_tqdm=with_tqdm, disable_train_metrics=disable_train_metrics)
+        self.logger = get_logger('Explicit Trainer')
+        self.logger.info(f'Trainer initialized w/ {pl.i(d_log)}')
 
     def _replace_callback(self):
         callbacks = self.callback_handler.callbacks
@@ -38,7 +41,7 @@ class MyTrainer(Trainer):
         self.callback_handler.callbacks = [c for c in callbacks if str(c.__class__) not in rmv]
         if self.with_tqdm:
             self.add_callback(MyProgressCallback())
-        self.add_callback(MyTrainStatsMonitorCallback(trainer=self))
+        self.add_callback(MyTrainStatsMonitorCallback(trainer=self, with_tqdm=self.with_tqdm))
 
     def compute_loss(self, model, inputs, return_outputs=False):
         """
@@ -53,9 +56,9 @@ class MyTrainer(Trainer):
         outputs = model(**inputs)
 
         # ========================== Begin of added ==========================
-        if model.training:
-            labels_, lg.its = inputs['labels'].detach(), outputs.lg.its.detach()
-            acc = self.acc.compute(predictions=lg.its.argmax(dim=-1), references=labels_)['accuracy']
+        if model.training and not self.disable_train_metrics:
+            labels_, logits = inputs['labels'].detach(), outputs.logits.detach()
+            acc = self.acc.compute(predictions=logits.argmax(dim=-1), references=labels_)['accuracy']
             self.log(dict(src='compute_loss', acc=acc))
         # ========================== End of added ==========================
 
@@ -79,19 +82,15 @@ class MyTrainStatsMonitorCallback(TrainerCallback):
 
     Evaluation during training **not supported**
     """
-    def __init__(self, trainer: MyTrainer):
+    def __init__(self, trainer: MyTrainer, with_tqdm: bool = True):
         self.mode = 'eval'
         self.t_strt, self.t_end = None, None
 
         self.trainer = trainer
-        paths_ = self.trainer.args.output_dir.split(os.sep)
-        path_proj = paths_[paths_.index(u.proj_dir):]
-        # Keep the logging & plotting inside project directory, not potentially in `scratch`
-        self.output_dir = os_join(u.base_path, *path_proj)
-        os.makedirs(self.output_dir, exist_ok=True)
 
         self.name = self.trainer.name
         self.logger, self.logger_fl, self.writer = None, None, None
+        self.ls = None
 
         args = trainer.args
         n_ep = args.num_train_epochs
@@ -106,9 +105,14 @@ class MyTrainStatsMonitorCallback(TrainerCallback):
 
         self.logger = get_logger(self.name)
         mdl_type = self.trainer.model.__class__.__qualname__
-        path_log = os_join(self.output_dir, f'{mdl_type} train.log')
+        output_dir = self.trainer.args.output_dir
+        path_log = os_join(output_dir, f'{mdl_type} train.log')
         self.logger_fl = get_logger(name=self.name, typ='file-write', file_path=path_log)
-        self.writer = SummaryWriter(os_join(self.output_dir, f'tb'))
+        self.writer = SummaryWriter(os_join(output_dir, f'tb'))
+        self.ls = LogStep(
+            trainer=self.trainer, prettier=self.prettier,
+            logger=self.logger, file_logger=self.logger_fl, tb_writer=self.writer
+        )
 
         conf = self.trainer.model.config.to_dict()
         train_args = self.trainer.args.to_dict()
@@ -125,43 +129,21 @@ class MyTrainStatsMonitorCallback(TrainerCallback):
         self.logger_fl.info(f'Training completed in {t} ')
         self.mode = 'eval'
 
-    def _log(self, d, to_console: bool = True):
-        d = self.prettier(d)
-        if to_console:
-            self.logger.info(pl.i(d))
-        self.logger_fl.info(pl.nc(d))
-
     def on_log(self, args, state, control, logs=None, **kwargs):
         if state.is_local_process_zero:
-            assert isinstance(logs, dict)  # sanity check
-            training = self.trainer.model.training
-            if training and 'src' in logs and logs['src'] == 'compute_loss':
+            step = state.global_step
+            in_train = self.trainer.model.training
+            if in_train and 'src' in logs and logs['src'] == 'compute_loss':
                 del logs['src']
                 self.out_dict = logs
-            elif training and all('runtime' not in k for k in logs):
-                # Heuristics on the training step updates, see `Trainer._maybe_log_save_evaluate`
-                step = state.global_step
-                d_log = dict(step=step)
-                assert logs['epoch'] == round(state.epoch, 2)
-                d_log['epoch'] = state.epoch  # The one originally is rounded, see `Trainer.log`
-                d_log['learning_rate'] = logs['learning_rate']
-                # Trainer internal uses `loss`, instead of `train_loss`
-                d_log['train_loss'] = loss = logs.pop('loss', None)
-                assert loss is not None
-                lr = d_log['learning_rate']
-                d_log['train_asp_cls_acc'] = acc = self.out_dict['acc']
-                self.writer.add_scalar('Train/loss', loss, step)
-                self.writer.add_scalar('Train/learning_rate', lr, step)
-                self.writer.add_scalar('Train/asp_cls_acc', acc, step)
-                self._log(d_log, to_console=not self.trainer.with_tqdm)
-            elif not training and 'eval_loss' in logs:
-                loss, acc = logs['eval_loss'], logs['eval_acc']
-                n_ep = state.epoch  # definitely an int
-                step = state.global_step
-                d_log = dict(step=step, epoch=int(n_ep), eval_loss=loss, eval_asp_cls_acc=acc)
-                self.writer.add_scalar('Eval/loss', loss, step)
-                self.writer.add_scalar('Eval/asp_cls_acc', acc, step)
-                self._log(d_log, to_console=True)
+            elif in_train and all('runtime' not in k for k in logs):
+                d_log = dict(step=step, epoch=state.epoch, lr=logs['learning_rate'], loss=logs['loss'])
+                if not self.trainer.disable_train_metrics:
+                    d_log['sp_cls_acc'] = self.out_dict['acc']
+                self.ls(d_log, training=in_train)
+            elif not in_train and 'eval_loss' in logs:
+                d_log = dict(step=step, epoch=int(state.epoch), loss=logs['eval_loss'], asp_cls_acc=logs['eval_acc'])
+                self.ls(d_log, training=in_train)
             else:
                 self.logger.info(pl.i(logs))
                 self.logger_fl.info(pl.nc(logs))

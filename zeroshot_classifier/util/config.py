@@ -192,7 +192,7 @@ config_dict = {
         },
         'strategies': [
             'vanilla',
-            'implicit',
+            'implicit',  # prepend aspect text before each label
             'implicit-on-text-encode-aspect',  # encode each of the 3 aspects as 3 special tokens, followed by text
             'implicit-on-text-encode-sep',  # encode aspects normally, but add special token between aspect and text
             'explicit'  # see `zeroshot_classifier.explicit.binary_bert.py` for explicit training

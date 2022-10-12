@@ -20,7 +20,8 @@ logger = get_logger('Dataset')
 
 def _get_num_proc(dsets: Union[DatasetDict, Dict[str, Dataset]]) -> Optional[int]:
     n_cpu = os.cpu_count()
-    if n_cpu >= 2 and min(len(d) for d in dsets) > 4096:
+    mic([len(d) for d in dsets.values()])
+    if n_cpu >= 2 and min(len(d) for d in dsets.values()) > 4096:
         return n_cpu
 
 
@@ -28,7 +29,7 @@ class _FilterSplit:
     def __init__(
             self, hf_dataset: DatasetDict, asp_norm_dataset: Dict[str, load_data.SplitDataset],
             dataset_id2name: Dict[int, str], split: str = None
-    ) -> bool:
+    ):
         self.hf_dataset = hf_dataset
         self.asp_norm_dataset = asp_norm_dataset
         self.dataset_id2name = dataset_id2name
@@ -43,13 +44,6 @@ def filter_split(
         hf_dataset: DatasetDict, asp_norm_dataset: Dict[str, load_data.SplitDataset],
         dataset_id2name: Dict[int, str], split: str = None, **filter_args
 ) -> Dataset:
-    # cos the same text may appear in multiple datasets
-    # ret = hf_dataset['train'].filter(
-    #     # lambda example: example['text'] in asp_norm_dataset[dataset_id2name[example['dataset_id']]][split],
-    #     # caching doesn't work and breaks things,
-    #     # i.e. when called again w/ `eval`, incorrectly load up cache from `train`
-    #     load_from_cache_file=False
-    # )
     ret = hf_dataset['train'].filter(_FilterSplit(hf_dataset, asp_norm_dataset, dataset_id2name, split), **filter_args)
     n = len(ret)
     # sanity check, same # of pairs as in Chris' `load_data`
@@ -64,7 +58,7 @@ def get_dataset(
         remove_columns: Union[str, List[str]] = None,
         n_sample: int = None, shuffle_seed: int = None, fast=True, from_disk=True,
         splits: Union[str, List[str], Tuple[str, ...]] = ('train', 'test'), pbar: bool = False
-) -> Dict[str, Dataset]:
+) -> DatasetDict:
     logger.info(f'Loading dataset {pl.i(dataset_name)}... ')
     if from_disk:
         path = os_join(utcd_util.get_base_path(), u.proj_dir, u.dset_dir, 'processed', dataset_name)
@@ -110,20 +104,23 @@ def get_dataset(
             for s, dset in dsets.items()
         }
     datasets.set_progress_bar_enabled(True)
-    return dsets
+    return DatasetDict(dsets)
 
 
 class ExplicitMap:
-    def __init__(self, tokenizer, dataset_name: str, dataset: List[Dataset]):
+    def __init__(self, tokenizer, dataset_name: str, dataset: Dict[str, Dataset]):
         self.tokenizer = tokenizer
 
         self.is_combined = 'UTCD' in dataset_name
         aspects: List[str] = sconfig('UTCD.aspects')
         aspect2id = {a: i for i, a in enumerate(aspects)}
         if self.is_combined:  # get aspect based on dataset id
-            feat: ClassLabel = dataset[0].features['dataset_id']  # the same feature for both `train` and `test`
+            # feature is the same for both `train` and `test`
+            feat: ClassLabel = dataset['train'].features['dataset_id']
             n_dset = feat.num_classes
-            self.did2aspect_id = {i: aspect2id[sconfig(f'UTCD.datasets.{feat.int2str(i)}.aspect')] for i in range(n_dset)}
+            self.did2aspect_id = {
+                i: aspect2id[sconfig(f'UTCD.datasets.{feat.int2str(i)}.aspect')] for i in range(n_dset)
+            }
         else:  # single dataset, the same aspect
             self.aspect_id = aspect2id[sconfig(f'UTCD.datasets.{dataset_name}.aspect')]
 
@@ -137,8 +134,8 @@ class ExplicitMap:
 
 
 def get_explicit_dataset(
-        dataset_name: str = 'UTCD-in', tokenizer: PreTrainedTokenizerBase = None, **kwargs
-) -> List[Dataset]:
+        dataset_name: str = 'UTCD-in', tokenizer: PreTrainedTokenizerBase = None, fast: bool = True, **kwargs
+) -> DatasetDict:
     """
     override text classification labels to be aspect labels
     """
@@ -150,5 +147,8 @@ def get_explicit_dataset(
     rmv = ['text']
     if exp_map.is_combined:
         rmv.append('dataset_id')
-    dsets = [dset.map(exp_map, batched=True, remove_columns=rmv, load_from_cache_file=False) for dset in dsets]
-    return dsets
+    mic(_get_num_proc(dsets) if fast else None)
+    return dsets.map(
+        exp_map, batched=True, remove_columns=rmv, num_proc=_get_num_proc(dsets) if fast else None,
+        load_from_cache_file=False
+    )

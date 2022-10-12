@@ -77,6 +77,7 @@ class MyLoggingCallback(TrainerCallback):
 
         self.save_time = now(for_path=True)
         self.logger, self.logger_fl, self.tb_writer = None, None, None
+        self.ls = None
 
         self.log_fnm = f'{name}_{{{pl.pa(dict(n=n_data, l=md_sz, a=lr, bsz=self.bsz, n_ep=n_ep))}}}'
 
@@ -86,10 +87,15 @@ class MyLoggingCallback(TrainerCallback):
     def on_train_begin(self, args: TrainingArguments, state, control, **kwargs):
         if self.trainer.is_local_process_zero():  # For distributed training; TODO: support multi machine?
             self.logger: logging.Logger = get_logger(self.name)
-            log_output_dir = self.trainer.log_output_dir
-            fl_path = os_join(log_output_dir, f'{self.log_fnm}.log')
+            output_dir = self.trainer.args.output_dir
+            fl_path = os_join(output_dir, f'{self.log_fnm}.log')
             self.logger_fl = get_logger(name=self.name, typ='file-write', file_path=fl_path)
-            self.tb_writer = SummaryWriter(os_join(log_output_dir, f'TB_{self.log_fnm}'))
+            self.tb_writer = SummaryWriter(os_join(output_dir, f'TB_{self.log_fnm}'))
+            self.ls = LogStep(
+                trainer=self.trainer, prettier=self.prettier,
+                logger=self.logger, file_logger=self.logger_fl, tb_writer=self.tb_writer
+            )
+
             conf = self.trainer.model.config.to_dict()
             args = self.trainer.args.to_dict()
             sleep(2)  # otherwise, logging messages missing
@@ -125,7 +131,7 @@ class MyLoggingCallback(TrainerCallback):
             eval_meta = OrderedDict([
                 ('#data', n_eval), ('model size', md_sz), ('batch shape', (bsz, seq_max_len)), ('#batches', n_bch)
             ])
-            if not self.trainer.use_tqdm:
+            if not self.trainer.with_tqdm:
                 self.logger.info(f'Ran evaluation with {pl.i(eval_meta)}')
             self.logger_fl.info(f'Ran evaluation with {pl.nc(eval_meta)}')
 
@@ -149,31 +155,6 @@ class MyLoggingCallback(TrainerCallback):
                 cls_acc = (stats_cls_acc['n_acc']/stats_cls_acc['n_total'])
             ret['cls_acc'] = cls_acc
         return ret
-
-    def _log(self, d_log):
-        training, use_tqdm = self.trainer.model.training, self.trainer.use_tqdm
-        d_log_write = self.prettier(d_log)
-
-        tb_step = d_log.get('step') if training else d_log.get('epoch')
-        pref = 'train' if training else 'eval'
-        for k, v in d_log.items():
-            if self.prettier.should_add_split_prefix(k):
-                self.tb_writer.add_scalar(tag=f'{pref}/{k}', scalar_value=v, global_step=tb_step)
-
-        if use_tqdm:
-            callback = next(
-                cb for cb in self.trainer.callback_handler.callbacks if isinstance(cb, MyProgressCallback)
-            )
-            tqdm_kws = {k: v for k, v in d_log_write.items() if self.prettier.should_add_split_prefix(k)}
-            if 'learning_rate' in tqdm_kws:
-                tqdm_kws['lr'] = tqdm_kws.pop('learning_rate')
-            tqdm_kws = {k: pl.i(v) for k, v in tqdm_kws.items()}
-            pbar = callback.training_bar if training else callback.prediction_bar
-            if pbar:
-                pbar.set_postfix(tqdm_kws)
-        else:
-            self.logger.info(pl.i(d_log))
-        self.logger_fl.info(pl.nc(d_log))
 
     def on_log(self, args: TrainingArguments, state, control, logs: Dict = None, **kwargs):
         # basically only log the main process; `state.is_local_process_zero` is wrong in DDP eval
@@ -201,13 +182,13 @@ class MyLoggingCallback(TrainerCallback):
                 d_log.update(dict(lr=logs['learning_rate'], loss=logs['loss']))
                 if not self.trainer.disable_train_metrics:
                     d_log.update(self._acc_stats2dict(self.out_dict_tr))
-                self._log(d_log)
+                self.ls(d_log)
                 self.out_dict_tr = None  # Reset for next global step
             elif 'eval_loss' in logs:  # Trainer eval output after eval metric computed
                 n_ep = logs['epoch']
                 assert n_ep.is_integer()
                 d_log = dict(epoch=int(n_ep), loss=logs['eval_loss'], cls_acc=logs['eval_cls_acc'])
-                self._log(d_log)
+                self.ls(d_log)
             else:
                 self.logger.info(pl.i(logs))
                 self.logger_fl.info(pl.nc(logs))
@@ -332,7 +313,7 @@ class MyTrainer(Trainer):
     def __init__(
             self, tokenizer: GPT2TokenizerFast = None, custom_logging=True,
             disable_train_metrics: bool = True, compute_cls_acc: bool = False,
-            is_ddp: Union[bool, int] = False, use_tqdm: bool = True, **kwargs
+            is_ddp: Union[bool, int] = False, with_tqdm: bool = True, **kwargs
     ):
         super().__init__(**kwargs)
         assert 'args' in kwargs
@@ -341,7 +322,7 @@ class MyTrainer(Trainer):
         self.disable_train_metrics = disable_train_metrics  # Calling `get_accs` during training seems to reduce GPU util
         self.compute_cls_acc = compute_cls_acc
         self.is_ddp = is_ddp
-        self.use_tqdm = use_tqdm
+        self.with_tqdm = with_tqdm
 
         self.tokenizer = tokenizer  # TODO: generalize to more tokenizers?
         self.mode = None
@@ -350,10 +331,12 @@ class MyTrainer(Trainer):
         # Sanity check for distributed training
         print(f'Trainer instantiated with is_local_process_zero: {pl.i(self.is_local_process_zero())}')
 
-        paths_ = self.args.output_dir.split(os.sep)
-        path_proj = paths_[paths_.index(u.proj_dir):]
-        # Keep the logging & plotting inside project directory, not potentially in `scratch`
-        self.log_output_dir = os_join(u.base_path, *path_proj)
+        self.logger = get_logger('GPT2 Trainer')
+        d_log = dict(
+            custom_logging=custom_logging, disable_train_metrics=disable_train_metrics,
+            compute_cls_acc=compute_cls_acc, is_ddp=is_ddp, with_tqdm=with_tqdm
+        )
+        self.logger.info(f'Trainer initialized w/ {pl.i(d_log)}')
 
     def post_init(self):
         callbacks = self.callback_handler.callbacks
@@ -365,7 +348,7 @@ class MyTrainer(Trainer):
             self.add_callback(MyLoggingCallback(self, do_eval=self.args.do_eval, is_ddp=self.is_ddp))
         else:
             self.add_callback(ColoredPrinterCallback())
-        if self.use_tqdm:
+        if self.with_tqdm:
             self.add_callback(MyProgressCallback())
 
     def train(self, **kwargs):
@@ -393,7 +376,7 @@ class MyTrainer(Trainer):
 
         # ========================== Begin of added ==========================
         inputs: Dict[str, torch.Tensor]
-        if self.custom_logging and 'labels' in inputs and (not self.disable_train_metrics):
+        if self.custom_logging and model.training and 'labels' in inputs and (not self.disable_train_metrics):
             d_log = get_accs(
                 inputs, outputs.logits.detach(), self.tokenizer, mode=self.mode, compute_cls_acc=self.compute_cls_acc
             )
@@ -491,7 +474,7 @@ class MyTrainer(Trainer):
         if len(logits) == 1:
             logits = logits[0]
         # ========================== Begin of added =========================
-        if not self.model.training:
+        if not self.model.training and self.compute_cls_acc:
             # Compute the labels right away,
             # instead of potentially concatenating the original evaluation matrix of shape (#eval, #model size, #vocab)
             # shape now is (#eval) cos for classification
