@@ -93,7 +93,7 @@ if __name__ == "__main__":
             sampling=None, normalize_aspect=NORMALIZE_ASPECT
         )
         output_path = os_join(utcd_util.get_base_path(), u.proj_dir, u.model_dir, dir_nm)
-        proj_output_path = os_join(u.base_path, u.proj_dir, u.model_path, dir_nm, 'trained')
+        proj_output_path = os_join(u.base_path, u.proj_dir, u.model_dir_nm, dir_nm, 'trained')
         mic(dir_nm, proj_output_path)
         d_log = {'batch size': bsz, 'epochs': n_ep, 'warmup steps': warmup_steps, 'save path': output_path}
         logger.info(f'Launched training with {pl.i(d_log)}... ')

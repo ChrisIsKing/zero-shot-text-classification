@@ -119,7 +119,7 @@ if __name__ == '__main__':
                 )
 
                 with_tqdm = True
-                args = get_train_args(
+                args = dict(
                     model_name=BERT_MODEL_NAME,
                     output_dir=path,
                     learning_rate=lr,
@@ -128,6 +128,13 @@ if __name__ == '__main__':
                     num_train_epochs=n_ep,
                     dataloader_num_workers=4
                 )
+                if NORMALIZE_ASPECT:
+                    args.update(dict(
+                        load_best_model_at_end=True,
+                        metric_for_best_model='eval_loss',
+                        greater_is_better=False
+                    ))
+                args = get_train_args(**args)
             trainer_args = dict(
                 model=mdl, args=args, train_dataset=tr, eval_dataset=vl, compute_metrics=compute_metrics
             )

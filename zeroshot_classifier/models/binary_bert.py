@@ -2,7 +2,7 @@ import math
 import pickle
 import random
 from typing import List, Dict
-from os.path import join
+from os.path import join as os_join
 from argparse import ArgumentParser
 
 import torch
@@ -46,7 +46,7 @@ def parse_args():
     parser_test.add_argument('--domain', type=str, choices=['in', 'out'], required=True)
     parser_test.add_argument('--mode', type=str, choices=modes, default='vanilla')
     parser_test.add_argument('--batch_size', type=int, default=32)  # #of texts to do inference in a single forward pass
-    parser_test.add_argument('--model_path', type=str, required=True)
+    parser_test.add_argument('--model_dir_nm', type=str, required=True)
     
     return parser.parse_args()
 
@@ -93,20 +93,16 @@ if __name__ == '__main__':
         it = tqdm(dataset_names, desc=f'Formatting into Binary CLS w/ {pl.i(dict(sampling=sampling, mode=mode))}')
         for dataset_name in it:
             dset = data[dataset_name]
-            args = dict(dataset_name=dataset_name, sampling=sampling, mode=mode)
+            args = dict(sampling=sampling, mode=mode)
             for split, ds in zip(['train', 'val', 'test'], [train, val, test]):
                 it.set_postfix(dnm=f'{pl.i(dataset_name)}-{pl.i(split)}')
                 ds.extend(binary_cls_format(dset, **args, split=split))
-            # train += binary_cls_format(dataset=dset, **args, split='train')
-            # it.set_postfix(dnm=f'{pl.i(dataset_name)} eval')
-            # val += binary_cls_format(dataset=dset, **args, split='eval')
-            # it.set_postfix(dnm=f'{pl.i(dataset_name)} test')
-            # test += binary_cls_format(dataset=dset, **args, split='test')
 
-        # in case of loading from explicit pre-training,
-        # the classification head would be ignored for classifying 3 classes
         d_log = dict(model_init=model_init)
         if model_init != HF_MODEL_NAME:
+            # loading from explicit pre-training local weights,
+            # the classification head would be ignored for classifying 3 classes
+            model_init = os_join(get_base_path(), u.proj_dir, u.model_dir, model_init)
             d_log['files'] = os.listdir(model_init)
         logger.info(f'Loading model with {pl.i(d_log)}...')
         model = BinaryBertCrossEncoder(model_init, num_labels=2, automodel_args=dict(ignore_mismatched_sizes=True))
@@ -148,17 +144,19 @@ if __name__ == '__main__':
         )
     elif cmd == 'test':
         WITH_EVAL_LOSS = False
-        mode, domain, model_path, bsz = args.mode, args.domain, args.model_path, args.batch_size
+        mode, domain, model_dir_nm, bsz = args.mode, args.domain, args.model_dir_nm, args.batch_size
         split = 'test'
 
-        out_path = join(model_path, 'eval', domain2eval_dir_nm(domain))
+        out_path = os_join(u.eval_path, model_dir_nm, domain2eval_dir_nm(domain))
         os.makedirs(out_path, exist_ok=True)
 
-        data = get_datasets(in_domain_data_path if domain == 'in' else out_of_domain_data_path)
+        data = get_datasets(domain=domain)
+        model_path = os_join(get_base_path(), u.proj_dir, u.model_dir, model_dir_nm)
+        logger.info(f'Loading model from path {pl.i(model_path)}... ')
         model = BinaryBertCrossEncoder(model_path)  # load model
 
         logger = get_logger(f'{MODEL_NAME} Eval')
-        d_log = dict(mode=mode, domain=domain, batch_size=bsz, path=model_path)
+        d_log = dict(mode=mode, domain=domain, batch_size=bsz, dir_nm=model_dir_nm)
         logger.info(f'Evaluating Binary Bert with {pl.i(d_log)} and saving to {pl.i(out_path)}... ')
 
         eval_loss: Dict[str, np.array] = dict()  # a sense of how badly the model makes the prediction
@@ -181,7 +179,8 @@ if __name__ == '__main__':
 
             gen = group_n(pairs.items(), n=bsz)
             # loop through each test example
-            for i_grp, group in enumerate(tqdm(gen, desc=dnm, unit='group', total=math.ceil(n_txt/bsz))):
+            it = tqdm(gen, desc=F'Evaluating {pl.i(dnm)}', unit='group', total=math.ceil(n_txt/bsz))
+            for i_grp, group in enumerate(it):
                 txts_, lst_labels = zip(*group)
                 lst_labels: List[List[int]] = [[label2id[lb] for lb in labels] for labels in lst_labels]
                 query = sum([txt_n_lbs2query(t, label_options) for t in txts_], start=[])  # (n_options x bsz, 2)
@@ -213,8 +212,8 @@ if __name__ == '__main__':
             args = dict(zero_division=0, target_names=label_options, output_dict=True)  # disables warning
             df, acc = eval_res2df(arr_labels, arr_preds, report_args=args)
             logger.info(f'{pl.i(dnm)} Classification Accuracy: {pl.i(acc)}')
-            df.to_csv(join(out_path, f'{dnm}.csv'))
+            df.to_csv(os_join(out_path, f'{dnm}.csv'))
 
         if WITH_EVAL_LOSS:
-            with open(join(out_path, 'eval_loss.pkl'), 'wb') as f:
+            with open(os_join(out_path, 'eval_loss.pkl'), 'wb') as f:
                 pickle.dump(eval_loss, f)

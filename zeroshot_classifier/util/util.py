@@ -97,9 +97,8 @@ def map_model_output_path(
 
 def domain2eval_dir_nm(domain: str = 'in'):
     domain_str = 'in-domain' if domain == 'in' else 'out-of-domain'
-    date = datetime.datetime.now().strftime('%m.%d.%Y')
-    date = date[:-4] + date[-2:]  # 2-digit year
-    return f'{domain_str}, {date}'
+    date = now(fmt='short-date')
+    return f'{date}_{domain_str}'
 
 
 class TrainStrategy2PairMap:

@@ -20,7 +20,6 @@ logger = get_logger('Dataset')
 
 def _get_num_proc(dsets: Union[DatasetDict, Dict[str, Dataset]]) -> Optional[int]:
     n_cpu = os.cpu_count()
-    mic([len(d) for d in dsets.values()])
     if n_cpu >= 2 and min(len(d) for d in dsets.values()) > 4096:
         return n_cpu
 
@@ -60,6 +59,8 @@ def get_dataset(
         splits: Union[str, List[str], Tuple[str, ...]] = ('train', 'test'), pbar: bool = False
 ) -> DatasetDict:
     logger.info(f'Loading dataset {pl.i(dataset_name)}... ')
+    if not pbar:
+        datasets.set_progress_bar_enabled(False)
     if from_disk:
         path = os_join(utcd_util.get_base_path(), u.proj_dir, u.dset_dir, 'processed', dataset_name)
         dsets = datasets.load_from_disk(path)
@@ -79,8 +80,6 @@ def get_dataset(
     if isinstance(splits, str):
         splits = [splits]
     dsets = {s: dsets[s] for s in splits}
-    if not pbar:
-        datasets.set_progress_bar_enabled(False)
     # ordering of filter, shuffle, then select determined for debugging
     n_proc = _get_num_proc(dsets) if fast else None
     if filter_func is not None:
@@ -134,7 +133,8 @@ class ExplicitMap:
 
 
 def get_explicit_dataset(
-        dataset_name: str = 'UTCD-in', tokenizer: PreTrainedTokenizerBase = None, fast: bool = True, **kwargs
+        dataset_name: str = 'UTCD-in', tokenizer: PreTrainedTokenizerBase = None, fast: bool = True,
+        pbar: bool = False, **kwargs
 ) -> DatasetDict:
     """
     override text classification labels to be aspect labels
@@ -142,13 +142,19 @@ def get_explicit_dataset(
     # perform preprocessing outside `get_dataset` as feature from the dataset is needed
     dsets = get_dataset(dataset_name, **kwargs)  # by split
 
+    logger.info('Constructing explicit dataset... ')
     exp_map = ExplicitMap(tokenizer=tokenizer, dataset_name=dataset_name, dataset=dsets)
 
     rmv = ['text']
     if exp_map.is_combined:
         rmv.append('dataset_id')
-    mic(_get_num_proc(dsets) if fast else None)
-    return dsets.map(
+
+    if not pbar:
+        datasets.set_progress_bar_enabled(False)
+    ret = dsets.map(
         exp_map, batched=True, remove_columns=rmv, num_proc=_get_num_proc(dsets) if fast else None,
         load_from_cache_file=False
     )
+    datasets.set_progress_bar_enabled(True)
+    return ret
+

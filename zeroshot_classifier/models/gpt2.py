@@ -628,7 +628,7 @@ def get_train_setup(
         args.update(dict(
             load_best_model_at_end=True,
             metric_for_best_model='eval_loss',
-            greater_is_better=False,
+            greater_is_better=False
         ))
     if train_args is None:
         train_args = dict()
@@ -1075,6 +1075,7 @@ if __name__ == '__main__':
             train_args = dict(  # Distribute among GPUs & fit in memory; Effectively batch size 128 as in paper
                 # num_train_epochs=3,
                 num_train_epochs=8,
+                warmup_ratio=1e-1,
                 per_device_train_batch_size=4,
                 per_device_eval_batch_size=4 if debug else 8,
                 gradient_accumulation_steps=2 if debug else 8 * 4,
