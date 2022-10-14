@@ -777,12 +777,14 @@ def plot_dataset_token_length_stats(domain: str = 'in'):
 def load_trained(
         form: str = 'vanilla', epoch: int = 3, normalize_aspect: bool = False
 ) -> Tuple[ZsGPT2LMHeadModel, ZsGPT2Tokenizer]:
+    ca.check_mismatch('GPT2 Training Strategy', form, ['vanilla', 'implicit', 'explicit'])
+
     logger = get_logger('Load ZS-GPT2 Trained')
     d_log = dict(form=form, epoch=epoch, normalize_aspect=normalize_aspect)
     logger.info(f'Loading model with {pl.i(d_log)}... ')
     tokenizer_name = 'gpt2'
     if normalize_aspect:
-        assert epoch in [3, 5]
+        assert epoch in [3, 5, 8]
         if epoch == 3:
             if form == 'vanilla':
                 dir_nm = '2022-06-10_11-36-47_NVIDIA-GPT2-gpt2-medium'
@@ -791,14 +793,19 @@ def load_trained(
             else:
                 assert form == 'explicit'
                 dir_nm = '2022-06-13_19-09-32_NVIDIA-GPT2-explicit-aspect-norm'
-        else:  # epoch == 5
+        elif epoch == 5:
             if form == 'vanilla':
                 dir_nm = '2022-06-19_13-08-17_NVIDIA-GPT2-gpt2-medium-vanilla-aspect-norm'
             elif form == 'implicit':
                 dir_nm = '2022-06-19_13-09-36_NVIDIA-GPT2-gpt2-medium-implicit-aspect-norm'
             else:
                 raise NotImplementedError('TODO')
-        path = os_join(u.proj_path, u.model_dir, dir_nm, 'trained')
+        else:  # 8 epoch, model w/ best eval loss
+            if form == 'vanilla':
+                dir_nm = '2022-10-11_23-44-51_NVIDIA-GPT2-gpt2-medium-vanilla-aspect-norm'
+            else:
+                raise NotImplementedError('TODO')
+        path = os_join(get_base_path(), u.proj_dir, u.model_dir, dir_nm, 'trained')
         if form != 'vanilla':  # TODO: all models should have tokenizers saved eventually
             tokenizer_name = path
     else:
@@ -865,8 +872,6 @@ def evaluate(
     logger_fl.info(f'Running evaluation {domain} on model {pl.nc(d_model)}, with {pl.nc(d_eval)}... ')
 
     for dnm_ in dataset_names:
-        if dnm_ != 'consumer_finance':  # TODO: debugging
-            continue
         d_info = sconfig(f'UTCD.datasets.{dnm_}.splits.{split}')
         lb2id = defaultdict(lambda: -1)  # If generated invalid descriptive label, will return -1
         labels = d_info['labels']
@@ -1098,7 +1103,7 @@ if __name__ == '__main__':
         trainer.save_model(save_path)
         tokenizer.save_pretrained(save_path)
         os.listdir(save_path)
-    train()
+    # train()
 
     def run_eval():
         transformers.set_seed(seed)  # cos explicit 3 epoch doesn't generate BOA token...
@@ -1106,18 +1111,19 @@ if __name__ == '__main__':
         #     profile_runtime(lambda: evaluate(domain='in', batch_size=48), sleep=2)
         # # profile_evaluation()
 
-        # dom = 'in'
-        dom = 'out'
-        # form = 'vanilla'
+        dom = 'in'
+        # dom = 'out'
+        form = 'vanilla'
         # form = 'implicit'
-        form = 'explicit'
-        n_ep = 3
+        # form = 'explicit'
+        # n_ep = 3
         # n_ep = 5
+        n_ep = 8
         evaluate(
             domain=dom, batch_size=48, form=form, load_model_args=dict(normalize_aspect=True, epoch=n_ep),
             embed_sim=True
         )
-    # run_eval()
+    run_eval()
 
     def sanity_check_trained_generate():
         text = 'hello world'
