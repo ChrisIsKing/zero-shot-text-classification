@@ -776,7 +776,7 @@ def plot_dataset_token_length_stats(domain: str = 'in'):
 
 def load_trained(
         form: str = 'vanilla', epoch: int = 3, normalize_aspect: bool = False
-) -> Tuple[ZsGPT2LMHeadModel, ZsGPT2Tokenizer]:
+) -> Tuple[ZsGPT2LMHeadModel, ZsGPT2Tokenizer, str]:
     ca.check_mismatch('GPT2 Training Strategy', form, ['vanilla', 'implicit', 'explicit'])
 
     logger = get_logger('Load ZS-GPT2 Trained')
@@ -816,11 +816,12 @@ def load_trained(
                 # 3: os_join('2022-03-04 21-33-12', 'checkpoint-55599'),
                 3: os_join('2022-04-02_11-51-19', 'checkpoint-51390'),
             }
-        path = os_join(BASE_PATH, PROJ_DIR, 'trained-models', 'gpt2-nvidia', load_trained.epoch2path[epoch])
+        dir_nm = load_trained.epoch2path[epoch]
+        path = os_join(BASE_PATH, PROJ_DIR, 'trained-models', 'gpt2-nvidia', dir_nm)
     model = ZsGPT2LMHeadModel.from_pretrained(path, is_zs_gpt2=True)  # with caching
     tokenizer_args = dict(form=form, use_fast=True, model_max_length=model.config.n_ctx)
     tokenizer = ZsGPT2Tokenizer.from_pretrained(tokenizer_name, **tokenizer_args)
-    return model, tokenizer
+    return model, tokenizer,  dir_nm
 
 
 def evaluate(
@@ -842,7 +843,7 @@ def evaluate(
     else:
         load_model_args['form'] = form
     ca(dataset_domain=domain)
-    model, tokenizer = load_trained(**(load_model_args or dict()))
+    model, tokenizer, eval_output_dir_nm = load_trained(**(load_model_args or dict()))
     conf, model_cnm = model.config, model.__class__.__qualname__
     # To disable warning `Setting `pad_token_id` to `eos_token_id` for open-end generation.`
     model_size = conf.max_length = conf.n_ctx
@@ -855,7 +856,7 @@ def evaluate(
         encoder = SentenceTransformer('all-mpnet-base-v2', device='cuda' if torch.cuda.is_available() else 'cpu')
 
     split = 'test'
-    output_path = os_join(u.eval_path, MODEL_NAME.replace(' ', '-'), form, domain2eval_dir_nm(domain))
+    output_path = os_join(u.eval_path, eval_output_dir_nm, domain2eval_dir_nm(domain))
     os.makedirs(output_path, exist_ok=True)
 
     dataset_names = utcd_util.get_dataset_names(domain)
@@ -882,7 +883,7 @@ def evaluate(
             map_func=dict(test=Tokenize(tokenizer, dataset_name=dnm_, split='test', mode='inference')),
             remove_columns='text', n_sample=None, from_disk=True,  # keeps the `labels`
             # pbar=True
-        )[0]
+        )['test']
         label_embeds = None
         if embed_sim:
             label_embeds = encoder.encode(labels, batch_size=batch_size)  # not necessarily lowercase
@@ -906,7 +907,7 @@ def evaluate(
                        f'of {len(dset)} unique texts in {n_bch} batches... ')
 
         n_computed = 0
-        it = tqdm(idxs_batches, desc=dnm_, unit='ba')
+        it = tqdm(idxs_batches, desc=pl.i(dnm_), unit='ba')
         for step, idxs in enumerate(it):  # Each batch has input samples of the same token length
             idxs = [int(idx) for idx in idxs]  # `Dataset.select` works with `int` indices only
             inputs = {  # No need to pad; Don't need to the labels to complicate forward pass
@@ -954,8 +955,8 @@ def evaluate(
                 ids_pred: List[int] = [lb2id[a.lower()] for a in answers]
                 assert len(ids_pred) >= 1  # sanity check
                 if embed_sim and all(i == -1 for i in ids_pred):  # all generated answer are non-label
-                    logger.warning(f'{pl.i(model_cnm)} didn\'t generate any valid label option with {pl.i(answers)}')
-                    logger_fl.warning(f'{model_cnm} didn\'t generate any valid label option with {answers}')
+                    logger.warning(f'Generated {pl.i(answers)}, not a valid label option ')
+                    logger_fl.warning(f'Generate {answers}, not a valid label option ')
                     ids_pred = []
                     answ_embeds = encoder.encode(answers, batch_size=batch_size)
                     for v_ans in answ_embeds:
@@ -981,7 +982,7 @@ def evaluate(
                 batch_size=f'{len(idxs):>{len(str(batch_size))}}/{batch_size}',
                 n_acc=sum(p == t for p, t in zip(preds_batch, trues_batch))
             )
-            it.set_postfix(d_log)
+            it.set_postfix({k: pl.i(v) for k, v in d_log.items()})
             d_log.update(dict(ids_pred=list(preds_batch), ids_true=list(trues_batch)))
             logger_fl.info(pl.nc(d_log))
 
@@ -1103,7 +1104,7 @@ if __name__ == '__main__':
         trainer.save_model(save_path)
         tokenizer.save_pretrained(save_path)
         os.listdir(save_path)
-    # train()
+    train()
 
     def run_eval():
         transformers.set_seed(seed)  # cos explicit 3 epoch doesn't generate BOA token...
@@ -1111,8 +1112,8 @@ if __name__ == '__main__':
         #     profile_runtime(lambda: evaluate(domain='in', batch_size=48), sleep=2)
         # # profile_evaluation()
 
-        dom = 'in'
-        # dom = 'out'
+        # dom = 'in'
+        dom = 'out'
         form = 'vanilla'
         # form = 'implicit'
         # form = 'explicit'
@@ -1123,7 +1124,7 @@ if __name__ == '__main__':
             domain=dom, batch_size=48, form=form, load_model_args=dict(normalize_aspect=True, epoch=n_ep),
             embed_sim=True
         )
-    run_eval()
+    # run_eval()
 
     def sanity_check_trained_generate():
         text = 'hello world'

@@ -21,6 +21,7 @@ from zeroshot_classifier.models.architecture import BiEncoder
 
 
 MODEL_NAME = 'Bi-Encoder'
+HF_MODEL_NAME = 'bert-base-uncased'
 
 
 def parse_args():
@@ -35,14 +36,14 @@ def parse_args():
     # set train arguments
     parser_train.add_argument('--output', type=str, default=None)
     parser_train.add_argument('--sampling', type=str, choices=['rand', 'vect'], default='rand')
-    parser_train.add_argument('--model_init', type=str, default='bert-base-uncased')
+    parser_train.add_argument('--model_init', type=str, default=HF_MODEL_NAME)
     parser_train.add_argument('--mode', type=str, choices=modes, default='vanilla')
     parser_train.add_argument('--learning_rate', type=float, default=2e-5)
     parser_train.add_argument('--batch_size', type=int, default=16)
     parser_train.add_argument('--epochs', type=int, default=3)
 
     # set test arguments
-    parser_test.add_argument('--model_path', type=str, required=True)
+    parser_test.add_argument('--model_dir_nm', type=str, required=True)
     parser_test.add_argument('--domain', type=str, choices=['in', 'out'], required=True)
     parser_test.add_argument('--mode', type=str, choices=modes, default='vanilla')
 
@@ -76,12 +77,19 @@ if __name__ == "__main__":
         it = tqdm(dataset_names, desc='Formatting into Binary CLS')
         for dataset_name in it:
             dset = data[dataset_name]
-            args = dict(dataset_name=dataset_name, sampling=sampling, mode=mode)
+            args = dict(sampling=sampling, mode=mode)
             for split, ds in zip(['train', 'val', 'test'], [train, val, test]):
                 it.set_postfix(dnm=f'{pl.i(dataset_name)}-{pl.i(split)}')
                 ds.extend(binary_cls_format(dset, **args, split=split))
 
         # seq length for consistency w/ `binary_bert` & `sgd`
+        d_log = dict(model_init=model_init)
+        if model_init != HF_MODEL_NAME:
+            # loading from explicit pre-training local weights,
+            # the classification head would be ignored for classifying 3 classes
+            model_init = os_join(get_base_path(), u.proj_dir, u.model_dir, model_init)
+            d_log['files'] = os.listdir(model_init)
+        logger.info(f'Loading model with {pl.i(d_log)}...')
         word_embedding_model = models.Transformer(model_init, max_seq_length=512)
         add_tok_arg = utcd_util.get_add_special_tokens_args(word_embedding_model.tokenizer, train_strategy=mode)
         if add_tok_arg:
@@ -123,17 +131,20 @@ if __name__ == "__main__":
         )
     elif cmd == 'test':
         split = 'test'
-        mode, domain, model_path = args.mode, args.domain, args.model_path
-        out_path = os_join(model_path, 'eval', domain2eval_dir_nm(domain))
+        mode, domain, model_dir_nm = args.mode, args.domain, args.model_dir_nm
+        out_path = os_join(u.eval_path, model_dir_nm, domain2eval_dir_nm(domain))
         os.makedirs(out_path, exist_ok=True)
 
         dataset_names = utcd_util.get_dataset_names(domain)
-        data = get_datasets(in_domain_data_path if domain == 'in' else out_of_domain_data_path)
-        model = SentenceTransformer(args.model_path)
+        data = get_datasets(domain=domain)
+
+        model_path = os_join(get_base_path(), u.proj_dir, u.model_dir, model_dir_nm)
+        logger.info(f'Loading model from path {pl.i(model_path)}... ')
+        model = SentenceTransformer(model_path)
         md_nm = model.__class__.__qualname__
 
         bsz = 32
-        d_log = dict(model=md_nm, mode=mode, domain=domain, datasets=dataset_names, path=model_path, batch_size=bsz)
+        d_log = dict(model=md_nm, mode=mode, domain=domain, datasets=dataset_names, path=model_dir_nm, batch_size=bsz)
         logger = get_logger(f'{MODEL_NAME} Eval')
         logger.info(f'Evaluating {MODEL_NAME} with {pl.i(d_log)} and saving to {pl.i(out_path)}... ')
 
@@ -155,13 +166,13 @@ if __name__ == "__main__":
             logger.info('Encoding labels...')
             lb_opn_embeds = model.encode(label_options, batch_size=bsz, show_progress_bar=True)
 
-            for i, (_, labels) in enumerate(tqdm(pairs.items(), desc=dnm)):
+            for i, (_, labels) in enumerate(tqdm(pairs.items(), desc=f'Evaluating {pl.i(dnm)}')):
                 scores = [sbert_util.cos_sim(txt_embeds[i], v).item() for v in lb_opn_embeds]
                 pred = np.argmax(scores)
                 label_ids = [label2id[lb] for lb in labels]
                 true = pred if pred in label_ids else label_ids[0]
                 arr_preds[i], arr_labels[i] = pred, true
             args = dict(zero_division=0, target_names=label_options, output_dict=True)  # disables warning
-            df, acc = eval_res2df(arr_labels, arr_preds, **args)
+            df, acc = eval_res2df(arr_labels, arr_preds, report_args=args)
             logger.info(f'{pl.i(dnm)} Classification Accuracy: {pl.i(acc)}')
             df.to_csv(os_join(out_path, f'{dnm}.csv'))
