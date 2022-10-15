@@ -164,6 +164,8 @@ if __name__ == '__main__':
         dataset_names = [dnm for dnm, d_dset in sconfig('UTCD.datasets').items() if filt(d_dset, domain)]
 
         for dnm in dataset_names:  # loop through all datasets
+            if dnm != 'consumer_finance':
+                continue
             dset = data[dnm]
             pairs, aspect = dset[split], dset['aspect']
             d_dset = sconfig(f'UTCD.datasets.{dnm}.splits.{split}')
