@@ -29,6 +29,10 @@ if __name__ == '__main__':
 
         # n = 128
         n = None
+
+        lr = 4e-5
+        n_ep = 8
+
         logger.info('Loading tokenizer & model... ')
 
         tokenizer = GPT2TokenizerFast.from_pretrained(HF_MODEL_NAME)
@@ -46,42 +50,51 @@ if __name__ == '__main__':
         dnm = 'UTCD-in'  # concatenated 9 in-domain datasets in UTCD
         dset_args = dict(dataset_name=dnm, tokenizer=tokenizer, n_sample=n, shuffle_seed=seed)
         if NORMALIZE_ASPECT:
-            dset_args['normalize_aspect'] = seed
-        tr, vl = get_explicit_dataset(**dset_args)
-        logger.info(f'Loaded {pl.i(len(tr))} training samples, {pl.i(len(vl))} eval samples')
+            dset_args.update(dict(normalize_aspect=seed, splits=['train', 'eval', 'test']))
+        dsets = get_explicit_dataset(**dset_args)
+        tr, vl, ts = dsets['train'], dsets['eval'], dsets['test']
+        logger.info(f'Loaded #example {pl.i({k: len(v) for k, v in dsets.items()})}')
 
         transformers.set_seed(seed)
-        train_args = dict(
-            per_device_train_batch_size=4,  # to fit in memory, bsz 16 to keep same with Bin Bert pretraining
-            gradient_accumulation_steps=4,
-            fp16=torch.cuda.is_available(),
-            num_train_epochs=5
-        )
-        dir_nm = map_model_output_path(
-            model_name=MODEL_NAME.replace(' ', '-'), output_path=HF_MODEL_NAME, mode='explicit',
+        path = map_model_output_path(
+            model_name=MODEL_NAME.replace(' ', '-'), mode='explicit',
             sampling=None, normalize_aspect=NORMALIZE_ASPECT
         )
-        train_args = get_train_args(model_name=GPT2_MODEL_NAME, dir_name=dir_nm, **train_args)
+        train_args = dict(
+            output_dir=path,
+            learning_rate=lr,
+            per_device_train_batch_size=4,  # to fit in memory, bsz 16 to keep same with Bin Bert pretraining
+            per_device_eval_batch_size=16,
+            gradient_accumulation_steps=4,
+            fp16=torch.cuda.is_available(),
+            num_train_epochs=n_ep,
+            dataloader_num_workers=4
+        )
+        if NORMALIZE_ASPECT:
+            train_args.update(dict(
+                load_best_model_at_end=True,
+                metric_for_best_model='eval_loss',
+                greater_is_better=False
+            ))
+        train_args = get_train_args(model_name=GPT2_MODEL_NAME, **train_args)
         trainer_args = dict(
             model=model, args=train_args, train_dataset=tr, eval_dataset=vl, compute_metrics=compute_metrics
         )
         trainer = ExplicitTrainer(name=f'{MODEL_NAME} Train', with_tqdm=True, **trainer_args)
-        save_path = os_join(trainer.args.output_dir, 'trained')
-        mic(save_path)
         logger.info('Launching Training... ')
         if resume:
             trainer.train(resume_from_checkpoint=resume)
         else:
             trainer.train()
-
+        save_path = os_join(trainer.args.output_dir, 'trained')
         trainer.save_model(save_path)
         tokenizer.save_pretrained(save_path)
-        mic(save_path)
-        mic(os.listdir(save_path))
-    dir_nm_ = '2022-06-19_13-13-54_Explicit-Pretrain-Aspect-NVIDIA-GPT2-gpt2-medium-explicit-aspect-norm'
-    ckpt_path = os_join(utcd_util.get_base_path(), u.proj_dir, u.model_dir, dir_nm_, 'checkpoint-31984')
-    mic(ckpt_path)
-    train(resume=ckpt_path)
+        logger.info(f'Tokenizer & Model saved to {pl.i(save_path)}')
+    train()
+    # dir_nm_ = '2022-06-19_13-13-54_Explicit-Pretrain-Aspect-NVIDIA-GPT2-gpt2-medium-explicit-aspect-norm'
+    # ckpt_path = os_join(utcd_util.get_base_path(), u.proj_dir, u.model_dir, dir_nm_, 'checkpoint-31984')
+    # mic(ckpt_path)
+    # train(resume=ckpt_path)
 
     dir_nm_ = '2022-06-12_16-40-16_Explicit Pretrain Aspect NVIDIA-GPT2-gpt2-medium-explicit-aspect-norm'
     save_path_ = os_join(u.proj_path, u.model_dir, dir_nm_, 'trained')

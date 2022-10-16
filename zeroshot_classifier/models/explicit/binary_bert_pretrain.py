@@ -26,7 +26,7 @@ if __name__ == '__main__':
     NORMALIZE_ASPECT = True
 
     def train(resume: str = None):
-        logger = get_logger(MODEL_NAME)
+        logger = get_logger(f'{MODEL_NAME} Train')
         logger.info('Setting up training... ')
 
         # n = 256
@@ -120,7 +120,6 @@ if __name__ == '__main__':
 
                 with_tqdm = True
                 args = dict(
-                    model_name=BERT_MODEL_NAME,
                     output_dir=path,
                     learning_rate=lr,
                     per_device_train_batch_size=bsz,
@@ -134,7 +133,7 @@ if __name__ == '__main__':
                         metric_for_best_model='eval_loss',
                         greater_is_better=False
                     ))
-                args = get_train_args(**args)
+                args = get_train_args(model_name=BERT_MODEL_NAME, **args)
             trainer_args = dict(
                 model=mdl, args=args, train_dataset=tr, eval_dataset=vl, compute_metrics=compute_metrics
             )
