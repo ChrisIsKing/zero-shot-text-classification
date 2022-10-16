@@ -127,13 +127,19 @@ class TrainStrategy2PairMap:
         return txt_n_lbs2query
 
     def map_label(self, label: str, aspect: str = None):
-        return f'{label} {aspect}' if self.train_strategy == 'implicit' else label
+        if self.train_strategy == 'implicit':
+            assert aspect is not None
+            return f'{label} {aspect}'
+        else:
+            return label
 
     def map_text(self, text: str, aspect: str = None):
-        if self.train_strategy == 'implicit-on-text-encode-aspect':
-            return f'{TrainStrategy2PairMap.aspect2aspect_token[aspect]} {text}'
-        elif self.train_strategy == 'implicit-on-text-encode-sep':
-            return f'{aspect} {TrainStrategy2PairMap.sep_token} {text}'
+        if self.train_strategy in ['implicit-on-text-encode-aspect', 'implicit-on-text-encode-sep']:
+            assert aspect is not None
+            if self.train_strategy == 'implicit-on-text-encode-aspect':
+                return f'{TrainStrategy2PairMap.aspect2aspect_token[aspect]} {text}'
+            else:
+                return f'{aspect} {TrainStrategy2PairMap.sep_token} {text}'
         else:
             return text
 

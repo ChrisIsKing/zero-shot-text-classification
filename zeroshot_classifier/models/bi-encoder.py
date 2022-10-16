@@ -149,18 +149,20 @@ if __name__ == "__main__":
         logger.info(f'Evaluating {MODEL_NAME} with {pl.i(d_log)} and saving to {pl.i(out_path)}... ')
 
         for dnm in dataset_names:
-            pairs: Dict[str, List[str]] = data[dnm][split]
+            dset = data[dnm]
+            pairs: Dict[str, List[str]] = dset[split]
+            aspect = dset['aspect']
             label_options = sconfig(f'UTCD.datasets.{dnm}.splits.{split}.labels')
             label2id = {lbl: i for i, lbl in enumerate(label_options)}
             mode2map = TrainStrategy2PairMap(train_strategy=mode)
+            txts = [mode2map.map_text(t, aspect=aspect) for t in pairs.keys()]
+            label_options = [mode2map.map_label(lb, aspect=aspect) for lb in label_options]
 
             n_txt = sconfig(f'UTCD.datasets.{dnm}.splits.{split}.n_text')
             arr_preds, arr_labels = np.empty(n_txt, dtype=int), np.empty(n_txt, dtype=int)
             d_log = {'#text': n_txt, '#label': len(label_options), 'labels': label_options}
             logger.info(f'Evaluating {pl.i(dnm)} with {pl.i(d_log)}...')
 
-            txts = [mode2map.map_text(t) for t in pairs.keys()]
-            label_options = [mode2map.map_label(lb) for lb in label_options]
             logger.info('Encoding texts...')
             txt_embeds = model.encode(txts, batch_size=bsz, show_progress_bar=True)
             logger.info('Encoding labels...')
