@@ -2,10 +2,9 @@ import re
 import os
 import json
 import time
-from typing import Dict, Any
-
 import requests
 from os.path import join as os_join
+from typing import Dict, Any
 
 import numpy as np
 import pandas as pd
