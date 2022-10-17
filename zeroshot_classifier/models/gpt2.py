@@ -802,7 +802,8 @@ def load_trained(
                 raise NotImplementedError('TODO')
         else:  # 8 epoch, model w/ best eval loss
             if form == 'vanilla':
-                dir_nm = '2022-10-11_23-44-51_NVIDIA-GPT2-gpt2-medium-vanilla-aspect-norm'
+                # dir_nm = '2022-10-11_23-44-51_NVIDIA-GPT2-gpt2-medium-vanilla-aspect-norm'  # warmup 0.01
+                dir_nm = '2022-10-14_07-45-31_NVIDIA-GPT2-gpt2-medium-vanilla-aspect-norm'  # warmup 0.1
             else:
                 raise NotImplementedError('TODO')
         path = os_join(get_base_path(), u.proj_dir, u.model_dir, dir_nm, 'trained')
@@ -1037,8 +1038,8 @@ if __name__ == '__main__':
         # md_nm = 'debug'
         md_nm = 'gpt2-medium'
 
-        form = 'vanilla'
-        # form = 'implicit'
+        # form = 'vanilla'
+        form = 'implicit'
         # form = 'explicit'
         if form == 'explicit':
             dir_nm = '2022-06-20_22-50-06_Explicit-Pretrain-Aspect-NVIDIA-GPT2-gpt2-medium-explicit-aspect-norm'
@@ -1104,7 +1105,7 @@ if __name__ == '__main__':
         trainer.save_model(save_path)
         tokenizer.save_pretrained(save_path)
         os.listdir(save_path)
-    train()
+    # train()
 
     def run_eval():
         transformers.set_seed(seed)  # cos explicit 3 epoch doesn't generate BOA token...
@@ -1124,7 +1125,7 @@ if __name__ == '__main__':
             domain=dom, batch_size=48, form=form, load_model_args=dict(normalize_aspect=True, epoch=n_ep),
             embed_sim=True
         )
-    # run_eval()
+    run_eval()
 
     def sanity_check_trained_generate():
         text = 'hello world'

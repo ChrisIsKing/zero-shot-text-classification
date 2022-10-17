@@ -71,13 +71,13 @@ def map_model_dir_nm(
 ) -> str:
     out = f'{now(for_path=True)}_{model_name}'
     if name:
-        out = f'{out}-{name}'
+        out = f'{out}_{name}'
     if mode:
-        out = f'{out}-{mode}'
+        out = f'{out}_{mode}'
     if sampling:
-        out = f'{out}-{sampling}'
+        out = f'{out}_{sampling}'
     if normalize_aspect:
-        out = f'{out}-aspect-norm'
+        out = f'{out}_asp-norm'
     return out
 
 

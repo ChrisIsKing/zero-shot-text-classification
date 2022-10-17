@@ -1,4 +1,3 @@
-import os
 import math
 import datetime
 from os.path import join as os_join
@@ -8,7 +7,6 @@ from transformers import Trainer, TrainingArguments, TrainerCallback
 import datasets
 
 from stefutil import *
-from zeroshot_classifier.util import *
 
 
 logger = get_logger('Explicit Trainer')
