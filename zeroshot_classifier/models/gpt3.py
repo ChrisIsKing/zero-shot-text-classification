@@ -2,9 +2,11 @@ import re
 import os
 import json
 import time
+from typing import Dict, Any
+from argparse import ArgumentParser
+
 import requests
 from os.path import join as os_join
-from typing import Dict, Any
 
 import numpy as np
 import pandas as pd
@@ -55,14 +57,17 @@ class ApiCaller:
         while not res or res.status_code != 200:
             if res:
                 assert res.status_code == 429  # Too many request, retry
-            time.sleep(1)
+            time.sleep(0.5)
             res = _call()
 
         res = json.loads(res.text)
         # mic(res)
         assert len(res['choices']) == 1  # sanity check only generated one completion
+
+        # if res['choices'][0]['finish_reason'] != 'stop':
+        #     mic(res)
         res = res['choices'][0]
-        assert res['finish_reason'] == 'stop'  # TODO: make sure GPT3 generates all it wants to
+        # assert res['finish_reason'] == 'stop'  # TODO: make sure GPT3 generates all it wants to
         return res['text']
 
 
@@ -133,24 +138,33 @@ class PromptMap:
         return f'{question}\n Text: {truncate_text(text)} \n Answer:'
 
 
-def evaluate(model: str = 'text-ada-001', domain: str = 'in'):
+def evaluate(model: str = 'text-ada-001', domain: str = 'in', dataset_name: str = 'all'):
     ac = ApiCaller(model=model)
+
+    all_dset = dataset_name == 'all'
+    if not all_dset:
+        _dom = sconfig(f'UTCD.datasets.{dataset_name}.domain')
+        if domain is not None:
+            domain = _dom
+        else:
+            assert domain == _dom
+    if all_dset:
+        dataset_names = utcd_util.get_dataset_names(domain)
+    else:
+        dataset_names = [dataset_name]
 
     output_dir_nm = f'{now(for_path=True)}_Zeroshot-GPT3-{model}'
     output_path = os_join(u.eval_path, output_dir_nm, domain2eval_dir_nm(domain))
     os.makedirs(output_path, exist_ok=True)
 
-    dataset_names = utcd_util.get_dataset_names(domain)
     log_fnm = f'{now(for_path=True)}_GPT3_{model}_{domain}_Eval'
     logger_fl = get_logger('GPT3 Eval', typ='file-write', file_path=os_join(output_path, f'{log_fnm}.log'))
 
-    d_log = dict(model_name=model, domain=domain, output_path=output_path)
+    d_log = dict(model_name=model, domain=domain, dataset_names=dataset_names, output_path=output_path)
     logger.info(f'Evaluating GPT3 model w/ {pl.i(d_log)}... ')
     logger_fl.info(f'Evaluating GPT3 model w/ {d_log}... ')
 
     for dnm in dataset_names:
-        if dnm != 'emotion':  # TODO: debugging
-            continue
         dset = get_dataset(dnm, splits='test')['test']
         pm = PromptMap(dataset_name=dnm)
         label_options = [lb.lower() for lb in pm.labels]
@@ -159,17 +173,22 @@ def evaluate(model: str = 'text-ada-001', domain: str = 'in'):
         n_dset = len(dset)
         trues, preds = np.empty(n_dset, dtype=int), np.empty(n_dset, dtype=int)
 
-        def _call(e: Dict[str, Any]):
+        def _call(e: Dict[str, Any], pbar=None):
             txt, lbs = e['text'], e['labels']
             prompt = pm(txt)
             answer = ac(prompt)  # TODO: maybe GPT3 generates multiple answers?
-            answer = answer.lower()
+            answer = answer.lower().strip()
 
-            if answer not in label_options:
-                logger_fl.warning(f'Generated {pl.i(answer)}, not one of label options')
-                return -1, lbs[0]
-            else:
+            if pbar:
+                _d_log = dict(labels=[label_options[i] for i in lbs], answer=[answer])
+                pbar.set_postfix({k: pl.i(v) for k, v in _d_log.items()})
+
+            if answer in label_options:
                 return lb2id[answer], lb2id[answer]
+            else:
+                logger.warning(f'Generated {pl.i([answer])}, not one of label options')
+                logger_fl.warning(f'Generated {[answer]}, not one of label options')
+                return -1, lbs[0]
 
         concurrent = False
         if concurrent:  # concurrency doesn't seem to help
@@ -177,7 +196,7 @@ def evaluate(model: str = 'text-ada-001', domain: str = 'in'):
         else:
             it = tqdm(dset, desc=f'Evaluating {pl.i(dnm)}')
             for idx, elm in enumerate(it):
-                preds[idx], trues[idx] = _call(elm)
+                preds[idx], trues[idx] = _call(elm, pbar=it)
 
         args = dict(
             labels=[-1, *range(len(label_options))], target_names=['Label not in dataset', *label_options],
@@ -190,11 +209,10 @@ def evaluate(model: str = 'text-ada-001', domain: str = 'in'):
 
         path = os_join(output_path, f'{dnm}.csv')
         pd.DataFrame(report).transpose().to_csv(path)
-        exit(1)
 
 
 if __name__ == '__main__':
-    mic.output_width = 128
+    mic.output_width = 256
 
     with open(os_join(u.proj_path, 'auth', 'open-ai.json')) as f:
         d = json.load(f)
@@ -229,5 +247,24 @@ if __name__ == '__main__':
         mic(res)
     # try_completion()
 
-    evaluate(model='text-ada-001', domain='in')
-    # evaluate(model='text-davinci-002', domain='in')
+    evaluate(model='text-ada-001', domain='in', dataset_name='emotion')
+    # evaluate(model='text-davinci-002', domain='in', dataset_name='emotion')
+
+    def parse_args():
+        parser = ArgumentParser()
+
+        parser.add_argument('--model', type=str, default='text-ada-001', help="""
+            GPT3 model from Open AI API, see `https://beta.openai.com/docs/models/gpt-3`
+        """)
+        parser.add_argument('--dataset', type=str, default='all', help="""
+            One of dataset name in UTCD or `all` for all datasets in a domain, see argument `domain`
+        """)
+        parser.add_argument('--domain', type=str, choices=['in', 'out'], default='in', help="""
+            One of [`in`, `out`] for in-domain, out-of-domain respectively
+        """)
+        return parser.parse_args()
+
+    def command_prompt():
+        args = parse_args()
+        evaluate(model=args.model, dataset_name=args.dataset, domain=args.domain)
+    # command_prompt()
