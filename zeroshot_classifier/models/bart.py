@@ -3,6 +3,7 @@ from os.path import join as os_join
 
 import numpy as np
 import pandas as pd
+import torch.cuda
 from sklearn.metrics import classification_report
 from transformers import pipeline
 from tqdm.auto import tqdm
@@ -17,8 +18,20 @@ import zeroshot_classifier.util.utcd as utcd_util
 logger = get_logger('BART')
 
 
-def evaluate(model_name: str = 'facebook/bart-large-mnli', domain: str = 'in'):
+def evaluate(model_name: str = 'facebook/bart-large-mnli', domain: str = 'in', dataset_name: str = 'all'):
     bsz = 32
+
+    all_dset = dataset_name == 'all'
+    if not all_dset:
+        _dom = sconfig(f'UTCD.datasets.{dataset_name}.domain')
+        if domain is not None:
+            domain = _dom
+        else:
+            assert domain == _dom
+    if all_dset:
+        dataset_names = utcd_util.get_dataset_names(domain)
+    else:
+        dataset_names = [dataset_name]
 
     output_dir_nm = f'{now(for_path=True)}_Zeroshot-BART'
     output_path = os_join(u.eval_path, output_dir_nm, domain2eval_dir_nm(domain))
@@ -27,19 +40,21 @@ def evaluate(model_name: str = 'facebook/bart-large-mnli', domain: str = 'in'):
     log_fnm = f'{now(for_path=True)}_BART_{domain}_Eval'
     logger_fl = get_logger('BART Eval', typ='file-write', file_path=os_join(output_path, f'{log_fnm}.log'))
 
-    d_log = dict(model_name=model_name, domain=domain, batch_size=bsz, output_path=output_path)
+    d_log = dict(
+        model_name=model_name, domain=domain, dataset_names=dataset_names, batch_size=bsz, output_path=output_path
+    )
     logger.info(f'Evaluating GPT3 model w/ {pl.i(d_log)}... ')
     logger_fl.info(f'Evaluating BART model w/ {d_log}... ')
 
-    model = pipeline('zero-shot-classification', model=model_name)
+    device = 0 if torch.cuda.is_available() else -1  # See `transformers::pipelines::base`
+    model = pipeline('zero-shot-classification', model=model_name, device=device)
 
-    data = get_datasets(domain=domain)
-    dataset_names = utcd_util.get_dataset_names(domain)
+    data = get_datasets(domain=domain, dataset_names=dataset_names)
 
     split = 'test'
     for dnm in dataset_names:  # loop through all datasets
-        if dnm != 'emotion':  # TODO: debugging
-            continue
+        # if dnm != 'emotion':  # TODO: debugging
+        #     continue
         dset = data[dnm]
         pairs = dset[split]
         d_info = sconfig(f'UTCD.datasets.{dnm}.splits.{split}')
@@ -53,18 +68,13 @@ def evaluate(model_name: str = 'facebook/bart-large-mnli', domain: str = 'in'):
         it = tqdm(model(txts, label_options, batch_size=bsz), desc=f'Evaluating {pl.i(dnm)}', total=n_txt)
         for i, out in enumerate(it):
             txt, labels, scores = out['sequence'], out['labels'], out['scores']
-            # mic(txt, labels, scores)
-
             idx_pred = max(enumerate(scores), key=lambda x: x[1])[0]  # Index of highest score
             pred = lb2id[labels[idx_pred]]
-            # pred = max(zip(labels, scores), key=lambda x: x[1])[0]
             lbs_true = [lb2id[lb] for lb in pairs[txt]]
-            # mic(pred, trues)
-            if pred in label_options:
+            if pred in lbs_true:
                 preds[i] = trues[i] = pred
             else:
                 preds[i], trues[i] = -1, lbs_true[0]
-            # exit(1)
         args = dict(
             labels=[-1, *range(len(label_options))], target_names=['Label not in dataset', *label_options],
             zero_division=0, output_dict=True
@@ -76,8 +86,18 @@ def evaluate(model_name: str = 'facebook/bart-large-mnli', domain: str = 'in'):
 
         path = os_join(output_path, f'{dnm}.csv')
         pd.DataFrame(report).transpose().to_csv(path)
-        exit(1)
 
 
 if __name__ == '__main__':
-    evaluate(domain='in')
+    # evaluate(domain='in')
+
+    # in the order of #text
+    # evaluate(domain='out', dataset_name='finance_sentiment')
+    # evaluate(domain='out', dataset_name='snips')
+    # evaluate(domain='out', dataset_name='banking77')
+    # evaluate(domain='out', dataset_name='patent')
+    # evaluate(domain='out', dataset_name='multi_eurlex')
+    # evaluate(domain='out', dataset_name='nlu_evaluation')
+    # evaluate(domain='out', dataset_name='yelp')
+    evaluate(domain='out', dataset_name='consumer_finance')
+    # evaluate(domain='out', dataset_name='amazon_polarity')

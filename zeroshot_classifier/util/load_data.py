@@ -76,7 +76,8 @@ SplitDataset = Dict[str, Union[Dataset, List[str], str]]  # train & test splits 
 
 
 def get_datasets(
-        domain: str = 'in', n_sample: int = None, normalize_aspect: Union[bool, int] = False
+        domain: str = 'in', n_sample: int = None, normalize_aspect: Union[bool, int] = False,
+        dataset_names: List[str] = None
 ) -> [str, SplitDataset]:
     """
     :param n_sample: If given, a random sample of the entire dataset is selected
@@ -86,6 +87,7 @@ def get_datasets(
         If int given, used as seed for sampling
     :param domain: Needed for aspect normalization
         Intended for training directly on out-of-domain data, see `zeroshot_classifier/models/bert.py`
+    :param dataset_names: If given, only load the specified datasets
     """
     path = os_join(u.proj_path, in_domain_data_path if domain == 'in' else out_of_domain_data_path)
     if not os.path.exists(path):
@@ -101,7 +103,11 @@ def get_datasets(
             datasets = save_aspect_normalized_datasets(domain=domain)
         _keys.add('eval')
     if not datasets:
-        paths = [os_join(path, f) for f in listdir(path) if isfile(os_join(path, f)) and f.endswith('.json')]
+        if dataset_names:
+            dataset_names = [f'{dnm}.json' for dnm in dataset_names]
+        else:
+            dataset_names = listdir(path)
+        paths = [os_join(path, f) for f in dataset_names if isfile(os_join(path, f)) and f.endswith('.json')]
         datasets = dict()
         it = tqdm(paths, desc='Loading JSON datasets')
         for path in it:
