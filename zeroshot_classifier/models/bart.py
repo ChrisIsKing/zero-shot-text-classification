@@ -53,8 +53,6 @@ def evaluate(model_name: str = 'facebook/bart-large-mnli', domain: str = 'in', d
 
     split = 'test'
     for dnm in dataset_names:  # loop through all datasets
-        # if dnm != 'emotion':  # TODO: debugging
-        #     continue
         dset = data[dnm]
         pairs = dset[split]
         d_info = sconfig(f'UTCD.datasets.{dnm}.splits.{split}')
@@ -99,5 +97,5 @@ if __name__ == '__main__':
     # evaluate(domain='out', dataset_name='multi_eurlex')
     # evaluate(domain='out', dataset_name='nlu_evaluation')
     # evaluate(domain='out', dataset_name='yelp')
-    evaluate(domain='out', dataset_name='consumer_finance')
-    # evaluate(domain='out', dataset_name='amazon_polarity')
+    # evaluate(domain='out', dataset_name='consumer_finance')
+    evaluate(domain='out', dataset_name='amazon_polarity')

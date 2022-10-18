@@ -247,13 +247,14 @@ if __name__ == '__main__':
         mic(res)
     # try_completion()
 
-    evaluate(model='text-ada-001', domain='in', dataset_name='emotion')
+    # evaluate(model='text-ada-001', domain='in', dataset_name='emotion')
     # evaluate(model='text-davinci-002', domain='in', dataset_name='emotion')
 
     def parse_args():
         parser = ArgumentParser()
 
-        parser.add_argument('--model', type=str, default='text-ada-001', help="""
+        models = ['text-ada-001', 'text-babbage-001', 'text-curie-001', 'text-davinci-002']
+        parser.add_argument('--model', type=str, choices=models, default='text-ada-001', help="""
             GPT3 model from Open AI API, see `https://beta.openai.com/docs/models/gpt-3`
         """)
         parser.add_argument('--dataset', type=str, default='all', help="""
@@ -267,4 +268,4 @@ if __name__ == '__main__':
     def command_prompt():
         args = parse_args()
         evaluate(model=args.model, dataset_name=args.dataset, domain=args.domain)
-    # command_prompt()
+    command_prompt()
