@@ -193,7 +193,7 @@ def evaluate(model: str = 'text-ada-001', domain: str = 'in', dataset_name: str 
     output_path = os_join(u.eval_path, output_dir_nm, domain2eval_dir_nm(domain))
     os.makedirs(output_path, exist_ok=True)
 
-    log_fnm = f'{now(for_path=True)}_GPT3_{model}_{domain}_Eval'
+    log_fnm = f'{now(for_path=True)}_GPT3_{model}_{domain}_{dataset_name}_Eval'
     logger_fl = get_logger('GPT3 Eval', typ='file-write', file_path=os_join(output_path, f'{log_fnm}.log'))
 
     d_log = dict(model_name=model, domain=domain, dataset_names=dataset_names, output_path=output_path)
