@@ -1,8 +1,9 @@
+import logging
 import re
 import os
 import json
 import time
-from typing import Dict, Any
+from typing import List, Dict, Any
 from argparse import ArgumentParser
 
 import requests
@@ -61,14 +62,8 @@ class ApiCaller:
             res = _call()
 
         res = json.loads(res.text)
-        # mic(res)
         assert len(res['choices']) == 1  # sanity check only generated one completion
-
-        # if res['choices'][0]['finish_reason'] != 'stop':
-        #     mic(res)
-        res = res['choices'][0]
-        # assert res['finish_reason'] == 'stop'  # TODO: make sure GPT3 generates all it wants to
-        return res['text']
+        return res['choices'][0]['text']
 
 
 def text2n_token(txt: str) -> int:
@@ -93,7 +88,10 @@ class PromptMap:
 
     logger = get_logger('Prompt Map')
 
-    def __init__(self, dataset_name: str = None, max_text_length: int = 1024, max_prompt_length: int = 1024 + 256):
+    def __init__(
+            self, dataset_name: str = None, max_text_length: int = 1024, max_prompt_length: int = 1024 + 256,
+            logger_fl: logging.Logger = None
+    ):
         self.dataset_name = dataset_name
         self.labels = sconfig(f'UTCD.datasets.{dataset_name}.splits.test.labels')  # Take labels from the test split
 
@@ -102,11 +100,14 @@ class PromptMap:
         self.max_text_length = max_text_length
         self.max_prompt_length = max_prompt_length
 
+        self.logger_fl = logger_fl
         d_log = {
             'dataset_name': dataset_name, 'labels': self.labels, '#class': self.n_cls,
             'max_text_length': max_text_length, 'max_prompt_length': max_prompt_length
         }
         PromptMap.logger.info(f'Prompt Map initialized with: {pl.i(d_log)}')
+        if self.logger_fl:
+            self.logger_fl.info(f'Prompt Map initialized with: {pl.nc(d_log)}')
 
     def __call__(self, text: str = None):
         n_txt = text2n_token(text)
@@ -128,7 +129,11 @@ class PromptMap:
             assert n_txt_ >= 50  # sanity check
             text = truncate_text(text, n_txt_)
             PromptMap.logger.warning(f'Prompt too long and text segment truncated: '
-                                     f'{n_prompt} -> {self.max_prompt_length}')
+                                     f'{pl.i(n_prompt)} -> {pl.i(self.max_prompt_length)}')
+
+            if self.logger_fl:
+                self.logger_fl.warning(f'Prompt too long and text segment truncated: '
+                                       f'{pl.nc(n_prompt)} -> {pl.nc(self.max_prompt_length)}')
             prompt = self._to_prompt(question=question, text=text)
         return prompt
 
@@ -138,7 +143,38 @@ class PromptMap:
         return f'{question}\n Text: {truncate_text(text)} \n Answer:'
 
 
-def evaluate(model: str = 'text-ada-001', domain: str = 'in', dataset_name: str = 'all'):
+class _EvalSingle:
+    def __init__(
+            self, pm: PromptMap = None, api_caller: ApiCaller = None,
+            label_options: List[str] = None, lb2id: Dict[str, int] = None,
+            logger_fl: logging.Logger = None
+    ):
+        self.pm = pm
+        self.ac = api_caller
+        self.label_options = label_options
+        self.lb2id = lb2id
+
+        self.logger_fl = logger_fl
+
+    def __call__(self, e: Dict[str, Any], pbar=None):
+        txt, lbs = e['text'], e['labels']
+        prompt = self.pm(txt)
+        answer = self.ac(prompt)  # TODO: maybe GPT3 generates multiple answers?
+        answer = answer.lower().strip()
+
+        if pbar:
+            _d_log = dict(labels=[self.label_options[i] for i in lbs], answer=[answer])
+            pbar.set_postfix({k: pl.i(v) for k, v in _d_log.items()})
+
+        if answer in self.label_options:
+            return self.lb2id[answer], self.lb2id[answer]
+        else:
+            logger.warning(f'Generated {pl.i([answer])}, not one of label options')
+            self.logger_fl.warning(f'Generated {pl.nc([answer])}, not one of label options')
+            return -1, lbs[0]
+
+
+def evaluate(model: str = 'text-ada-001', domain: str = 'in', dataset_name: str = 'all', concurrent: bool = False):
     ac = ApiCaller(model=model)
 
     all_dset = dataset_name == 'all'
@@ -166,37 +202,21 @@ def evaluate(model: str = 'text-ada-001', domain: str = 'in', dataset_name: str 
 
     for dnm in dataset_names:
         dset = get_dataset(dnm, splits='test')['test']
-        pm = PromptMap(dataset_name=dnm)
+        pm = PromptMap(dataset_name=dnm, logger_fl=logger_fl)
         label_options = [lb.lower() for lb in pm.labels]
         lb2id = {lb: idx for idx, lb in enumerate(label_options)}
+        eval_single = _EvalSingle(pm=pm, api_caller=ac, label_options=label_options, lb2id=lb2id, logger_fl=logger_fl)
 
-        n_dset = len(dset)
-        trues, preds = np.empty(n_dset, dtype=int), np.empty(n_dset, dtype=int)
-
-        def _call(e: Dict[str, Any], pbar=None):
-            txt, lbs = e['text'], e['labels']
-            prompt = pm(txt)
-            answer = ac(prompt)  # TODO: maybe GPT3 generates multiple answers?
-            answer = answer.lower().strip()
-
-            if pbar:
-                _d_log = dict(labels=[label_options[i] for i in lbs], answer=[answer])
-                pbar.set_postfix({k: pl.i(v) for k, v in _d_log.items()})
-
-            if answer in label_options:
-                return lb2id[answer], lb2id[answer]
-            else:
-                logger.warning(f'Generated {pl.i([answer])}, not one of label options')
-                logger_fl.warning(f'Generated {[answer]}, not one of label options')
-                return -1, lbs[0]
-
-        concurrent = False
         if concurrent:  # concurrency doesn't seem to help
-            conc_map(_call, dset, with_tqdm=dict(desc=f'Evaluating {pl.i(dnm)}', chunksize=32), mode='process')
+            with_tqdm = dict(desc=f'Evaluating {pl.i(dnm)}', chunksize=32)
+            lst = conc_map(eval_single, dset, with_tqdm=with_tqdm, mode='thread')
+            preds, trues = zip(*lst)
         else:
+            n_dset = len(dset)
+            trues, preds = np.empty(n_dset, dtype=int), np.empty(n_dset, dtype=int)
             it = tqdm(dset, desc=f'Evaluating {pl.i(dnm)}')
             for idx, elm in enumerate(it):
-                preds[idx], trues[idx] = _call(elm, pbar=it)
+                preds[idx], trues[idx] = eval_single(elm, pbar=it)
 
         args = dict(
             labels=[-1, *range(len(label_options))], target_names=['Label not in dataset', *label_options],
@@ -250,6 +270,9 @@ if __name__ == '__main__':
     # evaluate(model='text-ada-001', domain='in', dataset_name='emotion')
     # evaluate(model='text-davinci-002', domain='in', dataset_name='emotion')
 
+    # evaluate(model='text-davinci-002', domain='out', dataset_name='finance_sentiment')
+    # evaluate(model='text-davinci-002', domain='out', dataset_name='consumer_finance')
+
     def parse_args():
         parser = ArgumentParser()
 
@@ -263,9 +286,12 @@ if __name__ == '__main__':
         parser.add_argument('--domain', type=str, choices=['in', 'out'], default='in', help="""
             One of [`in`, `out`] for in-domain, out-of-domain respectively
         """)
+        parser.add_argument('--concurrent', type=bool, default=False, help="""
+            Make GPT3 completion requests concurrently
+        """)
         return parser.parse_args()
 
     def command_prompt():
         args = parse_args()
-        evaluate(model=args.model, dataset_name=args.dataset, domain=args.domain)
+        evaluate(model=args.model, dataset_name=args.dataset, domain=args.domain, concurrent=args.concurrent)
     command_prompt()
