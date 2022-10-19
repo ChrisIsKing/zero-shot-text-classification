@@ -194,7 +194,7 @@ def evaluate(model: str = 'text-ada-001', domain: str = 'in', dataset_name: str 
     os.makedirs(output_path, exist_ok=True)
 
     log_fnm = f'{now(for_path=True)}_GPT3_{model}_{domain}_{dataset_name}_Eval'
-    logger_fl = get_logger('GPT3 Eval', typ='file-write', file_path=os_join(output_path, f'{log_fnm}.log'))
+    logger_fl = get_logger('GPT3 Eval', kind='file-write', file_path=os_join(output_path, f'{log_fnm}.log'))
 
     d_log = dict(model_name=model, domain=domain, dataset_names=dataset_names, output_path=output_path)
     logger.info(f'Evaluating GPT3 model w/ {pl.i(d_log)}... ')
@@ -268,10 +268,14 @@ if __name__ == '__main__':
     # try_completion()
 
     # evaluate(model='text-ada-001', domain='in', dataset_name='emotion')
+    # evaluate(model='text-curie-001', domain='in', dataset_name='emotion', concurrent=True)
     # evaluate(model='text-davinci-002', domain='in', dataset_name='emotion')
 
+    # evaluate(model='text-curie-001', domain='in', dataset_name='finance_sentiment', concurrent=True)
+    evaluate(model='text-curie-001', domain='in', dataset_name='banking77', concurrent=True)
     # evaluate(model='text-davinci-002', domain='out', dataset_name='finance_sentiment')
     # evaluate(model='text-davinci-002', domain='out', dataset_name='consumer_finance')
+    # evaluate(model='text-davinci-002', domain='out', dataset_name='amazon_polarity', concurrent=True)
 
     def parse_args():
         parser = ArgumentParser()
@@ -294,4 +298,4 @@ if __name__ == '__main__':
     def command_prompt():
         args = parse_args()
         evaluate(model=args.model, dataset_name=args.dataset, domain=args.domain, concurrent=args.concurrent)
-    command_prompt()
+    # command_prompt()
