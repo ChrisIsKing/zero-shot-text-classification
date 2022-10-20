@@ -1,7 +1,7 @@
 import os
-import math
 import pickle
 from os.path import join as os_join
+from typing import List
 
 import numpy as np
 import pandas as pd
@@ -125,6 +125,36 @@ def evaluate(
             pd.DataFrame(report).transpose().to_csv(path)
 
 
+def merge_splits_and_evaluate(domain: str = 'in', dataset_name: str = None, paths: List[str] = None):
+    trues, preds = [], []
+    for p in paths:
+        with open(p, 'rb') as f:
+            d = pickle.load(f)
+        trues.append(d['trues'])
+        preds.append(d['preds'])
+    trues, preds = np.concatenate(trues), np.concatenate(preds)
+
+    d_info = sconfig(f'UTCD.datasets.{dataset_name}.splits.test')
+    n_txt, label_options = d_info['n_text'], d_info['labels']
+    assert trues.size == preds.size == n_txt
+
+    args = dict(
+        labels=[-1, *range(len(label_options))], target_names=['Label not in dataset', *label_options],
+        zero_division=0, output_dict=True
+    )
+    report = classification_report(trues, preds, **args)
+    acc = f'{report["accuracy"]:.3f}'
+    logger.info(f'{pl.i(dataset_name)} accuracy: {pl.i(acc)}')
+
+    output_dir_nm = f'{now(for_path=True)}_Zeroshot-BART'
+    output_path = os_join(u.eval_path, output_dir_nm, domain2eval_dir_nm(domain))
+    os.makedirs(output_path, exist_ok=True)
+    path = os_join(output_path, f'{dataset_name}.csv')
+    df = pd.DataFrame(report).transpose()
+    df.to_csv(path)
+    return df
+
+
 if __name__ == '__main__':
     # evaluate(domain='in')
 
@@ -141,16 +171,22 @@ if __name__ == '__main__':
     # evaluate(domain='out', dataset_name='consumer_finance', split_index=0, n_splits=1000)
 
     def chore_merge_splits():
-        path = os_join(
-            u.eval_path, '2022-10-19_03-31-47_Zeroshot-BART', '22-10-19_out-of-domain',
-            '2022-10-19_03-34-55_consumer_finance_split_1_1000 predictions.pkl'
-        )
-        with open(path, 'rb') as f:
-            d = pickle.load(f)
-        trues, preds = d['trues'], d['preds']
-        mic(type(trues), type(preds))
-        mic(trues.shape, preds.shape)
-        mic(trues[:32], preds[:32])
-    # chore_merge_splits()
+        dir_nms = [
+            '2022-10-19_04-07-56_Zeroshot-BART',
+            '2022-10-19_04-10-14_Zeroshot-BART',
+            '2022-10-19_04-12-11_Zeroshot-BART',
+            '2022-10-19_04-14-26_Zeroshot-BART'
+        ]
+        fnms = [
+            '2022-10-19_16-09-25_consumer_finance_split_1_4 predictions',
+            '2022-10-19_17-13-13_consumer_finance_split_2_4 predictions',
+            '2022-10-19_19-12-10_consumer_finance_split_3_4 predictions',
+            '2022-10-19_20-55-40_consumer_finance_split_4_4 predictions'
+        ]
+        paths = [
+            os_join(u.eval_path, dir_nm, '22-10-19_out-of-domain', f'{fnm}.pkl') for dir_nm, fnm in zip(dir_nms, fnms)
+        ]
+        merge_splits_and_evaluate(domain='out', dataset_name='consumer_finance', paths=paths)
+    chore_merge_splits()
 
-    evaluate(domain='out', dataset_name='consumer_finance', split_index=3, n_splits=4)
+    # evaluate(domain='out', dataset_name='consumer_finance', split_index=3, n_splits=4)
