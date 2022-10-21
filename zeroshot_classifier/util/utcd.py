@@ -75,6 +75,16 @@ def dataset2hf_dataset(
     return Dataset.from_pandas(df, features=feats)
 
 
+def subsample_dataset(dataset_name: str = None, split: str = 'train', n_tgt: int = 5000, seed: int = None) -> Dataset:
+    d = sconfig(f'UTCD.datasets.{dataset_name}')
+    domain = d['domain']
+    dset = load_data.get_datasets(domain=domain, dataset_names=dataset_name)[dataset_name][split]
+
+    d = d.get(f'splits.{split}')
+    dset = load_data.subsample_dataset(dataset=dset, n_src=d['n_pair'], n_tgt=n_tgt, seed=seed)
+    return dataset2hf_dataset(dataset=dset, labels=d['labels'], multi_label=d['multi_label'])
+
+
 def process_utcd_dataset(domain: str = 'in', join=False):
     """
     :param domain: One of [`in`, `out`]
@@ -189,6 +199,17 @@ def get_utcd_info() -> pd.DataFrame:
 
 def get_dataset_names(domain: str = 'in'):
     return [dnm for dnm, d_dset in sconfig('UTCD.datasets').items() if d_dset['domain'] == domain]
+
+
+def get_eval_dataset_names(domain: str = 'in', dataset_name: str = 'all') -> List[str]:
+    all_dset = dataset_name == 'all'
+    if not all_dset:
+        _dom = sconfig(f'UTCD.datasets.{dataset_name}.domain')
+        if domain is not None:
+            domain = _dom
+        else:
+            assert domain == _dom
+    return get_dataset_names(domain) if all_dset else [dataset_name]
 
 
 UtcdDatasetNames = namedtuple('UtcdDatasetNames', ['in_domain', 'out_of_domain'])

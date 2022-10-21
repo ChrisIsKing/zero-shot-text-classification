@@ -3,11 +3,10 @@ import re
 import os
 import json
 import time
-from typing import List, Dict, Any, Union
-from argparse import ArgumentParser
-
 import requests
 from os.path import join as os_join
+from typing import List, Dict, Any, Union
+from argparse import ArgumentParser
 
 import numpy as np
 import pandas as pd
@@ -18,6 +17,9 @@ from stefutil import *
 from zeroshot_classifier.util import *
 import zeroshot_classifier.util.utcd as utcd_util
 from zeroshot_classifier.preprocess import get_dataset
+
+
+__all__ = ['ApiCaller', 'PromptMap', 'evaluate']
 
 
 logger = get_logger('GPT3')
@@ -181,19 +183,9 @@ def evaluate(
 ):
     ac = ApiCaller(model=model)
 
-    all_dset = dataset_name == 'all'
-    if not all_dset:
-        _dom = sconfig(f'UTCD.datasets.{dataset_name}.domain')
-        if domain is not None:
-            domain = _dom
-        else:
-            assert domain == _dom
-    if all_dset:
-        if subsample:
-            raise NotImplementedError('Subsampling intended for single dataset')
-        dataset_names = utcd_util.get_dataset_names(domain)
-    else:
-        dataset_names = [dataset_name]
+    if dataset_name == 'all' and subsample:
+        raise NotImplementedError('Subsampling intended for single dataset')
+    dataset_names = utcd_util.get_eval_dataset_names(domain=domain, dataset_name=dataset_name)
 
     output_dir_nm = f'{now(for_path=True)}_Zeroshot-GPT3-{model}'
     output_path = os_join(u.eval_path, output_dir_nm, domain2eval_dir_nm(domain))
@@ -201,18 +193,14 @@ def evaluate(
 
     log_fnm = f'{now(for_path=True)}_GPT3_{model}_{domain}_{dataset_name}_Eval'
     logger_fl = get_logger('GPT3 Eval', kind='file-write', file_path=os_join(output_path, f'{log_fnm}.log'))
-
     d_log = dict(model_name=model, domain=domain, dataset_names=dataset_names, output_path=output_path)
     logger.info(f'Evaluating GPT3 model w/ {pl.i(d_log)}... ')
     logger_fl.info(f'Evaluating GPT3 model w/ {d_log}... ')
 
     for dnm in dataset_names:
         if subsample:
-            d = sconfig(f'UTCD.datasets.{dnm}.splits.test')
             n_tgt = subsample if isinstance(subsample, int) else 5000
-            dset = load_data.get_datasets(domain=domain, dataset_names=dnm)[dnm]['test']
-            dset = load_data.subsample_dataset(dataset=dset, n_src=d['n_pair'], n_tgt=n_tgt, seed=subsample_seed)
-            dset = utcd_util.dataset2hf_dataset(dataset=dset, labels=d['labels'], multi_label=d['multi_label'])
+            dset = utcd_util.subsample_dataset(dataset_name=dnm, split='test', n_tgt=n_tgt, seed=subsample_seed)
         else:
             dset = get_dataset(dnm, splits='test')['test']
         pm = PromptMap(dataset_name=dnm, logger_fl=logger_fl)
