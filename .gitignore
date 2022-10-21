@@ -21,6 +21,7 @@ plot/
 test-lang.py
 cache/
 eval/
+auth/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

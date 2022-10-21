@@ -25,6 +25,7 @@ from zeroshot_classifier.util import *
 
 __all__ = [
     'in_domain_url', 'out_of_domain_url', 'in_domain_data_path', 'out_of_domain_data_path',
+    'Dataset', 'SplitDataset',
     'get_datasets', 'to_aspect_normalized_datasets',
     'nli_template', 'get_nli_data', 'binary_cls_format', 'nli_cls_format', 'encoder_cls_format', 'seq_cls_format',
     'binary_explicit_format'
@@ -77,7 +78,7 @@ SplitDataset = Dict[str, Union[Dataset, List[str], str]]  # train & test splits 
 
 def get_datasets(
         domain: str = 'in', n_sample: int = None, normalize_aspect: Union[bool, int] = False,
-        dataset_names: List[str] = None
+        dataset_names: Union[str, List[str]] = None
 ) -> [str, SplitDataset]:
     """
     :param n_sample: If given, a random sample of the entire dataset is selected
@@ -104,6 +105,8 @@ def get_datasets(
         _keys.add('eval')
     if not datasets:
         if dataset_names:
+            if isinstance(dataset_names, str):
+                dataset_names = [dataset_names]
             dataset_names = [f'{dnm}.json' for dnm in dataset_names]
         else:
             dataset_names = listdir(path)
@@ -142,6 +145,41 @@ def get_datasets(
     return datasets
 
 
+def subsample_dataset(dataset: Dataset = None, n_src: int = None, n_tgt: int = None, seed: int = None) -> Dataset:
+    """
+    Sample texts from text-labels pairs to roughly `n_sample` in total, while maintaining class distribution
+    """
+    if n_src is None:
+        n_src = sum(len(lbs) for lbs in dataset.values())
+    assert n_tgt < n_src
+    ratio = n_tgt / n_src
+    d_log = {'#source': n_src, '#target': n_tgt, 'subsample-ratio': f'{round(ratio * 100, 3)}%'}
+    logger.info(f'Subsampling dataset w/ {pl.i(d_log)}... ')
+
+    cls2txt: Dict[str, Set[str]] = defaultdict(set)
+    for txt, lbs in dataset.items():
+        for lb in lbs:  # the same text may be added to multiple classes & hence sampled multiple times, see below
+            cls2txt[lb].add(txt)
+    cls2count = {cls: len(txts) for cls, txts in cls2txt.items()}
+    mic(cls2count, ratio, round(ratio * 100, 3), round(ratio * 100, -3))
+    # normalize by #pair instead of #text for keeping output #text close to `n_sample`
+    cls2count = {cls: round(c * ratio) for cls, c in cls2count.items()}  # goal count for output
+    mic(cls2count)
+    ret = dict()
+    if seed:
+        random.seed(seed)
+    for cls, c in cls2count.items():
+        to_sample = c
+        while to_sample > 0:
+            txts = random.sample(cls2txt[cls], to_sample)
+            for t in txts:
+                if t not in ret:  # ensure no-duplication in # samples added, since multi-label
+                    ret[t] = dataset[t]
+                    to_sample -= 1
+                    cls2txt[cls].remove(t)
+    return ret
+
+
 def to_aspect_normalized_datasets(
         data: Dict[str, SplitDataset], seed: int = None, domain: str = 'in'
 ) -> Dict[str, SplitDataset]:
@@ -160,35 +198,12 @@ def to_aspect_normalized_datasets(
     asp_min = min(aspect2n_txt, key=aspect2n_txt.get)
     logger.info(f'Normalizing each aspect to ~{pl.i(aspect2n_txt[asp_min])} samples... ')
 
-    def normalize_single(dset_: Dataset, dnm_: str, n_text: int) -> Dataset:
-        """
-        Sample texts from text-labels pairs to `n_sample` while maintaining class distribution
-        """
-        cls2txt: Dict[str, Set[str]] = defaultdict(set)
-        for txt, lbs in dset_.items():
-            for lb in lbs:  # the same text may be added to multiple classes & hence sampled multiple times, see below
-                cls2txt[lb].add(txt)
-        cls2count = {cls: len(txts) for cls, txts in cls2txt.items()}
-        # normalize by #pair instead of #text for keeping output #text close to `n_sample`
-        ratio = n_text / sconfig(f'UTCD.datasets.{dnm_}.splits.train.n_pair')
-        cls2count = {cls: round(c * ratio) for cls, c in cls2count.items()}  # goal count for output
-        out = dict()
-        for cls, c in cls2count.items():
-            to_sample = c
-            while to_sample > 0:
-                txts = random.sample(cls2txt[cls], to_sample)
-                for t in txts:
-                    if t not in out:  # ensure no-duplication in # samples added, since multi-label
-                        out[t] = dset_[t]
-                        to_sample -= 1
-                        cls2txt[cls].remove(t)
-        return out
-
     for dnm, d_dset in data.items():
         asp = sconfig(f'UTCD.datasets.{dnm}.aspect')
         if asp != asp_min:
             n_normed = sconfig(f'UTCD.datasets.{dnm}.splits.train.n_text') * aspect2n_txt[asp_min] / aspect2n_txt[asp]
-            d_dset['train'] = normalize_single(d_dset['train'], dnm, n_text=round(n_normed))
+            n_src = sconfig(f'UTCD.datasets.{dnm}.splits.train.n_pair')
+            d_dset['train'] = subsample_dataset(dataset=d_dset['train'], n_src=n_src, n_tgt=round(n_normed))
     dnm2count = defaultdict(dict)
     for dnm, d_dset in data.items():
         dnm2count[sconfig(f'UTCD.datasets.{dnm}.aspect')][dnm] = len(d_dset['train'])
