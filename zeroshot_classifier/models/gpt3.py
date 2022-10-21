@@ -211,11 +211,8 @@ def evaluate(
             d = sconfig(f'UTCD.datasets.{dnm}.splits.test')
             n_tgt = subsample if isinstance(subsample, int) else 5000
             dset = load_data.get_datasets(domain=domain, dataset_names=dnm)[dnm]['test']
-            mic(type(dset), len(dset))
             dset = load_data.subsample_dataset(dataset=dset, n_src=d['n_pair'], n_tgt=n_tgt, seed=subsample_seed)
             dset = utcd_util.dataset2hf_dataset(dataset=dset, labels=d['labels'], multi_label=d['multi_label'])
-            mic(len(dset))
-            exit(1)
         else:
             dset = get_dataset(dnm, splits='test')['test']
         pm = PromptMap(dataset_name=dnm, logger_fl=logger_fl)

@@ -161,10 +161,8 @@ def subsample_dataset(dataset: Dataset = None, n_src: int = None, n_tgt: int = N
         for lb in lbs:  # the same text may be added to multiple classes & hence sampled multiple times, see below
             cls2txt[lb].add(txt)
     cls2count = {cls: len(txts) for cls, txts in cls2txt.items()}
-    mic(cls2count, ratio, round(ratio * 100, 3), round(ratio * 100, -3))
     # normalize by #pair instead of #text for keeping output #text close to `n_sample`
     cls2count = {cls: round(c * ratio) for cls, c in cls2count.items()}  # goal count for output
-    mic(cls2count)
     ret = dict()
     if seed:
         random.seed(seed)

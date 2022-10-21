@@ -69,7 +69,6 @@ def dataset2hf_dataset(
     lb2id = {lb: i for i, lb in enumerate(labels)}
     # if not multi-label, `Sequence` of single element
     df = pd.DataFrame([dict(text=txt, labels=[lb2id[lb] for lb in lbs]) for txt, lbs in dataset.items()])
-    mic(type(dataset), len(dataset), df)
     length = -1 if multi_label else 1
     lbs = Sequence(feature=ClassLabel(names=labels), length=length)
     feats = Features(text=Value(dtype='string'), labels=lbs)
