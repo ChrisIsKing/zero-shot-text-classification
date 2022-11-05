@@ -80,7 +80,7 @@ def subsample_dataset(dataset_name: str = None, split: str = 'train', n_tgt: int
     domain = d['domain']
     dset = load_data.get_datasets(domain=domain, dataset_names=dataset_name)[dataset_name][split]
 
-    d = d.get(f'splits.{split}')
+    d = get(d, f'splits.{split}')
     dset = load_data.subsample_dataset(dataset=dset, n_src=d['n_pair'], n_tgt=n_tgt, seed=seed)
     return dataset2hf_dataset(dataset=dset, labels=d['labels'], multi_label=d['multi_label'])
 

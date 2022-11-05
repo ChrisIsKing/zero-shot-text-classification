@@ -7,6 +7,7 @@ import requests
 from os.path import join as os_join
 from typing import List, Dict, Any, Union
 from argparse import ArgumentParser
+from dataclasses import dataclass
 
 import numpy as np
 import pandas as pd
@@ -146,11 +147,19 @@ class PromptMap:
         return f'{question}\n Text: {truncate_text(text)} \n Answer:'
 
 
+@dataclass
+class _EvalSingleOut:
+    pred: int = None
+    true: int = None
+    prompt: str = None
+    generated: str = None
+
+
 class _EvalSingle:
     def __init__(
             self, pm: PromptMap = None, api_caller: ApiCaller = None,
             label_options: List[str] = None, lb2id: Dict[str, int] = None,
-            logger_fl: logging.Logger = None
+            logger_fl: logging.Logger = None, return_text: bool = False
     ):
         self.pm = pm
         self.ac = api_caller
@@ -159,7 +168,9 @@ class _EvalSingle:
 
         self.logger_fl = logger_fl
 
-    def __call__(self, e: Dict[str, Any], pbar=None):
+        self.return_text = return_text
+
+    def __call__(self, e: Dict[str, Any], pbar=None) -> _EvalSingleOut:
         txt, lbs = e['text'], e['labels']
         prompt = self.pm(txt)
         answer = self.ac(prompt)  # TODO: maybe GPT3 generates multiple answers?
@@ -169,17 +180,22 @@ class _EvalSingle:
             _d_log = dict(labels=[self.label_options[i] for i in lbs], answer=[answer])
             pbar.set_postfix({k: pl.i(v) for k, v in _d_log.items()})
 
+        ret: Dict[str, Any]
         if answer in self.label_options:
-            return self.lb2id[answer], self.lb2id[answer]
+            ret = dict(pred=self.lb2id[answer], true=self.lb2id[answer])
         else:
             logger.warning(f'Generated {pl.i([answer])}, not one of label options')
             self.logger_fl.warning(f'Generated {pl.nc([answer])}, not one of label options')
-            return -1, lbs[0]
+
+            ret = dict(pred=-1, true=lbs[0])
+        if self.return_text:
+            ret.update(dict(prompt=prompt, generated=answer))
+        return _EvalSingleOut(**ret)
 
 
 def evaluate(
         model: str = 'text-ada-001', domain: str = 'in', dataset_name: str = 'all', concurrent: bool = False,
-        subsample: Union[bool, int] = False, subsample_seed: int = 77
+        subsample: Union[bool, int] = False, subsample_seed: int = 77, store_text: bool = False
 ):
     ac = ApiCaller(model=model)
 
@@ -193,31 +209,44 @@ def evaluate(
 
     log_fnm = f'{now(for_path=True)}_GPT3_{model}_{domain}_{dataset_name}_Eval'
     logger_fl = get_logger('GPT3 Eval', kind='file-write', file_path=os_join(output_path, f'{log_fnm}.log'))
-    d_log = dict(model_name=model, domain=domain, dataset_names=dataset_names, output_path=output_path)
+    d_log: Dict[str, Any] = dict(model_name=model, domain=domain, dataset_names=dataset_names, output_path=output_path)
+    d_log.update(dict(concurrent=concurrent, subsample=subsample, subsample_seed=subsample_seed, store_text=store_text))
     logger.info(f'Evaluating GPT3 model w/ {pl.i(d_log)}... ')
     logger_fl.info(f'Evaluating GPT3 model w/ {d_log}... ')
 
     for dnm in dataset_names:
         if subsample:
-            n_tgt = subsample if isinstance(subsample, int) else 5000
+            n_tgt = 5000 if isinstance(subsample, bool) else subsample
             dset = utcd_util.subsample_dataset(dataset_name=dnm, split='test', n_tgt=n_tgt, seed=subsample_seed)
         else:
             dset = get_dataset(dnm, splits='test')['test']
         pm = PromptMap(dataset_name=dnm, logger_fl=logger_fl)
         label_options = [lb.lower() for lb in pm.labels]
         lb2id = {lb: idx for idx, lb in enumerate(label_options)}
-        eval_single = _EvalSingle(pm=pm, api_caller=ac, label_options=label_options, lb2id=lb2id, logger_fl=logger_fl)
+        args = dict(pm=pm, api_caller=ac, label_options=label_options, lb2id=lb2id, logger_fl=logger_fl)
+        eval_single = _EvalSingle(**args, return_text=store_text)
 
+        pmps, gens = [], []
         if concurrent:  # concurrency doesn't seem to help
             with_tqdm = dict(desc=f'Evaluating {pl.i(dnm)}', chunksize=32)
             lst = conc_map(eval_single, dset, with_tqdm=with_tqdm, mode='thread')
-            preds, trues = zip(*lst)
+            preds, trues = [], []
+            for e in lst:
+                preds.append(e.pred)
+                trues.append(e.true)
+                if store_text:
+                    pmps.append(e.prompt)
+                    gens.append(e.generated)
         else:
             n_dset = len(dset)
             trues, preds = np.empty(n_dset, dtype=int), np.empty(n_dset, dtype=int)
             it = tqdm(dset, desc=f'Evaluating {pl.i(dnm)}')
             for idx, elm in enumerate(it):
-                preds[idx], trues[idx] = eval_single(elm, pbar=it)
+                out = eval_single(elm, pbar=it)
+                preds[idx], trues[idx] = out.pred, out.true
+                if store_text:
+                    pmps.append(out.prompt)
+                    gens.append(out.generated)
 
         args = dict(
             labels=[-1, *range(len(label_options))], target_names=['Label not in dataset', *label_options],
@@ -228,8 +257,21 @@ def evaluate(
         logger.info(f'{pl.i(dnm)} accuracy: {pl.i(acc)}')
         logger_fl.info(f'{dnm} accuracy: {acc}')
 
-        path = os_join(output_path, f'{dnm}.csv')
-        pd.DataFrame(report).transpose().to_csv(path)
+        csv_path = os_join(output_path, f'{dnm}.csv')
+        pd.DataFrame(report).transpose().to_csv(csv_path)
+
+        if store_text:
+            meta_path = os_join(output_path, f'{dnm}_meta.json')
+            logger.info(f'Writing eval instances to {pl.i(meta_path)}...')
+            logger_fl.info(f'Writing eval instances to {meta_path}...')
+
+            d_ = d_log
+            infs = [dict(prompt=p, generated=g) for p, g in zip(pmps, gens)]
+            # d_.update(dict(prompts=pmps, generated=gens, preds=preds, trues=trues))
+            d_['inferences'] = infs
+
+            with open(meta_path, 'w') as f_:
+                json.dump(d_, f_, indent=4)
 
 
 if __name__ == '__main__':
@@ -278,6 +320,9 @@ if __name__ == '__main__':
     # evaluate(model='text-davinci-002', domain='out', dataset_name='consumer_finance')
     # evaluate(model='text-davinci-002', domain='out', dataset_name='amazon_polarity', concurrent=True)
 
+    run_args = dict(concurrent=True, subsample=100, store_text=True)
+    evaluate(model='text-davinci-002', domain='out', dataset_name='amazon_polarity', **run_args)
+
     def parse_args():
         parser = ArgumentParser()
 
@@ -306,4 +351,4 @@ if __name__ == '__main__':
             model=args.model, dataset_name=args.dataset, domain=args.domain, concurrent=args.concurrent,
             subsample=args.subsample, subsample_seed=args.subsample_seed
         )
-    command_prompt()
+    # command_prompt()

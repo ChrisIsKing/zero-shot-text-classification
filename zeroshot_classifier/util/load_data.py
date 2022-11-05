@@ -90,7 +90,9 @@ def get_datasets(
         Intended for training directly on out-of-domain data, see `zeroshot_classifier/models/bert.py`
     :param dataset_names: If given, only load the specified datasets
     """
-    path = os_join(u.proj_path, in_domain_data_path if domain == 'in' else out_of_domain_data_path)
+    domain_paths = in_domain_data_path if domain == 'in' else out_of_domain_data_path
+    domain_paths = [d for d in domain_paths.split(os.sep) if d != '.']
+    path = os_join(u.proj_path, *domain_paths)
     if not os.path.exists(path):
         logger.info(f'Downloading {pl.i(domain)} domain data from GDrive to {pl.i(path)}...')
         download_data(path)
@@ -152,6 +154,7 @@ def subsample_dataset(dataset: Dataset = None, n_src: int = None, n_tgt: int = N
     if n_src is None:
         n_src = sum(len(lbs) for lbs in dataset.values())
     assert n_tgt < n_src
+    mic(n_tgt, n_src)
     ratio = n_tgt / n_src
     d_log = {'#source': n_src, '#target': n_tgt, 'subsample-ratio': f'{round(ratio * 100, 3)}%'}
     logger.info(f'Subsampling dataset w/ {pl.i(d_log)}... ')
