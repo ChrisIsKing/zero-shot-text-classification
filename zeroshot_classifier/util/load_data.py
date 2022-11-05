@@ -154,7 +154,6 @@ def subsample_dataset(dataset: Dataset = None, n_src: int = None, n_tgt: int = N
     if n_src is None:
         n_src = sum(len(lbs) for lbs in dataset.values())
     assert n_tgt < n_src
-    mic(n_tgt, n_src)
     ratio = n_tgt / n_src
     d_log = {'#source': n_src, '#target': n_tgt, 'subsample-ratio': f'{round(ratio * 100, 3)}%'}
     logger.info(f'Subsampling dataset w/ {pl.i(d_log)}... ')

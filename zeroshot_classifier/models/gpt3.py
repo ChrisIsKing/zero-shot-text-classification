@@ -117,7 +117,7 @@ class PromptMap:
         n_txt = text2n_token(text)
         if n_txt > self.max_text_length:
             text = truncate_text(text, n_txt)
-            PromptMap.logger.warning(f'Text too long and truncated: {n_txt} -> {self.max_text_length}')
+            PromptMap.logger.warning(f'Text too long and truncated: {pl.i(n_txt)} -> {pl.i(self.max_text_length)}')
 
         idx_lbs = np.arange(self.n_cls)
         np.random.shuffle(idx_lbs)  # The order which the labels appears are random
@@ -267,8 +267,7 @@ def evaluate(
 
             d_ = d_log
             infs = [dict(prompt=p, generated=g) for p, g in zip(pmps, gens)]
-            # d_.update(dict(prompts=pmps, generated=gens, preds=preds, trues=trues))
-            d_['inferences'] = infs
+            d_.update(dict(inferences=infs, preds=preds, trues=trues))
 
             with open(meta_path, 'w') as f_:
                 json.dump(d_, f_, indent=4)
@@ -313,6 +312,7 @@ if __name__ == '__main__':
     # evaluate(model='text-ada-001', domain='in', dataset_name='emotion')
     # evaluate(model='text-curie-001', domain='in', dataset_name='emotion', concurrent=True)
     # evaluate(model='text-davinci-002', domain='in', dataset_name='emotion')
+    evaluate(model='text-curie-001', domain='out', dataset_name='multi_eurlex', concurrent=True)
 
     # evaluate(model='text-curie-001', domain='in', dataset_name='finance_sentiment', concurrent=True)
     # evaluate(model='text-curie-001', domain='in', dataset_name='banking77', concurrent=True, subsample=True)
@@ -320,8 +320,11 @@ if __name__ == '__main__':
     # evaluate(model='text-davinci-002', domain='out', dataset_name='consumer_finance')
     # evaluate(model='text-davinci-002', domain='out', dataset_name='amazon_polarity', concurrent=True)
 
-    run_args = dict(concurrent=True, subsample=100, store_text=True)
-    evaluate(model='text-davinci-002', domain='out', dataset_name='amazon_polarity', **run_args)
+    run_args = dict(concurrent=True, subsample=True, store_text=True)
+    # dnm = 'amazon_polarity'
+    # dnm = 'yelp'
+    dnm = 'consumer_finance'
+    # evaluate(model='text-davinci-002', domain='out', dataset_name=dnm, **run_args)
 
     def parse_args():
         parser = ArgumentParser()
