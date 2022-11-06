@@ -82,17 +82,22 @@ def map_model_dir_nm(
 
 
 def map_model_output_path(
-        model_name: str = None, output_path: str = None, mode: Optional[str] = 'vanilla',
+        model_name: str = None, output_path: str = None, output_dir: str = None, mode: Optional[str] = 'vanilla',
         sampling: Optional[str] = 'rand', normalize_aspect: bool = False
 ) -> str:
-    def _map(dir_nm):
-        return map_model_dir_nm(model_name, dir_nm, mode, sampling, normalize_aspect)
+    def _map(dir_nm_):
+        return map_model_dir_nm(model_name, dir_nm_, mode, sampling, normalize_aspect)
+
+    assert (output_path or output_dir) and not (output_path and output_dir)  # sanity check mutually exclusive
     if output_path:
         paths = output_path.split(os.sep)
         output_dir = _map(paths[-1])
         return os_join(*paths[:-1], output_dir)
     else:
-        return os_join(get_base_path(), u.proj_dir, u.model_dir, _map(None))
+        dir_nm = _map(None)
+        if output_dir:
+            dir_nm = f'{dir_nm}_{output_dir}'
+        return os_join(get_base_path(), u.proj_dir, u.model_dir, dir_nm)
 
 
 def domain2eval_dir_nm(domain: str = 'in'):

@@ -32,6 +32,7 @@ def parse_args():
     # set train arguments
     parser_train.add_argument('--max_sequence_length', type=int, default=512)
     parser_train.add_argument('--output', type=str, default=None)
+    parser_train.add_argument('--output_dir', type=str, default=None)
     parser_train.add_argument('--sampling', type=str, choices=['rand', 'vect'], default='rand')
     # model to initialize weights from, intended for loading weights from local explicit training
     parser_train.add_argument('--model_init', type=str, default=HF_MODEL_NAME)
@@ -70,20 +71,29 @@ if __name__ == '__main__':
 
     args = parse_args()
     cmd = args.command
-    logger = get_logger(f'{MODEL_NAME} {args.command.capitalize()}')
+    log_nm = f'{MODEL_NAME} {args.command.capitalize()}'
+    logger = get_logger(log_nm)
 
     if cmd == 'train':
-        output_path, sampling, mode = args.output, args.sampling, args.mode
+        output_path, output_dir, sampling, mode = args.output, args.output_dir, args.sampling, args.mode
         lr, bsz, n_ep = args.learning_rate, args.batch_size, args.epochs
         model_init, seq_len = args.model_init, args.max_sequence_length
 
         n = None
         # n = 64
 
+        output_path = map_model_output_path(
+            model_name=MODEL_NAME.replace(' ', '-'), output_path=output_path, output_dir=output_dir,
+            mode=mode, sampling=sampling, normalize_aspect=NORMALIZE_ASPECT
+        )
+        logger_fl = get_logger(log_nm, kind='file-write', file_path=os_join(output_path, 'training.log'))
+
         dset_args = dict(normalize_aspect=seed) if NORMALIZE_ASPECT else dict()
         data = get_datasets(domain='in', n_sample=n, **dset_args)
         dataset_names = [dnm for dnm, d_dset in sconfig('UTCD.datasets').items() if filt(d_dset, 'in')]
         logger.info(f'Processing datasets {pl.i(dataset_names)} for training... ')
+        logger_fl.info(f'Processing datasets {pl.nc(dataset_names)} for training... ')
+
         train = []
         val = []
         test = []
@@ -103,6 +113,7 @@ if __name__ == '__main__':
             model_init = os_join(get_base_path(), u.proj_dir, u.model_dir, model_init)
             d_log['files'] = os.listdir(model_init)
         logger.info(f'Loading model with {pl.i(d_log)}...')
+        logger_fl.info(f'Loading model with {pl.nc(d_log)}...')
         model = BinaryBertCrossEncoder(model_init, num_labels=2, automodel_args=dict(ignore_mismatched_sizes=True))
         if seq_len != 512:  # Intended for `bert-base-uncased` only; TODO: binary bert seems to support this already?
             model.tokenizer, model.model = load_sliced_binary_bert(model_init, seq_len)
@@ -110,6 +121,7 @@ if __name__ == '__main__':
         spec_tok_arg = utcd_util.get_add_special_tokens_args(model.tokenizer, train_strategy=mode)
         if spec_tok_arg:
             logger.info(f'Adding special tokens {pl.i(spec_tok_arg)} to tokenizer... ')
+            logger_fl.info(f'Adding special tokens {pl.nc(spec_tok_arg)} to tokenizer... ')
             model.tokenizer.add_special_tokens(special_tokens_dict=spec_tok_arg)
             model.model.resize_token_embeddings(len(model.tokenizer))
 
@@ -118,18 +130,14 @@ if __name__ == '__main__':
         random.shuffle(train)
         train_dataloader = DataLoader(train, shuffle=True, batch_size=bsz)
         val_dataloader = DataLoader(val, shuffle=False, batch_size=bsz)
-
         warmup_steps = math.ceil(len(train_dataloader) * n_ep * 0.1)  # 10% of train data for warm-up
-        d_log = {
-            '#data': len(train), 'learning_rate': lr, 'batch size': bsz, 'epochs': n_ep, 'warmup steps': warmup_steps
-        }
-        logger.info(f'Launched training with {pl.i(d_log)}... ')
 
-        output_path = map_model_output_path(
-            model_name=MODEL_NAME.replace(' ', '-'), output_path=output_path,
-            mode=mode, sampling=sampling, normalize_aspect=NORMALIZE_ASPECT
-        )
-        logger.info(f'Model will be saved to {pl.i(output_path)}')
+        d_log = {
+            '#data': len(train), 'learning_rate': lr, 'batch size': bsz, 'epochs': n_ep, 'warmup steps': warmup_steps,
+            'output path': output_path
+        }
+        logger.info(f'Training w/ {pl.i(d_log)}... ')
+        logger_fl.info(f'Training w/ {pl.nc(d_log)}... ')
 
         transformers.set_seed(seed)
         model.fit(
@@ -138,7 +146,8 @@ if __name__ == '__main__':
             epochs=n_ep,
             optimizer_params=dict(lr=lr),
             warmup_steps=warmup_steps,
-            output_path=output_path
+            output_path=output_path,
+            logger_fl=logger_fl
         )
     elif cmd == 'test':
         WITH_EVAL_LOSS = False

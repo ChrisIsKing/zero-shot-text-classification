@@ -1,3 +1,4 @@
+import logging
 import os
 import json
 from typing import Dict, Tuple, Iterable, Type, Callable
@@ -16,9 +17,6 @@ from tqdm.autonotebook import tqdm, trange
 from stefutil import *
 
 
-pretty = MlPrettier()
-
-
 class BinaryBertCrossEncoder(CrossEncoder):
     logger = get_logger('Bin BERT Train')
 
@@ -28,6 +26,7 @@ class BinaryBertCrossEncoder(CrossEncoder):
             evaluator: SentenceEvaluator = None,
             # ========================== Begin of added ==========================
             val_dataloader: DataLoader = None,
+            logger_fl: logging.Logger = None,
             # ========================== End of added ==========================
             epochs: int = 1, loss_fct=None,
             activation_fct=nn.Identity(),
@@ -81,6 +80,8 @@ class BinaryBertCrossEncoder(CrossEncoder):
 
         # ========================== Begin of added ==========================
         best_model = {'best_loss': float('inf'), 'epoch': 0, 'path': None}
+
+        pretty = MlPrettier(ref=dict(step=len(train_dataloader), epoch=epochs))
         # ========================== End of added ==========================
 
         skip_scheduler = False
@@ -88,6 +89,7 @@ class BinaryBertCrossEncoder(CrossEncoder):
         # for epoch in trange(epochs, desc="Epoch", disable=not show_progress_bar):
         for epoch in range(epochs):
             epoch_str = f'Epoch {pl.i(epoch+1)}/{pl.i(epochs)}'
+            epoch_str_nc = f'Epoch {epoch+1}/{epochs}'
             # ========================== End of modified ==========================
             training_steps = 0
             self.model.zero_grad()
@@ -127,8 +129,10 @@ class BinaryBertCrossEncoder(CrossEncoder):
                 optimizer.zero_grad()
                 # ========================== Begin of added ==========================
                 # TODO: not sure why 2 lr vals, w/ same value
-                d_log = pretty(dict(loss=loss_value.item(), lr=scheduler.get_last_lr()[0]))
-                it.set_postfix({k: pl.i(v) for k, v in d_log.items()})
+                d_log = dict(loss=loss_value.item(), lr=scheduler.get_last_lr()[0])
+                it.set_postfix({k: pl.i(v) for k, v in pretty(d_log).items()})
+                d_log = dict(epoch=epoch+1, step=training_steps+1, **d_log)
+                logger_fl.info(pl.nc(pretty(d_log)))
                 # ========================== End of added ==========================
 
                 if not skip_scheduler:
@@ -141,7 +145,6 @@ class BinaryBertCrossEncoder(CrossEncoder):
                 self.model.eval()
                 val_loss = 0
                 val_steps = 0
-
 
                 desc = f'Evaluating {epoch_str}'
                 it = tqdm(val_dataloader, desc=desc, unit='ba', smoothing=0.05, disable=not show_progress_bar)
@@ -156,7 +159,8 @@ class BinaryBertCrossEncoder(CrossEncoder):
                 
                 val_loss /= val_steps
                 _val_loss = pretty.single(key='loss', val=val_loss)
-                BinaryBertCrossEncoder.logger.info(f'{pl.i(epoch_str)} eval loss: {pl.i(_val_loss)}')
+                BinaryBertCrossEncoder.logger.info(f'{epoch_str} eval loss: {pl.i(_val_loss)}')
+                logger_fl.info(f'{epoch_str_nc} eval loss: {_val_loss}')
 
                 if val_loss < best_model['best_loss']:  # save model w/ smallest eval loss
                     best_model['best_loss'] = val_loss
@@ -165,6 +169,7 @@ class BinaryBertCrossEncoder(CrossEncoder):
                         best_model['path'] = output_path
                         self.save(output_path)
                         BinaryBertCrossEncoder.logger.info(f'Best model found at {epoch_str} & saved ')
+                        logger_fl.info(f'Best model found at {epoch_str_nc} & saved ')
             # ========================== End of added ==========================
 
         # ========================== Begin of modified ==========================
@@ -182,6 +187,7 @@ class BiEncoder(SentenceTransformer):
             train_objectives: Iterable[Tuple[DataLoader, nn.Module]] = None,
             # ========================== Begin of added ==========================
             val_dataloader: DataLoader = None,
+            logger_fl: logging.Logger = None,
             # ========================== End of added ==========================
             epochs: int = 1,
             steps_per_epoch = None,
@@ -242,6 +248,8 @@ class BiEncoder(SentenceTransformer):
 
         # ========================== Begin of added ==========================
         best_model = {'best_loss': float('inf'), 'epoch': 0, 'path': None}
+
+        pretty = MlPrettier(ref=dict(step=steps_per_epoch, epoch=epochs))
         # ========================== End of added ==========================
 
         # Prepare optimizers
@@ -273,6 +281,7 @@ class BiEncoder(SentenceTransformer):
         # for epoch in trange(epochs, desc="Epoch", disable=not show_progress_bar):
         for epoch in range(epochs):
             epoch_str = f'Epoch {pl.i(epoch+1)}/{pl.i(epochs)}'
+            epoch_str_nc = f'Epoch {epoch+1}/{epochs}'
             # ========================== End of added ==========================
             training_steps = 0
 
@@ -322,8 +331,12 @@ class BiEncoder(SentenceTransformer):
 
                     optimizer.zero_grad()
                     # ========================== Begin of added ==========================
-                    d_log = pretty(dict(loss=loss_value.item(), lr=scheduler.get_last_lr()[0]))
-                    it.set_postfix({k: pl.i(v) for k, v in d_log.items()})
+                    d_log = dict(loss=loss_value.item(), lr=scheduler.get_last_lr()[0])
+                    it.set_postfix({k: pl.i(v) for k, v in pretty(d_log).items()})
+                    d_log = dict(epoch=epoch+1, step=training_steps+1, **d_log)
+                    # for k, v in d_log.items():
+                    #     mic(k, v, type(k), type(v))
+                    logger_fl.info(pl.nc(pretty(d_log)))
                     # ========================== End of added ==========================
 
                     if not skip_scheduler:
@@ -351,6 +364,7 @@ class BiEncoder(SentenceTransformer):
                 val_loss /= val_steps
                 _val_loss = pretty.single(key='loss', val=val_loss)
                 BiEncoder.logger.info(f'{pl.i(epoch_str)} eval loss: {pl.i(_val_loss)}')
+                logger_fl.info(f'{epoch_str_nc} eval loss: {_val_loss}')
 
                 if val_loss < best_model['best_loss']:
                     best_model['best_loss'] = val_loss
@@ -359,6 +373,7 @@ class BiEncoder(SentenceTransformer):
                         best_model['path'] = output_path
                         self.save(output_path)
                         BiEncoder.logger.info(f'Best model found at {epoch_str} & saved ')
+                        logger_fl.info(f'Best model found at {epoch_str_nc} & saved ')
             # ========================== End of added ==========================
 
         # ========================== Begin of modified ==========================

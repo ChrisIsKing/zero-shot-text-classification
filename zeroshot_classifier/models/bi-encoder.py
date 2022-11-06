@@ -35,6 +35,7 @@ def parse_args():
 
     # set train arguments
     parser_train.add_argument('--output', type=str, default=None)
+    parser_train.add_argument('--output_dir', type=str, default=None)
     parser_train.add_argument('--sampling', type=str, choices=['rand', 'vect'], default='rand')
     parser_train.add_argument('--model_init', type=str, default=HF_MODEL_NAME)
     parser_train.add_argument('--mode', type=str, choices=modes, default='vanilla')
@@ -57,20 +58,29 @@ if __name__ == "__main__":
 
     args = parse_args()
     cmd = args.command
-    logger = get_logger(f'{MODEL_NAME} {args.command.capitalize()}')
+    log_nm = f'{MODEL_NAME} {args.command.capitalize()}'
+    logger = get_logger(log_nm)
 
     if cmd == 'train':
-        output_path, sampling, mode = args.output, args.sampling, args.mode
+        output_path, output_dir, sampling, mode = args.output, args.output_dir, args.sampling, args.mode
         lr, bsz, n_ep = args.learning_rate, args.batch_size, args.epochs
         model_init = args.model_init
 
         n = None
         # n = 64
 
+        output_path = map_model_output_path(
+            model_name=MODEL_NAME.replace(' ', '-'), output_path=output_path, output_dir=output_dir,
+            mode=mode, sampling=sampling, normalize_aspect=NORMALIZE_ASPECT
+        )
+        logger_fl = get_logger(log_nm, kind='file-write', file_path=os_join(output_path, 'training.log'))
+
         dset_args = dict(normalize_aspect=seed) if NORMALIZE_ASPECT else dict()
         data = get_datasets(domain='in', n_sample=n, **dset_args)
         dataset_names = [dnm for dnm, d_dset in sconfig('UTCD.datasets').items() if d_dset['domain'] == 'in']
-        logger.info(f'Loading datasets {pl.i(dataset_names)} for training... ')
+        logger.info(f'Processing datasets {pl.i(dataset_names)} for training... ')
+        logger_fl.info(f'Processing datasets {pl.nc(dataset_names)} for training... ')
+
         train = []
         val = []
         test = []
@@ -90,10 +100,12 @@ if __name__ == "__main__":
             model_init = os_join(get_base_path(), u.proj_dir, u.model_dir, model_init)
             d_log['files'] = os.listdir(model_init)
         logger.info(f'Loading model with {pl.i(d_log)}...')
+        logger_fl.info(f'Loading model with {pl.nc(d_log)}...')
         word_embedding_model = models.Transformer(model_init, max_seq_length=512)
         add_tok_arg = utcd_util.get_add_special_tokens_args(word_embedding_model.tokenizer, train_strategy=mode)
         if add_tok_arg:
             logger.info(f'Adding special tokens {pl.i(add_tok_arg)} to tokenizer... ')
+            logger_fl.info(f'Adding special tokens {pl.nc(add_tok_arg)} to tokenizer... ')
             word_embedding_model.tokenizer.add_special_tokens(special_tokens_dict=add_tok_arg)
             word_embedding_model.auto_model.resize_token_embeddings(len(word_embedding_model.tokenizer))
         pooling_model = models.Pooling(
@@ -107,18 +119,14 @@ if __name__ == "__main__":
         train_dataloader = DataLoader(train, shuffle=True, batch_size=bsz)
         val_dataloader = DataLoader(val, shuffle=False, batch_size=bsz)
         train_loss = losses.CosineSimilarityLoss(model)
-
         warmup_steps = math.ceil(len(train_dataloader) * n_ep * 0.1)  # 10% of train data for warm-up
-        d_log = {
-            '#data': len(train), 'learning_rate': lr, 'batch size': bsz, 'epochs': n_ep, 'warmup steps': warmup_steps
-        }
-        logger.info(f'Launched training with {pl.i(d_log)}... ')
 
-        output_path = map_model_output_path(
-            model_name=MODEL_NAME, output_path=output_path,
-            mode=mode, sampling=sampling, normalize_aspect=NORMALIZE_ASPECT
-        )
-        logger.info(f'Model will be saved to {pl.i(output_path)}')
+        d_log = {
+            '#data': len(train), 'learning_rate': lr, 'batch size': bsz, 'epochs': n_ep, 'warmup steps': warmup_steps,
+            'output path': output_path
+        }
+        logger.info(f'Training w/ {pl.i(d_log)}... ')
+        logger_fl.info(f'Training w/ {pl.nc(d_log)}... ')
 
         transformers.set_seed(seed)
         model.fit(
@@ -127,7 +135,8 @@ if __name__ == "__main__":
             epochs=n_ep,
             optimizer_params=dict(lr=lr),
             warmup_steps=warmup_steps,
-            output_path=output_path
+            output_path=output_path,
+            logger_fl=logger_fl
         )
     elif cmd == 'test':
         split = 'test'
