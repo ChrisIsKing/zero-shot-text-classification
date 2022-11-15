@@ -13,9 +13,7 @@ from tqdm import tqdm
 
 from stefutil import *
 from zeroshot_classifier.util import *
-from zeroshot_classifier.util.load_data import (
-    get_datasets, binary_cls_format, in_domain_data_path, out_of_domain_data_path
-)
+from zeroshot_classifier.util.load_data import get_datasets, binary_cls_format
 import zeroshot_classifier.util.utcd as utcd_util
 from zeroshot_classifier.models.architecture import BiEncoder
 
@@ -69,6 +67,8 @@ if __name__ == "__main__":
         n = None
         # n = 64
 
+        best_metric = 'accuracy'
+
         output_path = map_model_output_path(
             model_name=MODEL_NAME.replace(' ', '-'), output_path=output_path, output_dir=output_dir,
             mode=mode, sampling=sampling, normalize_aspect=NORMALIZE_ASPECT
@@ -116,6 +116,7 @@ if __name__ == "__main__":
 
         random.seed(seed)
         random.shuffle(train)
+        # train, val = train[:128], train[:128]  # TODO: debugging
         train_dataloader = DataLoader(train, shuffle=True, batch_size=bsz)
         val_dataloader = DataLoader(val, shuffle=False, batch_size=bsz)
         train_loss = losses.CosineSimilarityLoss(model)
@@ -123,7 +124,7 @@ if __name__ == "__main__":
 
         d_log = {
             '#data': len(train), 'learning_rate': lr, 'batch size': bsz, 'epochs': n_ep, 'warmup steps': warmup_steps,
-            'output path': output_path
+            'best_model_metric': best_metric, 'output path': output_path
         }
         logger.info(f'Training w/ {pl.i(d_log)}... ')
         logger_fl.info(f'Training w/ {pl.nc(d_log)}... ')
@@ -136,7 +137,8 @@ if __name__ == "__main__":
             optimizer_params=dict(lr=lr),
             warmup_steps=warmup_steps,
             output_path=output_path,
-            logger_fl=logger_fl
+            logger_fl=logger_fl,
+            best_model_metric=best_metric
         )
     elif cmd == 'test':
         split = 'test'

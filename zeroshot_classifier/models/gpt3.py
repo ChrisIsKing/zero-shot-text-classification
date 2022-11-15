@@ -1,8 +1,9 @@
-import logging
 import re
 import os
 import json
 import time
+import random
+import logging
 import requests
 from os.path import join as os_join
 from typing import List, Dict, Any, Union
@@ -46,7 +47,7 @@ class ApiCaller:
     def __init__(self, model: str = 'text-ada-001'):
         self.model = model
 
-    def __call__(self, prompt: str, **kwargs) -> str:
+    def __call__(self, prompt: str, rand_sleep: bool = True, **kwargs) -> str:
         payload = dict(
             model=self.model,
             temperature=0,  # Generate w/ greedy decoding
@@ -58,12 +59,23 @@ class ApiCaller:
 
         def _call():
             return requests.post(self.url, headers=self.headers, json=payload)
+
+        if rand_sleep:  # Intended for concurrent requests, see evaluate `concurrent` flag
+            time.sleep(random.uniform(0, 4))
+
         res = None
+        i = 0
+        sleep_time = 4
         while not res or res.status_code != 200:
             if res:
                 assert res.status_code == 429  # Too many request, retry
-            time.sleep(0.5)
+            if i % 4 == 0:  # Wait for `Too Many Requests` to pass
+                sleep_time *= 2
+
+            logger.info(f'Too Many Requests, retrying in {pl.i(sleep_time)}s... ')
+            time.sleep(sleep_time)
             res = _call()
+            i += 1
 
         res = json.loads(res.text)
         assert len(res['choices']) == 1  # sanity check only generated one completion
@@ -229,7 +241,7 @@ def evaluate(
         pmps, gens = [], []
         if concurrent:  # concurrency doesn't seem to help
             with_tqdm = dict(desc=f'Evaluating {pl.i(dnm)}', chunksize=32)
-            lst = conc_map(eval_single, dset, with_tqdm=with_tqdm, mode='thread')
+            lst = conc_map(eval_single, dset, with_tqdm=with_tqdm, mode='thread', n_worker=8)
             preds, trues = [], []
             for e in lst:
                 preds.append(e.pred)

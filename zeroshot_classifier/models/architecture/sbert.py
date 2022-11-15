@@ -12,6 +12,7 @@ from sentence_transformers.util import batch_to_device
 from sentence_transformers.model_card_templates import ModelCardTemplate
 from sentence_transformers.cross_encoder import CrossEncoder
 from sentence_transformers.evaluation import SentenceEvaluator
+from sentence_transformers.losses import CosineSimilarityLoss
 from tqdm.autonotebook import tqdm, trange
 
 from stefutil import *
@@ -27,6 +28,7 @@ class BinaryBertCrossEncoder(CrossEncoder):
             # ========================== Begin of added ==========================
             val_dataloader: DataLoader = None,
             logger_fl: logging.Logger = None,
+            best_model_metric: str = 'loss',
             # ========================== End of added ==========================
             epochs: int = 1, loss_fct=None,
             activation_fct=nn.Identity(),
@@ -42,6 +44,9 @@ class BinaryBertCrossEncoder(CrossEncoder):
             callback: Callable[[float, int, int], None] = None,
             show_progress_bar: bool = True
     ):
+        # ========================== Begin of added ==========================
+        ca.check_mismatch('Eval Metric for Best Model', best_model_metric, ['loss', 'accuracy'])
+        # ========================== End of added ==========================
 
         train_dataloader.collate_fn = self.smart_batching_collate
         # ========================== Begin of added ==========================
@@ -79,7 +84,7 @@ class BinaryBertCrossEncoder(CrossEncoder):
             loss_fct = nn.BCEWithLogitsLoss() if self.config.num_labels == 1 else nn.CrossEntropyLoss()
 
         # ========================== Begin of added ==========================
-        best_model = {'best_loss': float('inf'), 'epoch': 0, 'path': None}
+        curr_best_model = {'epoch': 0, 'best_loss': float('inf'), 'best_acc': -float('inf'), 'path': None}
 
         pretty = MlPrettier(ref=dict(step=len(train_dataloader), epoch=epochs))
         # ========================== End of added ==========================
@@ -145,6 +150,7 @@ class BinaryBertCrossEncoder(CrossEncoder):
                 self.model.eval()
                 val_loss = 0
                 val_steps = 0
+                n_correct, n = 0, 0
 
                 desc = f'Evaluating {epoch_str}'
                 it = tqdm(val_dataloader, desc=desc, unit='ba', smoothing=0.05, disable=not show_progress_bar)
@@ -154,22 +160,36 @@ class BinaryBertCrossEncoder(CrossEncoder):
                         logits = activation_fct(model_predictions.logits)
                         if self.config.num_labels == 1:
                             logits = logits.view(-1)
+
+                        n_correct += (logits.argmax(dim=1) == labels).sum().item()
+                        n += labels.numel()
                         val_loss += loss_fct(logits, labels).item()
                         val_steps += 1
                 
                 val_loss /= val_steps
-                _val_loss = pretty.single(key='loss', val=val_loss)
-                BinaryBertCrossEncoder.logger.info(f'{epoch_str} eval loss: {pl.i(_val_loss)}')
-                logger_fl.info(f'{epoch_str_nc} eval loss: {_val_loss}')
+                acc = n_correct / n
+                d_log = pretty(dict(epoch=epoch+1, eval_loss=val_loss, eval_acc=acc))
 
-                if val_loss < best_model['best_loss']:  # save model w/ smallest eval loss
-                    best_model['best_loss'] = val_loss
-                    best_model['epoch'] = epoch
+                BinaryBertCrossEncoder.logger.info(pl.i(d_log))
+                logger_fl.info(pl.nc(d_log))
+
+                if best_model_metric == 'loss':
+                    best_val = val_loss
+                    prev_val = curr_best_model['best_loss']
+                    better = best_val < prev_val
+                else:  # `accuracy`
+                    best_val = acc
+                    prev_val = curr_best_model['best_acc']
+                    better = best_val > prev_val
+                if better:
+                    curr_best_model['epoch'] = epoch+1
+                    curr_best_model['best_loss' if best_model_metric == 'loss' else 'best_acc'] = best_val
                     if save_best_model:
-                        best_model['path'] = output_path
+                        curr_best_model['path'] = output_path
                         self.save(output_path)
-                        BinaryBertCrossEncoder.logger.info(f'Best model found at {epoch_str} & saved ')
-                        logger_fl.info(f'Best model found at {epoch_str_nc} & saved ')
+                        BinaryBertCrossEncoder.logger.info(f'Best model found at {epoch_str} w/ '
+                                                           f'{pl.i(best_model_metric)}={pl.i(best_val)} ')
+                        logger_fl.info(f'Best model found at {epoch_str_nc} w/ {best_model_metric}={best_val} ')
             # ========================== End of added ==========================
 
         # ========================== Begin of modified ==========================
@@ -188,6 +208,7 @@ class BiEncoder(SentenceTransformer):
             # ========================== Begin of added ==========================
             val_dataloader: DataLoader = None,
             logger_fl: logging.Logger = None,
+            best_model_metric: str = 'loss',
             # ========================== End of added ==========================
             epochs: int = 1,
             steps_per_epoch = None,
@@ -207,6 +228,10 @@ class BiEncoder(SentenceTransformer):
             checkpoint_save_steps: int = 500,
             checkpoint_save_total_limit: int = 0
     ):
+        # ========================== Begin of added ==========================
+        ca.check_mismatch('Eval Metric for Best Model', best_model_metric, ['loss', 'accuracy'])
+        # ========================== End of added ==========================
+
         ##Add info to model card
         #info_loss_functions = "\n".join(["- {} with {} training examples".format(str(loss), len(dataloader)) for dataloader, loss in train_objectives])
         info_loss_functions = []
@@ -247,7 +272,7 @@ class BiEncoder(SentenceTransformer):
         num_train_steps = int(steps_per_epoch * epochs)
 
         # ========================== Begin of added ==========================
-        best_model = {'best_loss': float('inf'), 'epoch': 0, 'path': None}
+        curr_best_model = {'epoch': 0, 'best_loss': float('inf'), 'best_acc': -float('inf'), 'path': None}
 
         pretty = MlPrettier(ref=dict(step=steps_per_epoch, epoch=epochs))
         # ========================== End of added ==========================
@@ -350,30 +375,51 @@ class BiEncoder(SentenceTransformer):
                 self.eval()
                 val_loss = 0
                 val_steps = 0
+                n_correct, n = 0, 0
+
+                assert len(loss_models) == 1  # sanity check
+                loss_model = loss_models[0]
+                assert isinstance(loss_model, CosineSimilarityLoss)
 
                 desc = f'Evaluating {epoch_str}'
                 it = tqdm(val_dataloader, desc=desc, unit='ba', smoothing=0.05, disable=not show_progress_bar)
                 for features, labels in it:
                     with torch.no_grad():
-                        assert len(loss_models) == 1  # sanity check
-                        loss_model = loss_models[0]
-                        loss_value = loss_model(features, labels)
+                        # See `CosineSimilarityLoss.forward`
+                        embeddings = [loss_model.model(f)['sentence_embedding'] for f in features]
+                        output = loss_model.cos_score_transformation(torch.cosine_similarity(embeddings[0], embeddings[1]))
+                        loss_value = loss_model.loss_fct(output, labels.view(-1))
+
+                        pred = (output > 0.5).long()
+                        n_correct += (pred == labels).sum().item()
+                        n += labels.numel()
                         val_loss += loss_value.item()
                         val_steps += 1
 
                 val_loss /= val_steps
-                _val_loss = pretty.single(key='loss', val=val_loss)
-                BiEncoder.logger.info(f'{pl.i(epoch_str)} eval loss: {pl.i(_val_loss)}')
-                logger_fl.info(f'{epoch_str_nc} eval loss: {_val_loss}')
+                acc = n_correct / n
+                d_log = pretty(dict(epoch=epoch+1, eval_loss=val_loss, eval_acc=acc))
 
-                if val_loss < best_model['best_loss']:
-                    best_model['best_loss'] = val_loss
-                    best_model['epoch'] = epoch
+                BiEncoder.logger.info(pl.i(d_log))
+                logger_fl.info(pl.nc(d_log))
+
+                if best_model_metric == 'loss':
+                    best_val = val_loss
+                    prev_val = curr_best_model['best_loss']
+                    better = best_val < prev_val
+                else:  # `accuracy`
+                    best_val = acc
+                    prev_val = curr_best_model['best_acc']
+                    better = best_val > prev_val
+                if better:
+                    curr_best_model['epoch'] = epoch+1
+                    curr_best_model['best_loss' if best_model_metric == 'loss' else 'best_acc'] = best_val
                     if save_best_model:
-                        best_model['path'] = output_path
+                        curr_best_model['path'] = output_path
                         self.save(output_path)
-                        BiEncoder.logger.info(f'Best model found at {epoch_str} & saved ')
-                        logger_fl.info(f'Best model found at {epoch_str_nc} & saved ')
+                        BiEncoder.logger.info(f'Best model found at {epoch_str} w/ '
+                                              f'{pl.i(best_model_metric)}={pl.i(best_val)} ')
+                        logger_fl.info(f'Best model found at {epoch_str_nc} w/ {best_model_metric}={best_val} ')
             # ========================== End of added ==========================
 
         # ========================== Begin of modified ==========================

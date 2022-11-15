@@ -82,6 +82,8 @@ if __name__ == '__main__':
         n = None
         # n = 64
 
+        best_metric = 'accuracy'
+
         output_path = map_model_output_path(
             model_name=MODEL_NAME.replace(' ', '-'), output_path=output_path, output_dir=output_dir,
             mode=mode, sampling=sampling, normalize_aspect=NORMALIZE_ASPECT
@@ -128,13 +130,14 @@ if __name__ == '__main__':
         transformers.logging.set_verbosity_error()  # disables `longest_first` warning
         random.seed(seed)
         random.shuffle(train)
+        # train, val = train[:128], train[:128]  # TODO: debugging
         train_dataloader = DataLoader(train, shuffle=True, batch_size=bsz)
         val_dataloader = DataLoader(val, shuffle=False, batch_size=bsz)
         warmup_steps = math.ceil(len(train_dataloader) * n_ep * 0.1)  # 10% of train data for warm-up
 
         d_log = {
             '#data': len(train), 'learning_rate': lr, 'batch size': bsz, 'epochs': n_ep, 'warmup steps': warmup_steps,
-            'output path': output_path
+            'best_model_metric': best_metric, 'output path': output_path
         }
         logger.info(f'Training w/ {pl.i(d_log)}... ')
         logger_fl.info(f'Training w/ {pl.nc(d_log)}... ')
@@ -147,7 +150,8 @@ if __name__ == '__main__':
             optimizer_params=dict(lr=lr),
             warmup_steps=warmup_steps,
             output_path=output_path,
-            logger_fl=logger_fl
+            logger_fl=logger_fl,
+            best_model_metric=best_metric
         )
     elif cmd == 'test':
         WITH_EVAL_LOSS = False
