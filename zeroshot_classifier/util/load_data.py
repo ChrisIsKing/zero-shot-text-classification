@@ -279,7 +279,6 @@ def download_data(path):
         url = out_of_domain_url
     fl_paths = [d for d in file.split(os.sep) if d != '.']
     fl_path = os.path.join(u.proj_path, *fl_paths)
-    mic(fl_path)
     os.makedirs(os.path.dirname(fl_path), exist_ok=True)
     gdown.download(url, fl_path, quiet=False)
 
@@ -287,7 +286,6 @@ def download_data(path):
         dset_paths = [d for d in dataset_path.split(os.sep) if d != '.']
         path = os_join(u.proj_path, *dset_paths)
         os.makedirs(path, exist_ok=True)
-        mic(dset_paths)
         zfl.extractall(path)
         zfl.close()
 

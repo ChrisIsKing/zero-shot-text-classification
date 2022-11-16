@@ -253,11 +253,9 @@ def evaluate(
         store_frequency = store_frequency or 100
 
         def write_meta():  # Writing completed inferences to file periodically, in case GPT3 eval gets stuck
-            print('in write meta', len(lst_meta), store_frequency, len(lst_meta) % store_frequency == 0)
             if len(lst_meta) % store_frequency == 0:
                 logger.info(f'Writing eval instances to {pl.i(meta_path)}...')
                 logger_fl.info(f'Writing eval instances to {meta_path}...')
-                #
                 d_ = d_log
                 infs = [asdict(m) for m in lst_meta]
                 n = len(infs)
@@ -271,7 +269,6 @@ def evaluate(
                 with open(meta_path, 'w') as f_:
                     json.dump(d_, f_, indent=4)
 
-        mic('in concurrent', concurrent)
         if concurrent:
             with_tqdm = dict(desc=f'Evaluating {pl.i(dnm)}', total=len(dset))
             # order irrelevant
@@ -279,10 +276,7 @@ def evaluate(
             for e in conc_yield(eval_single, dset, with_tqdm=with_tqdm, mode='thread', n_worker=4):
                 preds.append(e.pred)
                 trues.append(e.true)
-                # print('in iter \n asdasd', store_meta, len(lst_meta))
-                # raise NotImplementedError
                 if store_meta:
-                    # raise NotImplementedError
                     lst_meta.append(e.meta)
                     write_meta()
         else:
