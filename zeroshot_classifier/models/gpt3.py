@@ -6,9 +6,9 @@ import random
 import logging
 import requests
 from os.path import join as os_join
-from typing import List, Dict, Any, Union
+from typing import List, Dict, Any, Union, Optional
 from argparse import ArgumentParser
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
 
 import numpy as np
 import pandas as pd
@@ -160,11 +160,17 @@ class PromptMap:
 
 
 @dataclass
+class GPT3EvalMeta:
+    text: str = None
+    prompt: str = None
+    generated: str = None
+
+
+@dataclass
 class _EvalSingleOut:
     pred: int = None
     true: int = None
-    prompt: str = None
-    generated: str = None
+    meta: GPT3EvalMeta = None
 
 
 class _EvalSingle:
@@ -201,13 +207,14 @@ class _EvalSingle:
 
             ret = dict(pred=-1, true=lbs[0])
         if self.return_text:
-            ret.update(dict(prompt=prompt, generated=answer))
+            ret.update(meta=GPT3EvalMeta(text=txt, prompt=prompt, generated=answer))
         return _EvalSingleOut(**ret)
 
 
 def evaluate(
         model: str = 'text-ada-001', domain: str = 'in', dataset_name: str = 'all', concurrent: bool = False,
-        subsample: Union[bool, int] = False, subsample_seed: int = 77, store_text: bool = False
+        subsample: Union[bool, int] = False, subsample_seed: int = 77, store_meta: bool = False,
+        store_frequency: Optional[int] = None
 ):
     ac = ApiCaller(model=model)
 
@@ -217,14 +224,16 @@ def evaluate(
 
     output_dir_nm = f'{now(for_path=True)}_Zeroshot-GPT3-{model}'
     output_path = os_join(u.eval_path, output_dir_nm, domain2eval_dir_nm(domain))
-    os.makedirs(output_path, exist_ok=True)
 
     log_fnm = f'{now(for_path=True)}_GPT3_{model}_{domain}_{dataset_name}_Eval'
     logger_fl = get_logger('GPT3 Eval', kind='file-write', file_path=os_join(output_path, f'{log_fnm}.log'))
     d_log: Dict[str, Any] = dict(model_name=model, domain=domain, dataset_names=dataset_names, output_path=output_path)
-    d_log.update(dict(concurrent=concurrent, subsample=subsample, subsample_seed=subsample_seed, store_text=store_text))
+    d_log.update(dict(concurrent=concurrent, subsample=subsample, subsample_seed=subsample_seed, store_meta=store_meta))
+    d_log['store_frequency'] = store_frequency
     logger.info(f'Evaluating GPT3 model w/ {pl.i(d_log)}... ')
     logger_fl.info(f'Evaluating GPT3 model w/ {d_log}... ')
+
+    os.makedirs(output_path, exist_ok=True)
 
     for dnm in dataset_names:
         if subsample:
@@ -236,19 +245,46 @@ def evaluate(
         label_options = [lb.lower() for lb in pm.labels]
         lb2id = {lb: idx for idx, lb in enumerate(label_options)}
         args = dict(pm=pm, api_caller=ac, label_options=label_options, lb2id=lb2id, logger_fl=logger_fl)
-        eval_single = _EvalSingle(**args, return_text=store_text)
+        eval_single = _EvalSingle(**args, return_text=store_meta)
 
-        pmps, gens = [], []
-        if concurrent:  # concurrency doesn't seem to help
-            with_tqdm = dict(desc=f'Evaluating {pl.i(dnm)}', chunksize=32)
-            lst = conc_map(eval_single, dset, with_tqdm=with_tqdm, mode='thread', n_worker=8)
+        lst_meta = []
+        meta_path = os_join(output_path, f'{dnm}_meta.json')
+
+        store_frequency = store_frequency or 100
+
+        def write_meta():  # Writing completed inferences to file periodically, in case GPT3 eval gets stuck
+            print('in write meta', len(lst_meta), store_frequency, len(lst_meta) % store_frequency == 0)
+            if len(lst_meta) % store_frequency == 0:
+                logger.info(f'Writing eval instances to {pl.i(meta_path)}...')
+                logger_fl.info(f'Writing eval instances to {meta_path}...')
+                #
+                d_ = d_log
+                infs = [asdict(m) for m in lst_meta]
+                n = len(infs)
+                if not concurrent:  # a numpy array created
+                    _preds = list(preds[:n])
+                    _trues = list(trues[:n])
+                else:
+                    _preds, _trues = preds, trues
+                d_.update(dict(inferences=infs, n=n, preds=_preds, trues=_trues))
+
+                with open(meta_path, 'w') as f_:
+                    json.dump(d_, f_, indent=4)
+
+        mic('in concurrent', concurrent)
+        if concurrent:
+            with_tqdm = dict(desc=f'Evaluating {pl.i(dnm)}', total=len(dset))
+            # order irrelevant
             preds, trues = [], []
-            for e in lst:
+            for e in conc_yield(eval_single, dset, with_tqdm=with_tqdm, mode='thread', n_worker=4):
                 preds.append(e.pred)
                 trues.append(e.true)
-                if store_text:
-                    pmps.append(e.prompt)
-                    gens.append(e.generated)
+                # print('in iter \n asdasd', store_meta, len(lst_meta))
+                # raise NotImplementedError
+                if store_meta:
+                    # raise NotImplementedError
+                    lst_meta.append(e.meta)
+                    write_meta()
         else:
             n_dset = len(dset)
             trues, preds = np.empty(n_dset, dtype=int), np.empty(n_dset, dtype=int)
@@ -256,9 +292,9 @@ def evaluate(
             for idx, elm in enumerate(it):
                 out = eval_single(elm, pbar=it)
                 preds[idx], trues[idx] = out.pred, out.true
-                if store_text:
-                    pmps.append(out.prompt)
-                    gens.append(out.generated)
+                if store_meta:
+                    lst_meta.append(out.meta)
+                    write_meta()
 
         args = dict(
             labels=[-1, *range(len(label_options))], target_names=['Label not in dataset', *label_options],
@@ -271,18 +307,6 @@ def evaluate(
 
         csv_path = os_join(output_path, f'{dnm}.csv')
         pd.DataFrame(report).transpose().to_csv(csv_path)
-
-        if store_text:
-            meta_path = os_join(output_path, f'{dnm}_meta.json')
-            logger.info(f'Writing eval instances to {pl.i(meta_path)}...')
-            logger_fl.info(f'Writing eval instances to {meta_path}...')
-
-            d_ = d_log
-            infs = [dict(prompt=p, generated=g) for p, g in zip(pmps, gens)]
-            d_.update(dict(inferences=infs, preds=preds, trues=trues))
-
-            with open(meta_path, 'w') as f_:
-                json.dump(d_, f_, indent=4)
 
 
 if __name__ == '__main__':
@@ -324,7 +348,7 @@ if __name__ == '__main__':
     # evaluate(model='text-ada-001', domain='in', dataset_name='emotion')
     # evaluate(model='text-curie-001', domain='in', dataset_name='emotion', concurrent=True)
     # evaluate(model='text-davinci-002', domain='in', dataset_name='emotion')
-    evaluate(model='text-curie-001', domain='out', dataset_name='multi_eurlex', concurrent=True)
+    # evaluate(model='text-curie-001', domain='out', dataset_name='multi_eurlex', concurrent=True)
 
     # evaluate(model='text-curie-001', domain='in', dataset_name='finance_sentiment', concurrent=True)
     # evaluate(model='text-curie-001', domain='in', dataset_name='banking77', concurrent=True, subsample=True)
@@ -332,11 +356,11 @@ if __name__ == '__main__':
     # evaluate(model='text-davinci-002', domain='out', dataset_name='consumer_finance')
     # evaluate(model='text-davinci-002', domain='out', dataset_name='amazon_polarity', concurrent=True)
 
-    run_args = dict(concurrent=True, subsample=True, store_text=True)
+    run_args = dict(model='text-curie-001', concurrent=True, subsample=True, store_meta=True, store_frequency=10)
     # dnm = 'amazon_polarity'
     # dnm = 'yelp'
-    dnm = 'consumer_finance'
-    # evaluate(model='text-davinci-002', domain='out', dataset_name=dnm, **run_args)
+    dnm_ = 'consumer_finance'
+    evaluate(domain='out', dataset_name=dnm_, **run_args)
 
     def parse_args():
         parser = ArgumentParser()

@@ -269,15 +269,26 @@ def save_aspect_normalized_datasets(domain: str = 'in'):
     return ret
 
 
-def download_data(path, file=None):
-    if path == in_domain_data_path:
+def download_data(path):
+    if 'in-domain' in path:
         file = './dataset/in-domain.zip'
-        gdown.download(in_domain_url, file, quiet=False)
-    elif path == out_of_domain_data_path:
+        url = in_domain_url
+    else:
+        assert 'out-of-domain' in path
         file = './dataset/out-domain.zip'
-        gdown.download(out_of_domain_url, file, quiet=False)
+        url = out_of_domain_url
+    fl_paths = [d for d in file.split(os.sep) if d != '.']
+    fl_path = os.path.join(u.proj_path, *fl_paths)
+    mic(fl_path)
+    os.makedirs(os.path.dirname(fl_path), exist_ok=True)
+    gdown.download(url, fl_path, quiet=False)
+
     with ZipFile(file, "r") as zfl:
-        zfl.extractall(dataset_path)
+        dset_paths = [d for d in dataset_path.split(os.sep) if d != '.']
+        path = os_join(u.proj_path, *dset_paths)
+        os.makedirs(path, exist_ok=True)
+        mic(dset_paths)
+        zfl.extractall(path)
         zfl.close()
 
 
