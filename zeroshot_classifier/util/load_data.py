@@ -158,10 +158,12 @@ def subsample_dataset(dataset: Dataset = None, n_src: int = None, n_tgt: int = N
     d_log = {'#source': n_src, '#target': n_tgt, 'subsample-ratio': f'{round(ratio * 100, 3)}%'}
     logger.info(f'Subsampling dataset w/ {pl.i(d_log)}... ')
 
-    cls2txt: Dict[str, Set[str]] = defaultdict(set)
+    cls2txt = defaultdict(set)
     for txt, lbs in dataset.items():
         for lb in lbs:  # the same text may be added to multiple classes & hence sampled multiple times, see below
             cls2txt[lb].add(txt)
+    # so that seed ensures reproducibility; TODO: too slow?
+    cls2txt = {cls: sorted(txts) for cls, txts in cls2txt.items()}
     cls2count = {cls: len(txts) for cls, txts in cls2txt.items()}
     # normalize by #pair instead of #text for keeping output #text close to `n_sample`
     cls2count = {cls: round(c * ratio) for cls, c in cls2count.items()}  # goal count for output

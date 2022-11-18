@@ -79,6 +79,7 @@ def subsample_dataset(dataset_name: str = None, split: str = 'train', n_tgt: int
     d = sconfig(f'UTCD.datasets.{dataset_name}')
     domain = d['domain']
     dset = load_data.get_datasets(domain=domain, dataset_names=dataset_name)[dataset_name][split]
+    dset: Dict[str, List[str]]  # text => list of labels
 
     d = get(d, f'splits.{split}')
     dset = load_data.subsample_dataset(dataset=dset, n_src=d['n_pair'], n_tgt=n_tgt, seed=seed)
@@ -673,14 +674,14 @@ if __name__ == '__main__':
     def get_utcd_in():
         process_utcd_dataset(domain='in', join=False)
         sanity_check('UTCD-in')
-    get_utcd_in()
+    # get_utcd_in()
 
     # get_utcd_from_gdrive(domain='out')
 
     def get_utcd_out():
         process_utcd_dataset(domain='out', join=False)
         sanity_check('UTCD-out')
-    get_utcd_out()
+    # get_utcd_out()
 
     def sanity_check_ln_eurlex():
         path = os_join(get_base_path(), PROJ_DIR, DSET_DIR, 'processed', 'multi_eurlex')
@@ -792,3 +793,8 @@ if __name__ == '__main__':
         for aspect in sconfig('UTCD.aspects'):
             vs.plot_utcd_embeddings(kind=kd, aspect=aspect, save=sv, cache=cnm)
     # plot_encoded_overlap_aspect()
+
+    def check_subsample_deterministic():
+        ds = subsample_dataset(dataset_name='sentiment_tweets_2020', split='test', n_tgt=100, seed=77)
+        mic(ds[:2]['text'])
+    check_subsample_deterministic()

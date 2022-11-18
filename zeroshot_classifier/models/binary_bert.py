@@ -82,7 +82,8 @@ if __name__ == '__main__':
         n = None
         # n = 64
 
-        best_metric = 'accuracy'
+        # best_metric = 'accuracy'
+        best_metric = 'loss'
 
         output_path = map_model_output_path(
             model_name=MODEL_NAME.replace(' ', '-'), output_path=output_path, output_dir=output_dir,

@@ -30,8 +30,8 @@ u = StefUtil(
 u.plot_path = os_join(BASE_PATH, PROJ_DIR, 'plot')
 save_fig = u.save_fig
 
-for d in sconfig('check-arg'):
-    ca.cache_mismatch(**d)
+for _d in sconfig('check-arg'):
+    ca.cache_mismatch(**_d)
 
 
 def plot_points(arr, **kwargs):
@@ -72,12 +72,15 @@ def map_model_dir_nm(
     out = f'{now(for_path=True)}_{model_name}'
     if name:
         out = f'{out}_{name}'
+    d = dict()
     if mode:
-        out = f'{out}_{mode}'
+        d['md'] = '-'.join(e[0] for e in mode.split('-'))
     if sampling:
-        out = f'{out}_{sampling}'
+        d['sp'] = sampling[0]
     if normalize_aspect:
-        out = f'{out}_asp-norm'
+        d['na'] = 'T'
+    if d:
+        out = f'{out}_{pl.pa(d)}'
     return out
 
 

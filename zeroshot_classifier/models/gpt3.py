@@ -12,6 +12,7 @@ from dataclasses import dataclass, asdict
 
 import numpy as np
 import pandas as pd
+import datasets
 from sklearn.metrics import classification_report
 from tqdm.auto import tqdm
 
@@ -214,7 +215,7 @@ class _EvalSingle:
 def evaluate(
         model: str = 'text-ada-001', domain: str = 'in', dataset_name: str = 'all', concurrent: bool = False,
         subsample: Union[bool, int] = False, subsample_seed: int = 77, store_meta: bool = False,
-        store_frequency: Optional[int] = None
+        store_frequency: Optional[int] = None, resume: List[str] = None
 ):
     ac = ApiCaller(model=model)
 
@@ -222,11 +223,23 @@ def evaluate(
         raise NotImplementedError('Subsampling intended for single dataset')
     dataset_names = utcd_util.get_eval_dataset_names(domain=domain, dataset_name=dataset_name)
 
-    output_dir_nm = f'{now(for_path=True)}_Zeroshot-GPT3-{model}'
+    _preds, _trues, _infs = None, None, None
+    if resume:
+        assert len(dataset_names) == 1  # sanity check, intended for resuming from single dataset
+        _preds, _trues, _infs = [], [], []
+        for r in resume:
+            with open(r, 'r') as fl:
+                meta = json.load(fl)
+            _preds.extend(meta['preds'])
+            _trues.extend(meta['trues'])
+            _infs.extend(meta['inferences'])
+        assert len(_preds) == len(_trues) == len(_infs)  # sanity check
+
+    d = dict(md=model, dm=domain, dnm=dataset_name)
+    output_dir_nm = f'{now(for_path=True)}_Zeroshot-GPT3-Eval_{pl.pa(d)}'
     output_path = os_join(u.eval_path, output_dir_nm, domain2eval_dir_nm(domain))
 
-    log_fnm = f'{now(for_path=True)}_GPT3_{model}_{domain}_{dataset_name}_Eval'
-    logger_fl = get_logger('GPT3 Eval', kind='file-write', file_path=os_join(output_path, f'{log_fnm}.log'))
+    logger_fl = get_logger('GPT3 Eval', kind='file-write', file_path=os_join(output_path, f'eval.log'))
     d_log: Dict[str, Any] = dict(model_name=model, domain=domain, dataset_names=dataset_names, output_path=output_path)
     d_log.update(dict(concurrent=concurrent, subsample=subsample, subsample_seed=subsample_seed, store_meta=store_meta))
     d_log['store_frequency'] = store_frequency
@@ -241,6 +254,21 @@ def evaluate(
             dset = utcd_util.subsample_dataset(dataset_name=dnm, split='test', n_tgt=n_tgt, seed=subsample_seed)
         else:
             dset = get_dataset(dnm, splits='test')['test']
+        dset: datasets.Dataset
+
+        if resume:
+            n_ori = len(dset)
+            ran_txts = set(e['text'] for e in _infs)
+
+            def filt(sample: Dict[str, Any]) -> bool:
+                return sample['text'] not in ran_txts
+            dset = dset.filter(filt)
+            # sanity check, every text completed should be accounted for, exactly once
+            mic(len(dset), len(_infs), n_ori)
+            assert len(dset) + len(_infs) == n_ori
+            logger.info(f'{pl.i(len(_infs))} texts evaluated, resuming from {pl.i(n_ori)} => {pl.i(len(dset))} ')
+            logger_fl.info(f'{len(_infs)} texts evaluated, resuming from {n_ori} => {len(dset)} ')
+
         pm = PromptMap(dataset_name=dnm, logger_fl=logger_fl)
         label_options = [lb.lower() for lb in pm.labels]
         lb2id = {lb: idx for idx, lb in enumerate(label_options)}
@@ -258,21 +286,24 @@ def evaluate(
                 logger_fl.info(f'Writing eval instances to {meta_path}...')
                 d_ = d_log
                 infs = [asdict(m) for m in lst_meta]
+                if resume:
+                    infs = _infs + infs
                 n = len(infs)
                 if not concurrent:  # a numpy array created
-                    _preds = list(preds[:n])
-                    _trues = list(trues[:n])
+                    __preds = list(preds[:n])
+                    __trues = list(trues[:n])
                 else:
-                    _preds, _trues = preds, trues
-                d_.update(dict(inferences=infs, n=n, preds=_preds, trues=_trues))
+                    __preds, __trues = preds, trues
+                assert len(__preds) == len(__trues) == len(infs)  # sanity check
+                d_.update(dict(inferences=infs, n=n, preds=__preds, trues=__trues))
 
                 with open(meta_path, 'w') as f_:
                     json.dump(d_, f_, indent=4)
 
         if concurrent:
             with_tqdm = dict(desc=f'Evaluating {pl.i(dnm)}', total=len(dset))
+            preds, trues = (_preds, _trues) if resume else ([], [])
             # order irrelevant
-            preds, trues = [], []
             for e in conc_yield(eval_single, dset, with_tqdm=with_tqdm, mode='thread', n_worker=4):
                 preds.append(e.pred)
                 trues.append(e.true)
@@ -282,6 +313,9 @@ def evaluate(
         else:
             n_dset = len(dset)
             trues, preds = np.empty(n_dset, dtype=int), np.empty(n_dset, dtype=int)
+            if resume:
+                trues[:len(_trues)] = _trues
+                preds[:len(_preds)] = _preds
             it = tqdm(dset, desc=f'Evaluating {pl.i(dnm)}')
             for idx, elm in enumerate(it):
                 out = eval_single(elm, pbar=it)
@@ -308,7 +342,9 @@ if __name__ == '__main__':
 
     with open(os_join(u.proj_path, 'auth', 'open-ai.json')) as f:
         auth = json.load(f)
-        api_key, org = auth['api-key'], auth['organization']
+        org = auth['organization']
+        # api_key = auth['api-key']
+        api_key = auth['api-key-chris']
 
     headers = {
         'Authorization': f'Bearer {api_key}',
@@ -354,7 +390,14 @@ if __name__ == '__main__':
     # dnm = 'amazon_polarity'
     # dnm = 'yelp'
     dnm_ = 'consumer_finance'
-    evaluate(domain='out', dataset_name=dnm_, **run_args)
+    rsm = [os_join(
+        u.eval_path, '2022-11-17_23-41-12_Zeroshot-GPT3-Eval_{md=text-curie-001, dm=out, dnm=consumer_finance}',
+        '22-11-17_out-of-domain', 'consumer_finance_meta.json'
+    )]
+    evaluate(
+        domain='out', dataset_name=dnm_, **run_args,
+        resume=rsm
+    )
 
     def parse_args():
         parser = ArgumentParser()
