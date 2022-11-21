@@ -73,8 +73,13 @@ def map_model_dir_nm(
     if name:
         out = f'{out}_{name}'
     d = dict()
-    if mode:
-        d['md'] = '-'.join(e[0] for e in mode.split('-'))
+    if mode:  # see config::training.strategies
+        nms = mode.split('-')
+        if len(nms) == 1:
+            d['md'] = mode[:3]
+        else:
+            nf, nl = nms[0], nms[-1]
+            d['md'] = f'{nf[:3]}-{nl[:3]}'
     if sampling:
         d['sp'] = sampling[0]
     if normalize_aspect:

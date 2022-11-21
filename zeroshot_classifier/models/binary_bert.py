@@ -110,6 +110,8 @@ if __name__ == '__main__':
                 ds.extend(binary_cls_format(dset, **args, split=split))
 
         d_log = dict(model_init=model_init)
+        if mode == 'explicit':
+            assert model_init != HF_MODEL_NAME  # sanity check
         if model_init != HF_MODEL_NAME:
             # loading from explicit pre-training local weights,
             # the classification head would be ignored for classifying 3 classes

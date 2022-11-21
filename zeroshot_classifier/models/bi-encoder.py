@@ -95,6 +95,8 @@ if __name__ == "__main__":
 
         # seq length for consistency w/ `binary_bert` & `sgd`
         d_log = dict(model_init=model_init)
+        if mode == 'explicit':
+            assert model_init != HF_MODEL_NAME  # sanity check
         if model_init != HF_MODEL_NAME:
             # loading from explicit pre-training local weights,
             # the classification head would be ignored for classifying 3 classes
