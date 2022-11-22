@@ -32,11 +32,13 @@ if __name__ == '__main__':
         # n = 256
         n = None
 
-        lr = 1e-5
+        lr = 4e-5
+        our_dir = f'{{a={lr}}}'
 
         bsz = 32
 
         n_ep = 8
+        mic(lr, bsz, n_ep)
 
         logger.info('Loading tokenizer & model... ')
         tokenizer = BertTokenizer.from_pretrained(HF_MODEL_NAME)
@@ -115,7 +117,7 @@ if __name__ == '__main__':
             else:
                 path = map_model_output_path(
                     model_name=MODEL_NAME.replace(' ', '-'), mode='explicit',
-                    sampling=None, normalize_aspect=NORMALIZE_ASPECT
+                    sampling=None, normalize_aspect=NORMALIZE_ASPECT, output_dir=our_dir
                 )
 
                 with_tqdm = True

@@ -24,8 +24,8 @@ __all__ = ['EXPLICIT_BERT_MODEL_NAME', 'EXPLICIT_GPT2_MODEL_NAME', 'get_train_ar
 
 _bert_md_nm = zeroshot_classifier.models.binary_bert.MODEL_NAME
 _gpt2_md_nm = zeroshot_classifier.models.gpt2.MODEL_NAME
-EXPLICIT_BERT_MODEL_NAME = f'Explicit Pretrain Aspect {_bert_md_nm}'
-EXPLICIT_GPT2_MODEL_NAME = f'Explicit Pretrain Aspect {_gpt2_md_nm}'
+EXPLICIT_BERT_MODEL_NAME = f'Aspect Pretrain {_bert_md_nm}'
+EXPLICIT_GPT2_MODEL_NAME = f'Aspect Pretrain {_gpt2_md_nm}'
 
 
 def get_train_args(model_name: str, dir_name: str = None, **kwargs) -> TrainingArguments:

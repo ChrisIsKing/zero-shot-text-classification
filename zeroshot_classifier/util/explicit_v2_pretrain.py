@@ -105,7 +105,7 @@ class MyTrainStatsMonitorCallback(TrainerCallback):
         mdl_type = self.trainer.model.__class__.__qualname__
         output_dir = self.trainer.args.output_dir
         path_log = os_join(output_dir, f'{mdl_type} train.log')
-        self.logger_fl = get_logger(name=self.name, typ='file-write', file_path=path_log)
+        self.logger_fl = get_logger(name=self.name, kind='file-write', file_path=path_log)
         self.writer = SummaryWriter(os_join(output_dir, f'tb'))
         self.ls = LogStep(
             trainer=self.trainer, prettier=self.prettier,
@@ -138,10 +138,10 @@ class MyTrainStatsMonitorCallback(TrainerCallback):
                 d_log = dict(step=step, epoch=state.epoch, lr=logs['learning_rate'], loss=logs['loss'])
                 if not self.trainer.disable_train_metrics:
                     d_log['sp_cls_acc'] = self.out_dict['acc']
-                self.ls(d_log, training=in_train)
+                self.ls(d_log, training=in_train, to_console=not self.trainer.with_tqdm)
             elif not in_train and 'eval_loss' in logs:
                 d_log = dict(step=step, epoch=int(state.epoch), loss=logs['eval_loss'], asp_cls_acc=logs['eval_acc'])
-                self.ls(d_log, training=in_train)
+                self.ls(d_log, training=in_train, to_console=not self.trainer.with_tqdm)
             else:
                 self.logger.info(pl.i(logs))
                 self.logger_fl.info(pl.nc(logs))

@@ -153,7 +153,7 @@ def get_explicit_dataset(
         datasets.set_progress_bar_enabled(False)
     ret = dsets.map(
         exp_map, batched=True, remove_columns=rmv, num_proc=_get_num_proc(dsets) if fast else None,
-        load_from_cache_file=False
+        # load_from_cache_file=False
     )
     datasets.set_progress_bar_enabled(True)
     return ret
