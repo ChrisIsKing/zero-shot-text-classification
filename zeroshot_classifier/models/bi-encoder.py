@@ -104,7 +104,7 @@ if __name__ == "__main__":
             d_log['files'] = os.listdir(model_init)
         logger.info(f'Loading model with {pl.i(d_log)}...')
         logger_fl.info(f'Loading model with {pl.nc(d_log)}...')
-        word_embedding_model = models.Transformer(model_init, max_seq_length=512)
+        word_embedding_model = models.Transformer(model_init, max_seq_length=512, tokenizer_args=dict(use_fast=False))
         add_tok_arg = utcd_util.get_add_special_tokens_args(word_embedding_model.tokenizer, train_strategy=mode)
         if add_tok_arg:
             logger.info(f'Adding special tokens {pl.i(add_tok_arg)} to tokenizer... ')
