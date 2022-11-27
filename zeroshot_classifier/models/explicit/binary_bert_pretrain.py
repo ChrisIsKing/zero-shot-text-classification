@@ -3,7 +3,7 @@ from os.path import join as os_join
 
 import torch
 from torch.utils.data import DataLoader
-from transformers import BertTokenizer, AutoModelForSequenceClassification
+from transformers import BertTokenizer, BertTokenizerFast, AutoModelForSequenceClassification
 from tqdm.auto import tqdm
 
 from stefutil import *
@@ -41,7 +41,7 @@ if __name__ == '__main__':
         mic(lr, bsz, n_ep)
 
         logger.info('Loading tokenizer & model... ')
-        tokenizer = BertTokenizer.from_pretrained(HF_MODEL_NAME)
+        tokenizer = BertTokenizerFast.from_pretrained(HF_MODEL_NAME)
         mdl = AutoModelForSequenceClassification.from_pretrained(HF_MODEL_NAME, num_labels=len(sconfig('UTCD.aspects')))
         tokenizer.add_special_tokens(dict(eos_token=utcd_util.EOT_TOKEN))  # end-of-turn for SGD
         mdl.resize_token_embeddings(len(tokenizer))
@@ -149,7 +149,7 @@ if __name__ == '__main__':
             trainer.save_model(save_path)
             tokenizer.save_pretrained(save_path)
             logger.info(f'Tokenizer & Model saved to {pl.i(save_path)}')
-    train()
+    # train()
     # dir_nm_ = '2022-05-16_21-25-30/checkpoint-274088'
     # ckpt_path = os_join(utcd_util.get_output_base(), PROJ_DIR, MODEL_DIR, MODEL_NAME.replace(' ', '-'), dir_nm_)
     # train(resume_from_checkpoint=ckpt_path)
@@ -204,9 +204,15 @@ if __name__ == '__main__':
         """
         To adhere to CrossEncoder API, save Bert tokenizer to the same directory
         """
-        # dir_nm = '2022-05-19_23-33-50/checkpoint-411132'
-        dir_nm = '2022-06-03_17-02-19/checkpoint-23988'
-        path = os_join(utcd_util.get_base_path(), PROJ_DIR, MODEL_DIR, MODEL_NAME.replace(' ', '-'), dir_nm)
-        tokenizer = BertTokenizer.from_pretrained(HF_MODEL_NAME)  # TODO: should add eot token as in updated training
+        # dir_nm = '2022-11-25_22-01-07_Bi-Encoder_{md=exp, sp=r, na=T}_{a=1e-5}'
+        # dir_nm = '2022-11-25_22-02-38_Bi-Encoder_{md=exp, sp=r, na=T}_{a=2e-5}'
+        # dir_nm = '2022-11-25_22-04-46_Bi-Encoder_{md=exp, sp=r, na=T}_{a=3e-5}'
+        dir_nm = '2022-11-25_22-07-17_Bi-Encoder_{md=exp, sp=r, na=T}_{a=4e-5}'
+        path = os_join(utcd_util.get_base_path(), u.proj_dir, u.model_dir, dir_nm)
+        mic(path, os.listdir(path))
+
+        tokenizer = BertTokenizerFast.from_pretrained(HF_MODEL_NAME)
+        tokenizer.add_special_tokens(dict(eos_token=utcd_util.EOT_TOKEN))
         tokenizer.save_pretrained(path)
-    # fix_save_tokenizer()
+    fix_save_tokenizer()
+
