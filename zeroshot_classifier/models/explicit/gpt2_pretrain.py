@@ -32,6 +32,7 @@ if __name__ == '__main__':
 
         lr = 4e-5
         n_ep = 8
+        mic(n, lr, n_ep)
 
         logger.info('Loading tokenizer & model... ')
 
@@ -58,14 +59,14 @@ if __name__ == '__main__':
         transformers.set_seed(seed)
         path = map_model_output_path(
             model_name=MODEL_NAME.replace(' ', '-'), mode='explicit',
-            sampling=None, normalize_aspect=NORMALIZE_ASPECT
+            sampling=None, normalize_aspect=NORMALIZE_ASPECT, output_dir=f'{{a={lr}}}'
         )
         train_args = dict(
             output_dir=path,
             learning_rate=lr,
-            per_device_train_batch_size=4,  # to fit in memory, bsz 16 to keep same with Bin Bert pretraining
+            per_device_train_batch_size=4,  # to fit in memory, bsz 32 to keep same with Bin Bert pretraining
             per_device_eval_batch_size=16,
-            gradient_accumulation_steps=4,
+            gradient_accumulation_steps=8,
             fp16=torch.cuda.is_available(),
             num_train_epochs=n_ep,
             dataloader_num_workers=4
