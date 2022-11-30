@@ -89,7 +89,7 @@ class MyLoggingCallback(TrainerCallback):
             self.logger: logging.Logger = get_logger(self.name)
             output_dir = self.trainer.args.output_dir
             fl_path = os_join(output_dir, f'{self.log_fnm}.log')
-            self.logger_fl = get_logger(name=self.name, typ='file-write', file_path=fl_path)
+            self.logger_fl = get_logger(name=self.name, kind='file-write', file_path=fl_path)
             self.tb_writer = SummaryWriter(os_join(output_dir, f'TB_{self.log_fnm}'))
             self.ls = LogStep(
                 trainer=self.trainer, prettier=self.prettier,
@@ -182,13 +182,13 @@ class MyLoggingCallback(TrainerCallback):
                 d_log.update(dict(lr=logs['learning_rate'], loss=logs['loss']))
                 if not self.trainer.disable_train_metrics:
                     d_log.update(self._acc_stats2dict(self.out_dict_tr))
-                self.ls(d_log)
+                self.ls(d_log, training=True, to_console=not self.trainer.with_tqdm)
                 self.out_dict_tr = None  # Reset for next global step
             elif 'eval_loss' in logs:  # Trainer eval output after eval metric computed
                 n_ep = logs['epoch']
                 assert n_ep.is_integer()
                 d_log = dict(epoch=int(n_ep), loss=logs['eval_loss'], cls_acc=logs['eval_cls_acc'])
-                self.ls(d_log)
+                self.ls(d_log, training=False, to_console=not self.trainer.with_tqdm)
             else:
                 self.logger.info(pl.i(logs))
                 self.logger_fl.info(pl.nc(logs))

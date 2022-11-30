@@ -703,12 +703,14 @@ def get_all_setup(
         ts_map_func = Tokenize(tokenizer, dataset_name=dataset_name, split='test')
 
     splits = ('train', 'eval', 'test') if normalize_aspect else ('train', 'test')
-    dsets = get_dataset(
+    get_dset_args = dict(
         dataset_name=dataset_name,
         map_func=dict(train=tr_map_func, eval=vl_map_func, test=ts_map_func), remove_columns=['text', 'labels'],
         n_sample=n_sample, shuffle_seed=random_seed, pbar=True, splits=splits,
-        fast='debug' not in model_name, **dataset_args
+        fast='debug' not in model_name
     )
+    get_dset_args.update(dataset_args)
+    dsets = get_dataset(**get_dset_args)
     _trainer_args = dict(
         model=model, args=train_args_, data_collator=data_collator_,
         train_dataset=dsets['train'], eval_dataset=dsets.get('eval', None), compute_metrics=compute_metrics
@@ -1027,22 +1029,25 @@ def gpt2_inference(text: str, label_options: List[str]) -> str:
 
 
 if __name__ == '__main__':
-    mic.output_width = 512
+    mic.output_width = 256
 
     seed = sconfig('random-seed')
 
+    NORMALIZE_ASPECT = True
 
     def train():
         transformers.set_seed(seed)
         dnm = 'UTCD-in'
         # md_nm = 'debug'
         md_nm = 'gpt2-medium'
+        mic(dnm, md_nm)
 
-        # form = 'vanilla'
-        form = 'implicit'
+        form = 'vanilla'
+        # form = 'implicit'
         # form = 'explicit'
+        mic(form)
         if form == 'explicit':
-            dir_nm = '2022-06-20_22-50-06_Explicit-Pretrain-Aspect-NVIDIA-GPT2-gpt2-medium-explicit-aspect-norm'
+            dir_nm = '2022-11-27_17-39-06_Aspect-Pretrain-NVIDIA-GPT2_{md=exp, na=T}_{a=2e-05}'
             md_nm = os_join(u.proj_path, u.model_dir, dir_nm, 'trained')
             mic(os.listdir(md_nm))
             # exit(1)
@@ -1052,45 +1057,38 @@ if __name__ == '__main__':
         # n = 256
         n = None
 
-        asp_norm = True
-        dataset_args = dict(normalize_aspect=seed) if asp_norm else dict()
+        n_ep = 8
 
-        # debug = True
-        debug = False
+        lr = 3e-5
+        ddp = False
+        # ddp = 4
 
-        if 'debug' in md_nm:
-            # train_args = dict(  # overfit small
-            #     weight_decay=0,
-            #     learning_rate=3e-4,
-            #     per_device_train_batch_size=4,
-            #     num_train_epochs=128,
-            #     lr_scheduler_type=SchedulerType.CONSTANT,
-            #     gradient_accumulation_steps=8,
-            #     save_strategy='no',
-            # )
-            dataset_args.update(dict(  # debugging
-                # filter_func=lambda sample: sample['dataset_id'] == config('UTCD.dataset_name2id')['dbpedia'],
-                # filter_func=lambda sample: len(sample['labels']) > 1,
+        dataset_args = dict(pbar=False)
+        if NORMALIZE_ASPECT:
+            dataset_args['normalize_aspect'] = seed
+
+        path = map_model_output_path(
+            model_name=MODEL_NAME.replace(' ', '-'), mode=form,
+            sampling=None, normalize_aspect=NORMALIZE_ASPECT, output_dir=f'{{a={lr}}}'
+        )
+        train_args = dict(  # Distribute among GPUs & fit in memory; Effectively batch size 128 as in paper
+            output_dir=path,
+            num_train_epochs=n_ep,
+            learning_rate=lr,
+            warmup_ratio=1e-1,
+            per_device_train_batch_size=4,
+            per_device_eval_batch_size=8,
+            gradient_accumulation_steps=32,
+            dataloader_num_workers=4
+        )
+        if NORMALIZE_ASPECT:
+            train_args.update(dict(
+                load_best_model_at_end=True,
+                metric_for_best_model='eval_loss',
+                greater_is_better=False
             ))
-            train_args = dict(
-                num_train_epochs=3,
-                per_device_train_batch_size=4
-            )
-            ddp = False
-        else:
-            # dataset_args = dict()
-            train_args = dict(  # Distribute among GPUs & fit in memory; Effectively batch size 128 as in paper
-                # num_train_epochs=3,
-                num_train_epochs=8,
-                warmup_ratio=1e-1,
-                per_device_train_batch_size=4,
-                per_device_eval_batch_size=4 if debug else 8,
-                gradient_accumulation_steps=2 if debug else 8 * 4,
-                dataloader_num_workers=None if debug else 4
-            )
-            ddp = False
-            # ddp = 4
-        mic(debug, n, asp_norm, ddp)
+
+        mic(n, n_ep, lr, NORMALIZE_ASPECT, ddp)
         mic(train_args)
         model, tokenizer, trainer = get_all_setup(
             model_name=md_nm, dataset_name=dnm, form=form, do_eval=True, custom_logging=True, n_sample=n,
@@ -1105,7 +1103,7 @@ if __name__ == '__main__':
         trainer.save_model(save_path)
         tokenizer.save_pretrained(save_path)
         os.listdir(save_path)
-    # train()
+    train()
 
     def run_eval():
         transformers.set_seed(seed)  # cos explicit 3 epoch doesn't generate BOA token...
@@ -1122,10 +1120,10 @@ if __name__ == '__main__':
         # n_ep = 5
         n_ep = 8
         evaluate(
-            domain=dom, batch_size=48, form=form, load_model_args=dict(normalize_aspect=True, epoch=n_ep),
+            domain=dom, batch_size=48, form=form, load_model_args=dict(normalize_aspect=NORMALIZE_ASPECT, epoch=n_ep),
             embed_sim=True
         )
-    run_eval()
+    # run_eval()
 
     def sanity_check_trained_generate():
         text = 'hello world'
