@@ -44,6 +44,9 @@ MODEL_NAME = 'NVIDIA-GPT2'
 HF_MODEL_NAME = 'gpt2-medium'
 
 
+logger = get_logger(MODEL_NAME)
+
+
 class ZsGPT2Tokenizer(GPT2TokenizerFast):
     """
     A wrapper around GPT2 tokenizer for 0-shot classification tokenizing
@@ -777,11 +780,10 @@ def plot_dataset_token_length_stats(domain: str = 'in'):
 
 
 def load_trained(
-        form: str = 'vanilla', epoch: int = 3, normalize_aspect: bool = False
+        form: str = 'vanilla', epoch: int = 3, normalize_aspect: bool = False, dir_name: str = None
 ) -> Tuple[ZsGPT2LMHeadModel, ZsGPT2Tokenizer, str]:
     ca.check_mismatch('GPT2 Training Strategy', form, ['vanilla', 'implicit', 'explicit'])
 
-    logger = get_logger('Load ZS-GPT2 Trained')
     d_log = dict(form=form, epoch=epoch, normalize_aspect=normalize_aspect)
     logger.info(f'Loading model with {pl.i(d_log)}... ')
     tokenizer_name = 'gpt2'
@@ -808,6 +810,7 @@ def load_trained(
                 dir_nm = '2022-10-14_07-45-31_NVIDIA-GPT2-gpt2-medium-vanilla-aspect-norm'  # warmup 0.1
             else:
                 raise NotImplementedError('TODO')
+        dir_nm = dir_name or dir_nm
         path = os_join(get_base_path(), u.proj_dir, u.model_dir, dir_nm, 'trained')
         if form != 'vanilla':  # TODO: all models should have tokenizers saved eventually
             tokenizer_name = path
@@ -820,7 +823,9 @@ def load_trained(
                 3: os_join('2022-04-02_11-51-19', 'checkpoint-51390'),
             }
         dir_nm = load_trained.epoch2path[epoch]
+        dir_nm = dir_name or dir_nm
         path = os_join(BASE_PATH, PROJ_DIR, 'trained-models', 'gpt2-nvidia', dir_nm)
+    logger.info(f'Loading model from {pl.i(path)}... ')
     model = ZsGPT2LMHeadModel.from_pretrained(path, is_zs_gpt2=True)  # with caching
     tokenizer_args = dict(form=form, use_fast=True, model_max_length=model.config.n_ctx)
     tokenizer = ZsGPT2Tokenizer.from_pretrained(tokenizer_name, **tokenizer_args)
@@ -867,15 +872,16 @@ def evaluate(
     d_eval = dict(batch_size=batch_size, datasets=dataset_names, embed_similarity=embed_sim)
     domain = 'in-domain' if domain == 'in' else 'out-of-domain'
     logger_name = 'GPT2-NVIDIA Evaluation'
-    logger = get_logger(logger_name, typ='stdout')
     logger_fl = get_logger(
-        f'{logger_name} file-write', typ='file-write',
+        f'{logger_name} file-write', kind='file-write',
         file_path=os_join(output_path, f'{now(for_path=True)}_{logger_name}, bsz={batch_size}, {domain}.log')
     )
-    logger.info(f'Running evaluation {pl.i(domain)} on model {pl.i(d_model)}, with {pl.i(d_eval)}... ')
-    logger_fl.info(f'Running evaluation {domain} on model {pl.nc(d_model)}, with {pl.nc(d_eval)}... ')
+    logger.info(f'Running eval {pl.i(domain)} on model {pl.i(d_model)}, with {pl.i(d_eval)}... ')
+    logger_fl.info(f'Running eval {domain} on model {pl.nc(d_model)}, with {pl.nc(d_eval)}... ')
 
     for dnm_ in dataset_names:
+        # if dnm_ != 'consumer_finance':
+        #     continue
         d_info = sconfig(f'UTCD.datasets.{dnm_}.splits.{split}')
         lb2id = defaultdict(lambda: -1)  # If generated invalid descriptive label, will return -1
         labels = d_info['labels']
@@ -936,6 +942,8 @@ def evaluate(
                                    f'instead of {pl.i(1)} with [{pl.i(answer_with_eos)}]')
                     logger_fl.warning(f'{model_cnm} generated {len(idxs_boa)} boa_token '
                                       f'instead of {1} with [{answer_with_eos}]')
+                if len(idxs_boa) != 1:
+                    mic(generated, answer_with_eos, idxs_boa)
                 assert len(idxs_boa) == 1
                 idxs_eos = get_substr_indices(answer_with_eos, s_sub=tokenizer.eos_token)
                 # GPT2 would generate multiple `eos_token` for the samples in the batch that terminates early
@@ -1059,7 +1067,7 @@ if __name__ == '__main__':
 
         n_ep = 8
 
-        lr = 3e-5
+        lr = 4e-5
         ddp = False
         # ddp = 4
 
@@ -1103,7 +1111,7 @@ if __name__ == '__main__':
         trainer.save_model(save_path)
         tokenizer.save_pretrained(save_path)
         os.listdir(save_path)
-    train()
+    # train()
 
     def run_eval():
         transformers.set_seed(seed)  # cos explicit 3 epoch doesn't generate BOA token...
@@ -1119,11 +1127,17 @@ if __name__ == '__main__':
         # n_ep = 3
         # n_ep = 5
         n_ep = 8
-        evaluate(
-            domain=dom, batch_size=48, form=form, load_model_args=dict(normalize_aspect=NORMALIZE_ASPECT, epoch=n_ep),
-            embed_sim=True
-        )
-    # run_eval()
+
+        # dnm = '2022-11-29_12-12-56_NVIDIA-GPT2_{md=van, na=T}_{a=1e-05}'
+        # dnm = '2022-11-29_19-15-44_NVIDIA-GPT2_{md=van, na=T}_{a=2e-05}'
+        # dnm = '2022-11-29_19-37-13_NVIDIA-GPT2_{md=van, na=T}_{a=3e-05}'
+        dnm = '2022-11-29_19-43-32_NVIDIA-GPT2_{md=van, na=T}_{a=4e-05}'
+        md_args = dict(normalize_aspect=NORMALIZE_ASPECT, epoch=n_ep, dir_name=dnm)
+
+        mic(NORMALIZE_ASPECT)
+        mic(dom, form, dnm)
+        evaluate(domain=dom, batch_size=48, form=form, load_model_args=md_args, embed_sim=True)
+    run_eval()
 
     def sanity_check_trained_generate():
         text = 'hello world'
