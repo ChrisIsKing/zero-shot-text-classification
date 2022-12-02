@@ -13,6 +13,7 @@ from dataclasses import dataclass, asdict
 import numpy as np
 import pandas as pd
 import datasets
+import openai
 from sklearn.metrics import classification_report
 from tqdm.auto import tqdm
 
@@ -343,8 +344,9 @@ if __name__ == '__main__':
     with open(os_join(u.proj_path, 'auth', 'open-ai.json')) as f:
         auth = json.load(f)
         org = auth['organization']
-        # api_key = auth['api-key']
-        api_key = auth['api-key-chris']
+        api_key = auth['api-key']
+        # api_key = auth['api-key-chris']
+    openai.api_key = api_key
 
     headers = {
         'Authorization': f'Bearer {api_key}',
@@ -365,7 +367,7 @@ if __name__ == '__main__':
 
         payload = dict(
             model=model,
-            prompt="Say this is a test",
+            prompt=["Say this is a test", "Say Happy"],
             max_tokens=6,
             temperature=0  # Generate w/ greedy decoding
         )
@@ -374,6 +376,35 @@ if __name__ == '__main__':
         res = json.loads(res.text)
         mic(res)
     # try_completion()
+
+    def try_open_ai_api():
+        # ppt = "def magic_function():\n\t"
+        ppt = ["def magic_function():\n\t", "print('Hello world!')\n\t"]
+
+        res = openai.Completion.create(
+            model="curie",
+            prompt=ppt,
+            max_tokens=10,
+        )
+        mic(res)
+    # try_open_ai_api()
+
+    def try_open_ai_delay():
+        from tenacity import (
+            retry,
+            stop_after_attempt,
+            wait_random_exponential,
+        )
+
+        @retry(wait=wait_random_exponential(min=1, max=60), stop=stop_after_attempt(6))
+        def completion_with_backoff(**kwargs):
+            return openai.Completion.create(**kwargs)
+
+        res = completion_with_backoff(
+            model="text-davinci-002", prompt=["Once upon a time,", "there was a dog"], max_tokens=10
+        )
+        mic(res)
+    # try_open_ai_delay()
 
     # evaluate(model='text-ada-001', domain='in', dataset_name='emotion')
     # evaluate(model='text-curie-001', domain='in', dataset_name='emotion', concurrent=True)
@@ -394,10 +425,10 @@ if __name__ == '__main__':
         u.eval_path, '2022-11-17_23-41-12_Zeroshot-GPT3-Eval_{md=text-curie-001, dm=out, dnm=consumer_finance}',
         '22-11-17_out-of-domain', 'consumer_finance_meta.json'
     )]
-    evaluate(
-        domain='out', dataset_name=dnm_, **run_args,
-        resume=rsm
-    )
+    # evaluate(
+    #     domain='out', dataset_name=dnm_, **run_args,
+    #     resume=rsm
+    # )
 
     def parse_args():
         parser = ArgumentParser()

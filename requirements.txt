@@ -73,6 +73,7 @@ murmurhash==1.0.6
 nltk==3.6.7
 numpy==1.22.3
 oauthlib==3.2.0
+openai==0.23.1
 overrides==3.1.0
 packaging==21.3
 pandas==1.1.5
@@ -119,6 +120,7 @@ stefutils==0.18.1
 sty==1.0.4
 tabulate==0.8.9
 tbb==2021.6.0
+tenacity==8.1.0
 tensorboard==2.10.1
 tensorboard-data-server==0.6.1
 tensorboard-plugin-wit==1.8.1

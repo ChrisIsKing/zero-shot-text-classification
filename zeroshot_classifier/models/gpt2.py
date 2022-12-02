@@ -880,8 +880,8 @@ def evaluate(
     logger_fl.info(f'Running eval {domain} on model {pl.nc(d_model)}, with {pl.nc(d_eval)}... ')
 
     for dnm_ in dataset_names:
-        # if dnm_ != 'consumer_finance':
-        #     continue
+        if dnm_ != 'consumer_finance':
+            continue
         d_info = sconfig(f'UTCD.datasets.{dnm_}.splits.{split}')
         lb2id = defaultdict(lambda: -1)  # If generated invalid descriptive label, will return -1
         labels = d_info['labels']
@@ -929,22 +929,17 @@ def evaluate(
 
             def set_pred_n_true(generated: str, i_sample: int) -> Tuple[int, int]:
                 idxs_boa = get_substr_indices(generated, s_sub=tokenizer.boa_token)
-                # there will be at least one index, as in prompt
-                if not len(idxs_boa) >= 1:
-                    ids = dset[i_sample]['input_ids']
-                    txt = tokenizer.decode(ids)
-                    mic(generated, idxs_boa, txt)
-                assert len(idxs_boa) >= 1
+                assert len(idxs_boa) >= 1  # there will be at least one index, as in prompt
                 # **try to be as lenient**: try to extract the text part if possible
-                answer_with_eos = generated[idxs_boa[-1] + len(tokenizer.boa_token):]
-                if len(idxs_boa) > 1:
+                answer_with_eos = generated[idxs_boa[0] + len(tokenizer.boa_token):]
+                multiple_boa = len(idxs_boa) > 1
+                if multiple_boa:  # Should be extremely rare, the model is not generating according to template
                     logger.warning(f'{pl.i(model_cnm)} generated {pl.i(len(idxs_boa))} boa_token '
                                    f'instead of {pl.i(1)} with [{pl.i(answer_with_eos)}]')
                     logger_fl.warning(f'{model_cnm} generated {len(idxs_boa)} boa_token '
                                       f'instead of {1} with [{answer_with_eos}]')
-                if len(idxs_boa) != 1:
                     mic(generated, answer_with_eos, idxs_boa)
-                assert len(idxs_boa) == 1
+
                 idxs_eos = get_substr_indices(answer_with_eos, s_sub=tokenizer.eos_token)
                 # GPT2 would generate multiple `eos_token` for the samples in the batch that terminates early
                 if len(idxs_eos) == 0:  # Still, **try to be as lenient**
@@ -954,7 +949,7 @@ def evaluate(
                     answer = answer_with_eos
                 else:
                     answer = answer_with_eos[:idxs_eos[0]]  # until the 1st eos
-                # answer = answer.lower()
+
                 idxs_sep = get_substr_indices(answer, s_sub=tokenizer.ques_sep_token)
                 if len(idxs_sep) > 0:
                     answers = [answer[:idxs_sep[0]]]
@@ -963,6 +958,15 @@ def evaluate(
                     answers.append(answer[idxs_sep[-1] + len(tokenizer.ques_sep_token):])
                 else:
                     answers = [answer]
+
+                if multiple_boa:  # should hardly happen anyway
+                    answs = []
+                    for a in answers:
+                        answs.extend(a.split(tokenizer.boa_token))
+                    answers = answs
+                    mic(answs)
+                    # raise NotImplementedError
+
                 ids_pred: List[int] = [lb2id[a.lower()] for a in answers]
                 assert len(ids_pred) >= 1  # sanity check
                 if embed_sim and all(i == -1 for i in ids_pred):  # all generated answer are non-label
@@ -1130,8 +1134,8 @@ if __name__ == '__main__':
 
         # dnm = '2022-11-29_12-12-56_NVIDIA-GPT2_{md=van, na=T}_{a=1e-05}'
         # dnm = '2022-11-29_19-15-44_NVIDIA-GPT2_{md=van, na=T}_{a=2e-05}'
-        # dnm = '2022-11-29_19-37-13_NVIDIA-GPT2_{md=van, na=T}_{a=3e-05}'
-        dnm = '2022-11-29_19-43-32_NVIDIA-GPT2_{md=van, na=T}_{a=4e-05}'
+        dnm = '2022-11-29_19-37-13_NVIDIA-GPT2_{md=van, na=T}_{a=3e-05}'
+        # dnm = '2022-11-29_19-43-32_NVIDIA-GPT2_{md=van, na=T}_{a=4e-05}'
         md_args = dict(normalize_aspect=NORMALIZE_ASPECT, epoch=n_ep, dir_name=dnm)
 
         mic(NORMALIZE_ASPECT)
