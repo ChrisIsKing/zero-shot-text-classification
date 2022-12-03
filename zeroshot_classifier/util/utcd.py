@@ -673,8 +673,8 @@ if __name__ == '__main__':
 
     def get_utcd_in():
         process_utcd_dataset(domain='in', join=False)
-        sanity_check('UTCD-in')
-    # get_utcd_in()
+        # sanity_check('UTCD-in')
+    get_utcd_in()
 
     # get_utcd_from_gdrive(domain='out')
 
@@ -797,4 +797,4 @@ if __name__ == '__main__':
     def check_subsample_deterministic():
         ds = subsample_dataset(dataset_name='sentiment_tweets_2020', split='test', n_tgt=100, seed=77)
         mic(ds[:2]['text'])
-    check_subsample_deterministic()
+    # check_subsample_deterministic()

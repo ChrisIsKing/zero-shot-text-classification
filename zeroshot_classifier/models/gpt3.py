@@ -14,8 +14,11 @@ import numpy as np
 import pandas as pd
 import datasets
 import openai
+import torch
 from sklearn.metrics import classification_report
+from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
+from tenacity import retry, wait_random_exponential
 
 from stefutil import *
 from zeroshot_classifier.util import *
@@ -46,10 +49,21 @@ class ApiCaller:
         'OpenAI-Organization': org
     }
 
-    def __init__(self, model: str = 'text-ada-001'):
+    def __init__(self, model: str = 'text-ada-001', batched: bool = False):
         self.model = model
+        self.batched = batched
 
-    def __call__(self, prompt: str, rand_sleep: bool = True, **kwargs) -> str:
+    @staticmethod
+    @retry(wait=wait_random_exponential(min=1, max=60))
+    def completion(**kwargs):
+        return openai.Completion.create(**kwargs)
+
+    def __call__(self, prompt: Union[str, List], rand_sleep: bool = True, **kwargs) -> Union[str, List[str]]:
+        if self.batched:
+            assert isinstance(prompt, list)
+        else:
+            assert isinstance(prompt, str)
+
         payload = dict(
             model=self.model,
             temperature=0,  # Generate w/ greedy decoding
@@ -59,29 +73,44 @@ class ApiCaller:
         payload['prompt'] = prompt
         payload.update(kwargs)
 
-        def _call():
-            return requests.post(self.url, headers=self.headers, json=payload)
+        # def _call():
+        #     return requests.post(self.url, headers=self.headers, json=payload)
+        #
+        # if rand_sleep:  # Intended for concurrent requests, see evaluate `concurrent` flag
+        #     time.sleep(random.uniform(0, 4))
+        #
+        # res = None
+        # i = 0
+        # sleep_time = 4
+        # while not res or res.status_code != 200:
+        #     if res:
+        #         assert res.status_code == 429  # Too many request, retry
+        #     if i % 4 == 0:  # Wait for `Too Many Requests` to pass
+        #         sleep_time *= 2
+        #
+        #     logger.info(f'Too Many Requests, retrying in {pl.i(sleep_time)}s... ')
+        #     time.sleep(sleep_time)
+        #     res = _call()
+        #     i += 1
+        # res = json.loads(res.text)
+        # assert len(res['choices']) == 1  # sanity check only generated one completion
+        # return res['choices'][0]['text']
 
-        if rand_sleep:  # Intended for concurrent requests, see evaluate `concurrent` flag
-            time.sleep(random.uniform(0, 4))
-
-        res = None
-        i = 0
-        sleep_time = 4
-        while not res or res.status_code != 200:
-            if res:
-                assert res.status_code == 429  # Too many request, retry
-            if i % 4 == 0:  # Wait for `Too Many Requests` to pass
-                sleep_time *= 2
-
-            logger.info(f'Too Many Requests, retrying in {pl.i(sleep_time)}s... ')
-            time.sleep(sleep_time)
-            res = _call()
-            i += 1
-
-        res = json.loads(res.text)
-        assert len(res['choices']) == 1  # sanity check only generated one completion
-        return res['choices'][0]['text']
+        res = ApiCaller.completion(**payload)
+        res = res.choices
+        if self.batched:
+            assert len(res) == len(prompt)
+            ret = [''] * len(prompt)
+            for e in res:
+                ret[e.index] = e.text
+            # mic(prompt, ret)
+            return ret
+        else:
+            assert len(res) == 1
+            res = res[0]
+            mic(res)
+            mic(prompt, res['text'])
+            raise NotImplementedError
 
 
 def text2n_token(txt: str) -> int:
@@ -157,8 +186,8 @@ class PromptMap:
 
     @staticmethod
     def _to_prompt(question: str = None, text: str = None):
-        # return f'Text: {text}\nQuestion: {question}\n Answer:'
-        return f'{question}\n Text: {truncate_text(text)} \n Answer:'
+        # return f'Text: {text}\nQuestion: {question}\n Answer:'  # TODO: This template works w/ `davinci` better??
+        return f'{question}\n Text: {truncate_text(text)} \n Answer:'  # This template works w/ `curie` better
 
 
 @dataclass
@@ -183,6 +212,8 @@ class _EvalSingle:
     ):
         self.pm = pm
         self.ac = api_caller
+        self.batched = api_caller.batched
+
         self.label_options = label_options
         self.lb2id = lb2id
 
@@ -190,15 +221,32 @@ class _EvalSingle:
 
         self.return_text = return_text
 
-    def __call__(self, e: Dict[str, Any], pbar=None) -> _EvalSingleOut:
-        txt, lbs = e['text'], e['labels']
-        prompt = self.pm(txt)
-        answer = self.ac(prompt)  # TODO: maybe GPT3 generates multiple answers?
-        answer = answer.lower().strip()
+    def __call__(self, e: Union[Dict[str, Any], List[Dict[str, Any]]], pbar=None) -> Union[_EvalSingleOut, List[_EvalSingleOut]]:
+        if self.batched:
+            # mic(e)
+            d: List[Dict]
+            lst_txt, lst_lbs = [i['text'] for i in e], [i['labels'] for i in e]
+            assert isinstance(lst_txt[0], str) and isinstance(lst_lbs[0], list)  # sanity check
+            prompts = [self.pm(txt) for txt in lst_txt]
+            res = self.ac(prompts)
 
+            ret = []
+            for txt, lbs, ppt, a in zip(lst_txt, lst_lbs, prompts, res):
+                ret.append(self._ret_single(text=txt, labels=lbs, prompt=ppt, answer=a, pbar=pbar))
+            return ret
+        else:
+            txt, lbs = e['text'], e['labels']
+            prompt = self.pm(txt)
+            answer = self.ac(prompt)
+            return self._ret_single(text=txt, labels=lbs, prompt=prompt, answer=answer, pbar=pbar)
+
+    def _ret_single(
+            self, text: str = None, labels: List[int] = None, prompt: str = None, answer: str = None, pbar=None
+    ) -> _EvalSingleOut:
         if pbar:
-            _d_log = dict(labels=[self.label_options[i] for i in lbs], answer=[answer])
+            _d_log = dict(labels=[self.label_options[i] for i in labels], answer=[answer])
             pbar.set_postfix({k: pl.i(v) for k, v in _d_log.items()})
+        answer = answer.lower().strip()  # TODO: maybe GPT3 generates multiple answers?
 
         ret: Dict[str, Any]
         if answer in self.label_options:
@@ -207,24 +255,25 @@ class _EvalSingle:
             logger.warning(f'Generated {pl.i([answer])}, not one of label options')
             self.logger_fl.warning(f'Generated {pl.nc([answer])}, not one of label options')
 
-            ret = dict(pred=-1, true=lbs[0])
+            ret = dict(pred=-1, true=labels[0])
         if self.return_text:
-            ret.update(meta=GPT3EvalMeta(text=txt, prompt=prompt, generated=answer))
+            ret.update(meta=GPT3EvalMeta(text=text, prompt=prompt, generated=answer))
         return _EvalSingleOut(**ret)
 
 
 def evaluate(
         model: str = 'text-ada-001', domain: str = 'in', dataset_name: str = 'all', concurrent: bool = False,
+        batched: Union[bool, int] = False,
         subsample: Union[bool, int] = False, subsample_seed: int = 77, store_meta: bool = False,
         store_frequency: Optional[int] = None, resume: List[str] = None
 ):
-    ac = ApiCaller(model=model)
+    ac = ApiCaller(model=model, batched=batched)
 
     if dataset_name == 'all' and subsample:
         raise NotImplementedError('Subsampling intended for single dataset')
     dataset_names = utcd_util.get_eval_dataset_names(domain=domain, dataset_name=dataset_name)
 
-    _preds, _trues, _infs = None, None, None
+    _preds, _trues, _infs = None, None, []
     if resume:
         assert len(dataset_names) == 1  # sanity check, intended for resuming from single dataset
         _preds, _trues, _infs = [], [], []
@@ -250,12 +299,16 @@ def evaluate(
     os.makedirs(output_path, exist_ok=True)
 
     for dnm in dataset_names:
-        if subsample:
-            n_tgt = 5000 if isinstance(subsample, bool) else subsample
+        n_txt = sconfig(f'UTCD.datasets.{dnm}.splits.test.n_text')
+        n_tgt = 5000 if isinstance(subsample, bool) else subsample
+
+        if subsample and n_txt > n_tgt:
             dset = utcd_util.subsample_dataset(dataset_name=dnm, split='test', n_tgt=n_tgt, seed=subsample_seed)
         else:
             dset = get_dataset(dnm, splits='test')['test']
         dset: datasets.Dataset
+        n_dset_total = len(dset)
+        n_dset_remain = n_dset_total
 
         if resume:
             n_ori = len(dset)
@@ -265,7 +318,7 @@ def evaluate(
                 return sample['text'] not in ran_txts
             dset = dset.filter(filt)
             # sanity check, every text completed should be accounted for, exactly once
-            mic(len(dset), len(_infs), n_ori)
+            n_dset_remain = len(dset)
             assert len(dset) + len(_infs) == n_ori
             logger.info(f'{pl.i(len(_infs))} texts evaluated, resuming from {pl.i(n_ori)} => {pl.i(len(dset))} ')
             logger_fl.info(f'{len(_infs)} texts evaluated, resuming from {n_ori} => {len(dset)} ')
@@ -282,27 +335,34 @@ def evaluate(
         store_frequency = store_frequency or 100
 
         def write_meta():  # Writing completed inferences to file periodically, in case GPT3 eval gets stuck
-            if len(lst_meta) % store_frequency == 0:
+            n_completed = len(lst_meta)
+            if n_completed % store_frequency == 0 or n_completed == n_dset_remain:
                 logger.info(f'Writing eval instances to {pl.i(meta_path)}...')
                 logger_fl.info(f'Writing eval instances to {meta_path}...')
                 d_ = d_log
                 infs = [asdict(m) for m in lst_meta]
                 if resume:
                     infs = _infs + infs
-                n = len(infs)
-                if not concurrent:  # a numpy array created
-                    __preds = list(preds[:n])
-                    __trues = list(trues[:n])
-                else:
+                if concurrent:  # a numpy array created
                     __preds, __trues = preds, trues
+                    total_completed = len(__preds)
+                else:
+                    total_completed = len(_infs) + n_completed
+                    __preds = preds[:total_completed].tolist()
+                    __trues = trues[:total_completed].tolist()
                 assert len(__preds) == len(__trues) == len(infs)  # sanity check
-                d_.update(dict(inferences=infs, n=n, preds=__preds, trues=__trues))
+                d_['#completed'] = total_completed
+                d_.update(dict(inferences=infs, preds=__preds, trues=__trues))
 
                 with open(meta_path, 'w') as f_:
                     json.dump(d_, f_, indent=4)
 
-        if concurrent:
-            with_tqdm = dict(desc=f'Evaluating {pl.i(dnm)}', total=len(dset))
+        bsz = None
+        if batched:
+            bsz = 8 if isinstance(batched, bool) else batched
+
+        with_tqdm = dict(desc=f'Evaluating {pl.i(dnm)}', total=n_dset_remain)
+        if concurrent:  # TODO: concurrent batched
             preds, trues = (_preds, _trues) if resume else ([], [])
             # order irrelevant
             for e in conc_yield(eval_single, dset, with_tqdm=with_tqdm, mode='thread', n_worker=4):
@@ -312,30 +372,43 @@ def evaluate(
                     lst_meta.append(e.meta)
                     write_meta()
         else:
-            n_dset = len(dset)
-            trues, preds = np.empty(n_dset, dtype=int), np.empty(n_dset, dtype=int)
+            trues, preds = np.empty(n_txt, dtype=int), np.empty(n_txt, dtype=int)
             if resume:
                 trues[:len(_trues)] = _trues
                 preds[:len(_preds)] = _preds
-            it = tqdm(dset, desc=f'Evaluating {pl.i(dnm)}')
-            for idx, elm in enumerate(it):
-                out = eval_single(elm, pbar=it)
-                preds[idx], trues[idx] = out.pred, out.true
-                if store_meta:
-                    lst_meta.append(out.meta)
-                    write_meta()
+            if batched:
+                with tqdm(**with_tqdm) as pbar:
+                    idx = 0
+                    for elms in DataLoader(dset, batch_size=bsz, shuffle=False, collate_fn=lambda x: x):
+                        for e in eval_single(elms):
+                            preds[idx] = e.pred
+                            trues[idx] = e.true
+                            if store_meta:
+                                lst_meta.append(e.meta)
+                                write_meta()
+                            pbar.update(1)
+                            idx += 1
+                assert idx == n_dset_remain  # sanity check
+            else:
+                it = tqdm(dset, **with_tqdm)
+                for idx, elm in enumerate(it):
+                    out = eval_single(elm, pbar=it)
+                    preds[idx], trues[idx] = out.pred, out.true
+                    if store_meta:
+                        lst_meta.append(out.meta)
+                        write_meta()
 
         args = dict(
             labels=[-1, *range(len(label_options))], target_names=['Label not in dataset', *label_options],
             zero_division=0, output_dict=True
         )
         report = classification_report(trues, preds, **args)
-        acc = f'{report["accuracy"]:.3f}'
-        logger.info(f'{pl.i(dnm)} accuracy: {pl.i(acc)}')
-        logger_fl.info(f'{dnm} accuracy: {acc}')
 
         csv_path = os_join(output_path, f'{dnm}.csv')
         pd.DataFrame(report).transpose().to_csv(csv_path)
+        acc = f'{report["accuracy"]:.3f}'
+        logger.info(f'{pl.i(dnm)} accuracy: {pl.i(acc)}')
+        logger_fl.info(f'{dnm} accuracy: {acc}')
 
 
 if __name__ == '__main__':
@@ -417,18 +490,20 @@ if __name__ == '__main__':
     # evaluate(model='text-davinci-002', domain='out', dataset_name='consumer_finance')
     # evaluate(model='text-davinci-002', domain='out', dataset_name='amazon_polarity', concurrent=True)
 
-    run_args = dict(model='text-curie-001', concurrent=True, subsample=True, store_meta=True, store_frequency=10)
+    run_args = dict(model='text-curie-001', subsample=True, store_meta=True, store_frequency=10)
     # dnm = 'amazon_polarity'
     # dnm = 'yelp'
-    dnm_ = 'consumer_finance'
+    # dnm_ = 'consumer_finance'
+    dnm_ = 'slurp'
     rsm = [os_join(
-        u.eval_path, '2022-11-17_23-41-12_Zeroshot-GPT3-Eval_{md=text-curie-001, dm=out, dnm=consumer_finance}',
-        '22-11-17_out-of-domain', 'consumer_finance_meta.json'
+        u.eval_path, '2022-12-02_20-33-09_Zeroshot-GPT3-Eval_{md=text-curie-001, dm=out, dnm=slurp}',
+        '22-12-02_in-domain', f'{dnm_}_meta.json'
     )]
-    # evaluate(
-    #     domain='out', dataset_name=dnm_, **run_args,
-    #     resume=rsm
-    # )
+    evaluate(
+        domain='in', dataset_name=dnm_, **run_args,
+        concurrent=False, batched=True,
+        # resume=rsm
+    )
 
     def parse_args():
         parser = ArgumentParser()

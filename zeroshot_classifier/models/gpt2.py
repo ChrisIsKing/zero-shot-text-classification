@@ -1054,8 +1054,8 @@ if __name__ == '__main__':
         md_nm = 'gpt2-medium'
         mic(dnm, md_nm)
 
-        form = 'vanilla'
-        # form = 'implicit'
+        # form = 'vanilla'
+        form = 'implicit'
         # form = 'explicit'
         mic(form)
         if form == 'explicit':
@@ -1115,7 +1115,7 @@ if __name__ == '__main__':
         trainer.save_model(save_path)
         tokenizer.save_pretrained(save_path)
         os.listdir(save_path)
-    # train()
+    train()
 
     def run_eval():
         transformers.set_seed(seed)  # cos explicit 3 epoch doesn't generate BOA token...
@@ -1141,7 +1141,7 @@ if __name__ == '__main__':
         mic(NORMALIZE_ASPECT)
         mic(dom, form, dnm)
         evaluate(domain=dom, batch_size=48, form=form, load_model_args=md_args, embed_sim=True)
-    run_eval()
+    # run_eval()
 
     def sanity_check_trained_generate():
         text = 'hello world'
