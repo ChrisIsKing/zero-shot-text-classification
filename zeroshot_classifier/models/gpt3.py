@@ -49,13 +49,16 @@ class ApiCaller:
         'OpenAI-Organization': org
     }
 
-    def __init__(self, model: str = 'text-ada-001', batched: bool = False):
+    def __init__(self, model: str = 'text-ada-001', batched: bool = False, delay: float = None):
         self.model = model
         self.batched = batched
 
-    @staticmethod
-    @retry(wait=wait_random_exponential(min=1, max=60))
-    def completion(**kwargs):
+        self.delay = delay
+
+    @retry(wait=wait_random_exponential(min=1, max=60 * 30))  # Wait for 30min
+    def completion(self, **kwargs):
+        if self.delay:
+            time.sleep(self.delay)
         return openai.Completion.create(**kwargs)
 
     def __call__(self, prompt: Union[str, List], rand_sleep: bool = True, **kwargs) -> Union[str, List[str]]:
@@ -96,21 +99,18 @@ class ApiCaller:
         # assert len(res['choices']) == 1  # sanity check only generated one completion
         # return res['choices'][0]['text']
 
-        res = ApiCaller.completion(**payload)
+        res = self.completion(**payload)
         res = res.choices
         if self.batched:
             assert len(res) == len(prompt)
             ret = [''] * len(prompt)
             for e in res:
                 ret[e.index] = e.text
-            # mic(prompt, ret)
             return ret
         else:
             assert len(res) == 1
             res = res[0]
-            mic(res)
-            mic(prompt, res['text'])
-            raise NotImplementedError
+            return res.text
 
 
 def text2n_token(txt: str) -> int:
@@ -263,11 +263,11 @@ class _EvalSingle:
 
 def evaluate(
         model: str = 'text-ada-001', domain: str = 'in', dataset_name: str = 'all', concurrent: bool = False,
-        batched: Union[bool, int] = False,
+        batched: Union[bool, int] = False, delay: float = None,
         subsample: Union[bool, int] = False, subsample_seed: int = 77, store_meta: bool = False,
         store_frequency: Optional[int] = None, resume: List[str] = None
 ):
-    ac = ApiCaller(model=model, batched=batched)
+    ac = ApiCaller(model=model, batched=batched, delay=delay)
 
     if dataset_name == 'all' and subsample:
         raise NotImplementedError('Subsampling intended for single dataset')
@@ -290,8 +290,11 @@ def evaluate(
     output_path = os_join(u.eval_path, output_dir_nm, domain2eval_dir_nm(domain))
 
     logger_fl = get_logger('GPT3 Eval', kind='file-write', file_path=os_join(output_path, f'eval.log'))
-    d_log: Dict[str, Any] = dict(model_name=model, domain=domain, dataset_names=dataset_names, output_path=output_path)
-    d_log.update(dict(concurrent=concurrent, subsample=subsample, subsample_seed=subsample_seed, store_meta=store_meta))
+    d_log: Dict[str, Any] = dict(
+        model_name=model, batched=batched, delay=delay, domain=domain, dataset_names=dataset_names,
+        output_path=output_path,
+        concurrent=concurrent, subsample=subsample, subsample_seed=subsample_seed, store_meta=store_meta
+    )
     d_log['store_frequency'] = store_frequency
     logger.info(f'Evaluating GPT3 model w/ {pl.i(d_log)}... ')
     logger_fl.info(f'Evaluating GPT3 model w/ {d_log}... ')
@@ -494,15 +497,19 @@ if __name__ == '__main__':
     # dnm = 'amazon_polarity'
     # dnm = 'yelp'
     # dnm_ = 'consumer_finance'
-    dnm_ = 'slurp'
+    # dnm_ = 'slurp'
+    dnm_ = 'multi_eurlex'  # TODO: doesn't work w/ batched requests???
+    # dnm_ = 'sgd'
     rsm = [os_join(
-        u.eval_path, '2022-12-02_20-33-09_Zeroshot-GPT3-Eval_{md=text-curie-001, dm=out, dnm=slurp}',
-        '22-12-02_in-domain', f'{dnm_}_meta.json'
+        u.eval_path, '2022-12-04_17-34-01_Zeroshot-GPT3-Eval_{md=text-curie-001, dm=out, dnm=multi_eurlex}',
+        '22-12-04_out-of-domain', f'{dnm_}_meta.json'
     )]
     evaluate(
-        domain='in', dataset_name=dnm_, **run_args,
-        concurrent=False, batched=True,
-        # resume=rsm
+        domain='out', dataset_name=dnm_, **run_args,
+        concurrent=True,
+        # batched=True,
+        delay=12,
+        resume=rsm
     )
 
     def parse_args():

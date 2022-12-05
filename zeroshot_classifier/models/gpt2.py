@@ -787,44 +787,48 @@ def load_trained(
     d_log = dict(form=form, epoch=epoch, normalize_aspect=normalize_aspect)
     logger.info(f'Loading model with {pl.i(d_log)}... ')
     tokenizer_name = 'gpt2'
-    if normalize_aspect:
-        assert epoch in [3, 5, 8]
-        if epoch == 3:
-            if form == 'vanilla':
-                dir_nm = '2022-06-10_11-36-47_NVIDIA-GPT2-gpt2-medium'
-            elif form == 'implicit':
-                dir_nm = '2022-06-12_17-11-17_NVIDIA-GPT2-gpt2-medium-implicit-aspect-norm'
-            else:
-                assert form == 'explicit'
-                dir_nm = '2022-06-13_19-09-32_NVIDIA-GPT2-explicit-aspect-norm'
-        elif epoch == 5:
-            if form == 'vanilla':
-                dir_nm = '2022-06-19_13-08-17_NVIDIA-GPT2-gpt2-medium-vanilla-aspect-norm'
-            elif form == 'implicit':
-                dir_nm = '2022-06-19_13-09-36_NVIDIA-GPT2-gpt2-medium-implicit-aspect-norm'
-            else:
-                raise NotImplementedError('TODO')
-        else:  # 8 epoch, model w/ best eval loss
-            if form == 'vanilla':
-                # dir_nm = '2022-10-11_23-44-51_NVIDIA-GPT2-gpt2-medium-vanilla-aspect-norm'  # warmup 0.01
-                dir_nm = '2022-10-14_07-45-31_NVIDIA-GPT2-gpt2-medium-vanilla-aspect-norm'  # warmup 0.1
-            else:
-                raise NotImplementedError('TODO')
-        dir_nm = dir_name or dir_nm
-        path = os_join(get_base_path(), u.proj_dir, u.model_dir, dir_nm, 'trained')
-        if form != 'vanilla':  # TODO: all models should have tokenizers saved eventually
-            tokenizer_name = path
+    if dir_name:
+        dir_nm = dir_name
     else:
-        assert epoch in [2, 3]
-        if not hasattr(load_trained, 'epoch2path'):
-            load_trained.epoch2path = {
-                # 2: os_join('2022-03-04 21-33-12', 'checkpoint-37066'),
-                # 3: os_join('2022-03-04 21-33-12', 'checkpoint-55599'),
-                3: os_join('2022-04-02_11-51-19', 'checkpoint-51390'),
-            }
-        dir_nm = load_trained.epoch2path[epoch]
-        dir_nm = dir_name or dir_nm
+        if normalize_aspect:
+            assert epoch in [3, 5, 8]
+            if epoch == 3:
+                if form == 'vanilla':
+                    dir_nm = '2022-06-10_11-36-47_NVIDIA-GPT2-gpt2-medium'
+                elif form == 'implicit':
+                    dir_nm = '2022-06-12_17-11-17_NVIDIA-GPT2-gpt2-medium-implicit-aspect-norm'
+                else:
+                    assert form == 'explicit'
+                    dir_nm = '2022-06-13_19-09-32_NVIDIA-GPT2-explicit-aspect-norm'
+            elif epoch == 5:
+                if form == 'vanilla':
+                    dir_nm = '2022-06-19_13-08-17_NVIDIA-GPT2-gpt2-medium-vanilla-aspect-norm'
+                elif form == 'implicit':
+                    dir_nm = '2022-06-19_13-09-36_NVIDIA-GPT2-gpt2-medium-implicit-aspect-norm'
+                else:
+                    raise NotImplementedError('TODO')
+            else:  # 8 epoch, model w/ best eval loss
+                if form == 'vanilla':
+                    # dir_nm = '2022-10-11_23-44-51_NVIDIA-GPT2-gpt2-medium-vanilla-aspect-norm'  # warmup 0.01
+                    dir_nm = '2022-10-14_07-45-31_NVIDIA-GPT2-gpt2-medium-vanilla-aspect-norm'  # warmup 0.1
+                else:
+                    raise NotImplementedError('TODO')
+            dir_nm = dir_name or dir_nm
+        else:
+            assert epoch in [2, 3]
+            if not hasattr(load_trained, 'epoch2path'):
+                load_trained.epoch2path = {
+                    # 2: os_join('2022-03-04 21-33-12', 'checkpoint-37066'),
+                    # 3: os_join('2022-03-04 21-33-12', 'checkpoint-55599'),
+                    3: os_join('2022-04-02_11-51-19', 'checkpoint-51390'),
+                }
+            dir_nm = load_trained.epoch2path[epoch]
+    if normalize_aspect:
+        path = os_join(get_base_path(), u.proj_dir, u.model_dir, dir_nm, 'trained')
+    else:
         path = os_join(BASE_PATH, PROJ_DIR, 'trained-models', 'gpt2-nvidia', dir_nm)
+    if form != 'vanilla':  # TODO: all models should have tokenizers saved eventually
+        tokenizer_name = path
     logger.info(f'Loading model from {pl.i(path)}... ')
     model = ZsGPT2LMHeadModel.from_pretrained(path, is_zs_gpt2=True)  # with caching
     tokenizer_args = dict(form=form, use_fast=True, model_max_length=model.config.n_ctx)
@@ -880,8 +884,6 @@ def evaluate(
     logger_fl.info(f'Running eval {domain} on model {pl.nc(d_model)}, with {pl.nc(d_eval)}... ')
 
     for dnm_ in dataset_names:
-        if dnm_ != 'consumer_finance':
-            continue
         d_info = sconfig(f'UTCD.datasets.{dnm_}.splits.{split}')
         lb2id = defaultdict(lambda: -1)  # If generated invalid descriptive label, will return -1
         labels = d_info['labels']
@@ -1071,7 +1073,7 @@ if __name__ == '__main__':
 
         n_ep = 8
 
-        lr = 4e-5
+        lr = 3e-5
         ddp = False
         # ddp = 4
 
@@ -1115,7 +1117,7 @@ if __name__ == '__main__':
         trainer.save_model(save_path)
         tokenizer.save_pretrained(save_path)
         os.listdir(save_path)
-    train()
+    # train()
 
     def run_eval():
         transformers.set_seed(seed)  # cos explicit 3 epoch doesn't generate BOA token...
@@ -1125,23 +1127,31 @@ if __name__ == '__main__':
 
         # dom = 'in'
         dom = 'out'
-        form = 'vanilla'
-        # form = 'implicit'
+        # form = 'vanilla'
+        form = 'implicit'
         # form = 'explicit'
         # n_ep = 3
         # n_ep = 5
         n_ep = 8
 
-        # dnm = '2022-11-29_12-12-56_NVIDIA-GPT2_{md=van, na=T}_{a=1e-05}'
-        # dnm = '2022-11-29_19-15-44_NVIDIA-GPT2_{md=van, na=T}_{a=2e-05}'
-        dnm = '2022-11-29_19-37-13_NVIDIA-GPT2_{md=van, na=T}_{a=3e-05}'
-        # dnm = '2022-11-29_19-43-32_NVIDIA-GPT2_{md=van, na=T}_{a=4e-05}'
+        if form == 'vanilla':
+            # dnm = '2022-11-29_12-12-56_NVIDIA-GPT2_{md=van, na=T}_{a=1e-05}'
+            # dnm = '2022-11-29_19-15-44_NVIDIA-GPT2_{md=van, na=T}_{a=2e-05}'
+            dnm = '2022-11-29_19-37-13_NVIDIA-GPT2_{md=van, na=T}_{a=3e-05}'
+            # dnm = '2022-11-29_19-43-32_NVIDIA-GPT2_{md=van, na=T}_{a=4e-05}'
+        elif form == 'implicit':
+            # dnm = '2022-12-03_10-43-47_NVIDIA-GPT2_{md=imp, na=T}_{a=1e-05}'
+            # dnm = '2022-12-03_14-47-52_NVIDIA-GPT2_{md=imp, na=T}_{a=2e-05}'
+            # dnm = '2022-12-03_15-03-14_NVIDIA-GPT2_{md=imp, na=T}_{a=3e-05}'
+            dnm = '2022-12-02_21-33-18_NVIDIA-GPT2_{md=imp, na=T}_{a=4e-05}'
+        else:  # `explicit`
+            raise NotImplementedError
         md_args = dict(normalize_aspect=NORMALIZE_ASPECT, epoch=n_ep, dir_name=dnm)
 
         mic(NORMALIZE_ASPECT)
         mic(dom, form, dnm)
         evaluate(domain=dom, batch_size=48, form=form, load_model_args=md_args, embed_sim=True)
-    # run_eval()
+    run_eval()
 
     def sanity_check_trained_generate():
         text = 'hello world'
