@@ -1057,12 +1057,12 @@ if __name__ == '__main__':
         mic(dnm, md_nm)
 
         # form = 'vanilla'
-        form = 'implicit'
-        # form = 'explicit'
+        # form = 'implicit'
+        form = 'explicit'
         mic(form)
         if form == 'explicit':
             dir_nm = '2022-11-27_17-39-06_Aspect-Pretrain-NVIDIA-GPT2_{md=exp, na=T}_{a=2e-05}'
-            md_nm = os_join(u.proj_path, u.model_dir, dir_nm, 'trained')
+            md_nm = os_join(get_base_path(), u.proj_dir, u.model_dir, dir_nm, 'trained')
             mic(os.listdir(md_nm))
             # exit(1)
 
@@ -1073,7 +1073,7 @@ if __name__ == '__main__':
 
         n_ep = 8
 
-        lr = 3e-5
+        lr = 4e-5
         ddp = False
         # ddp = 4
 
@@ -1128,8 +1128,8 @@ if __name__ == '__main__':
         # dom = 'in'
         dom = 'out'
         # form = 'vanilla'
-        form = 'implicit'
-        # form = 'explicit'
+        # form = 'implicit'
+        form = 'explicit'
         # n_ep = 3
         # n_ep = 5
         n_ep = 8
@@ -1145,7 +1145,10 @@ if __name__ == '__main__':
             # dnm = '2022-12-03_15-03-14_NVIDIA-GPT2_{md=imp, na=T}_{a=3e-05}'
             dnm = '2022-12-02_21-33-18_NVIDIA-GPT2_{md=imp, na=T}_{a=4e-05}'
         else:  # `explicit`
-            raise NotImplementedError
+            # dnm = '2022-12-05_16-13-20_NVIDIA-GPT2_{md=exp, na=T}_{a=1e-05}'
+            # dnm = '2022-12-05_16-25-57_NVIDIA-GPT2_{md=exp, na=T}_{a=2e-05}'
+            # dnm = '2022-12-05_16-52-24_NVIDIA-GPT2_{md=exp, na=T}_{a=3e-05}'
+            dnm = '2022-12-05_17-12-33_NVIDIA-GPT2_{md=exp, na=T}_{a=4e-05}'
         md_args = dict(normalize_aspect=NORMALIZE_ASPECT, epoch=n_ep, dir_name=dnm)
 
         mic(NORMALIZE_ASPECT)
