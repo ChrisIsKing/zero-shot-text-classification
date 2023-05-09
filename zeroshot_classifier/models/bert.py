@@ -33,7 +33,7 @@ def parse_args():
 
     parser_test.add_argument('--dataset', type=str, default='all')
     parser_test.add_argument('--domain', type=str, choices=['in', 'out'], required=True)
-    parser_test.add_argument('--model_path', type=str, required=True)
+    parser_test.add_argument('--model_name_or_path', type=str, required=True)
 
     return parser.parse_args()
 
@@ -124,7 +124,7 @@ if __name__ == "__main__":
         os.listdir(proj_output_path)
 
     if args.command == 'test':
-        dataset_name, domain, model_path = args.dataset, args.domain, args.model_path
+        dataset_name, domain, model_path = args.dataset, args.domain, args.model_name_or_path
         bsz = 32
         split = 'test'
         dataset_names = utcd_util.get_dataset_names(domain)

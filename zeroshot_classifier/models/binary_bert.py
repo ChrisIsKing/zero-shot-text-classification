@@ -35,7 +35,7 @@ def parse_args():
     parser_train.add_argument('--output_dir', type=str, default=None)
     parser_train.add_argument('--sampling', type=str, choices=['rand', 'vect'], default='rand')
     # model to initialize weights from, intended for loading weights from local explicit training
-    parser_train.add_argument('--model_init', type=str, default=HF_MODEL_NAME)
+    parser_train.add_argument('--init_model_name_or_path', type=str, default=HF_MODEL_NAME)
     parser_train.add_argument('--mode', type=str, choices=modes, default='vanilla')
     parser_train.add_argument('--learning_rate', type=float, default=2e-5)
     parser_train.add_argument('--batch_size', type=int, default=16)
@@ -45,7 +45,7 @@ def parse_args():
     parser_test.add_argument('--domain', type=str, choices=['in', 'out'], required=True)
     parser_test.add_argument('--mode', type=str, choices=modes, default='vanilla')
     parser_test.add_argument('--batch_size', type=int, default=32)  # #of texts to do inference in a single forward pass
-    parser_test.add_argument('--model_dir_nm', type=str, required=True)
+    parser_test.add_argument('--model_name_or_path', type=str, required=True)
     
     return parser.parse_args()
 
@@ -77,7 +77,7 @@ if __name__ == '__main__':
     if cmd == 'train':
         output_path, output_dir, sampling, mode = args.output, args.output_dir, args.sampling, args.mode
         lr, bsz, n_ep = args.learning_rate, args.batch_size, args.epochs
-        model_init, seq_len = args.model_init, args.max_sequence_length
+        init_model_name_or_path, seq_len = args.model_init_model_name_or_pathinit, args.max_sequence_length
 
         n = None
         # n = 64
@@ -109,19 +109,23 @@ if __name__ == '__main__':
                 it.set_postfix(dnm=f'{pl.i(dataset_name)}-{pl.i(split)}')
                 ds.extend(binary_cls_format(dset, **args, split=split))
 
-        d_log = dict(model_init=model_init)
+        d_log = dict(init_model_name_or_path=init_model_name_or_path)
+        md_nm = init_model_name_or_path
         if mode == 'explicit':
-            assert model_init != HF_MODEL_NAME  # sanity check
-        if model_init != HF_MODEL_NAME:
+            assert init_model_name_or_path != HF_MODEL_NAME  # sanity check
+        if init_model_name_or_path != HF_MODEL_NAME:
             # loading from explicit pre-training local weights,
             # the classification head would be ignored for classifying 3 classes
-            model_init = os_join(get_base_path(), u.proj_dir, u.model_dir, model_init)
-            d_log['files'] = os.listdir(model_init)
+            # TODO: rename to path
+            path = os_join(get_base_path(), u.proj_dir, u.model_dir, init_model_name_or_path)
+            if os.path.exists(path):
+                md_nm = path
+                d_log['files'] = os.listdir(path)
         logger.info(f'Loading model with {pl.i(d_log)}...')
         logger_fl.info(f'Loading model with {pl.nc(d_log)}...')
-        model = BinaryBertCrossEncoder(model_init, num_labels=2, automodel_args=dict(ignore_mismatched_sizes=True))
+        model = BinaryBertCrossEncoder(md_nm, num_labels=2, automodel_args=dict(ignore_mismatched_sizes=True))
         if seq_len != 512:  # Intended for `bert-base-uncased` only; TODO: binary bert seems to support this already?
-            model.tokenizer, model.model = load_sliced_binary_bert(model_init, seq_len)
+            model.tokenizer, model.model = load_sliced_binary_bert(md_nm, seq_len)
 
         spec_tok_arg = utcd_util.get_add_special_tokens_args(model.tokenizer, train_strategy=mode)
         if spec_tok_arg:
@@ -158,20 +162,22 @@ if __name__ == '__main__':
         )
     elif cmd == 'test':
         WITH_EVAL_LOSS = False
-        mode, domain, model_dir_nm, bsz = args.mode, args.domain, args.model_dir_nm, args.batch_size
+        mode, domain, model_name_or_path, bsz = args.mode, args.domain, args.model_name_or_path, args.batch_size
         split = 'test'
 
-        out_path = os_join(u.eval_path, model_dir_nm, domain2eval_dir_nm(domain))
+        out_path = os_join(u.eval_path, model_name_or_path, domain2eval_dir_nm(domain))
         os.makedirs(out_path, exist_ok=True)
 
         data = get_datasets(domain=domain)
 
-        model_path = os_join(get_base_path(), u.proj_dir, u.model_dir, model_dir_nm)
+        model_path = os_join(get_base_path(), u.proj_dir, u.model_dir, model_name_or_path)
+        if not os.path.exists(model_path):
+            model_path = model_name_or_path  # A huggingface model
         logger.info(f'Loading model from path {pl.i(model_path)}... ')
         model = BinaryBertCrossEncoder(model_path)  # load model
 
         logger = get_logger(f'{MODEL_NAME} Eval')
-        d_log = dict(mode=mode, domain=domain, batch_size=bsz, dir_nm=model_dir_nm)
+        d_log = dict(mode=mode, domain=domain, batch_size=bsz, model_name_or_path=model_name_or_path)
         logger.info(f'Evaluating Binary Bert with {pl.i(d_log)} and saving to {pl.i(out_path)}... ')
 
         eval_loss: Dict[str, np.array] = dict()  # a sense of how badly the model makes the prediction

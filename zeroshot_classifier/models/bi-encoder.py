@@ -35,7 +35,7 @@ def parse_args():
     parser_train.add_argument('--output', type=str, default=None)
     parser_train.add_argument('--output_dir', type=str, default=None)
     parser_train.add_argument('--sampling', type=str, choices=['rand', 'vect'], default='rand')
-    parser_train.add_argument('--model_init', type=str, default=HF_MODEL_NAME)
+    parser_train.add_argument('--init_model_name_or_path', type=str, default=HF_MODEL_NAME)
     parser_train.add_argument('--mode', type=str, choices=modes, default='vanilla')
     parser_train.add_argument('--learning_rate', type=float, default=2e-5)
     parser_train.add_argument('--batch_size', type=int, default=16)
@@ -45,7 +45,7 @@ def parse_args():
     parser_test.add_argument('--domain', type=str, choices=['in', 'out'], required=True)
     parser_test.add_argument('--mode', type=str, choices=modes, default='vanilla')
     parser_test.add_argument('--batch_size', type=int, default=32)
-    parser_test.add_argument('--model_dir_nm', type=str, required=True)
+    parser_test.add_argument('--model_name_or_path', type=str, required=True)
 
     return parser.parse_args()
 
@@ -63,7 +63,7 @@ if __name__ == "__main__":
     if cmd == 'train':
         output_path, output_dir, sampling, mode = args.output, args.output_dir, args.sampling, args.mode
         lr, bsz, n_ep = args.learning_rate, args.batch_size, args.epochs
-        model_init = args.model_init
+        init_model_name_or_path = args.init_model_name_or_path
 
         n = None
         # n = 64
@@ -95,17 +95,22 @@ if __name__ == "__main__":
                 ds.extend(binary_cls_format(dset, **args, split=split))
 
         # seq length for consistency w/ `binary_bert` & `sgd`
-        d_log = dict(model_init=model_init)
+        d_log = dict(model_init=init_model_name_or_path)
+        md_nm = init_model_name_or_path
         if mode == 'explicit':
-            assert model_init != HF_MODEL_NAME  # sanity check
-        if model_init != HF_MODEL_NAME:
+            assert init_model_name_or_path != HF_MODEL_NAME  # sanity check
+        if init_model_name_or_path != HF_MODEL_NAME:
             # loading from explicit pre-training local weights,
             # the classification head would be ignored for classifying 3 classes
-            model_init = os_join(get_base_path(), u.proj_dir, u.model_dir, model_init)
-            d_log['files'] = os.listdir(model_init)
+            path = os_join(get_base_path(), u.proj_dir, u.model_dir, init_model_name_or_path)
+            if os.path.exists(path):
+                md_nm = path
+                d_log['files'] = os.listdir(path)
         logger.info(f'Loading model with {pl.i(d_log)}...')
         logger_fl.info(f'Loading model with {pl.nc(d_log)}...')
-        word_embedding_model = models.Transformer(model_init, max_seq_length=512, tokenizer_args=dict(use_fast=False))
+        word_embedding_model = models.Transformer(
+            init_model_name_or_path, max_seq_length=512, tokenizer_args=dict(use_fast=False)
+        )
         add_tok_arg = utcd_util.get_add_special_tokens_args(word_embedding_model.tokenizer, train_strategy=mode)
         if add_tok_arg:
             logger.info(f'Adding special tokens {pl.i(add_tok_arg)} to tokenizer... ')
@@ -146,19 +151,24 @@ if __name__ == "__main__":
         )
     elif cmd == 'test':
         split = 'test'
-        mode, domain, model_dir_nm, bsz = args.mode, args.domain, args.model_dir_nm, args.batch_size
-        out_path = os_join(u.eval_path, model_dir_nm, domain2eval_dir_nm(domain))
+        mode, domain, model_name_or_path, bsz = args.mode, args.domain, args.model_name_or_path, args.batch_size
+        out_path = os_join(u.eval_path, model_name_or_path, domain2eval_dir_nm(domain))
         os.makedirs(out_path, exist_ok=True)
 
         dataset_names = utcd_util.get_dataset_names(domain)
         data = get_datasets(domain=domain)
 
-        model_path = os_join(get_base_path(), u.proj_dir, u.model_dir, model_dir_nm)
+        model_path = os_join(get_base_path(), u.proj_dir, u.model_dir, model_name_or_path)
+        if not os.path.exists(model_path):
+            model_path = model_name_or_path  # A huggingface model
         logger.info(f'Loading model from path {pl.i(model_path)}... ')
         model = SentenceTransformer(model_path)
         md_nm = model.__class__.__qualname__
 
-        d_log = dict(model=md_nm, mode=mode, domain=domain, datasets=dataset_names, path=model_dir_nm, batch_size=bsz)
+        d_log = dict(
+            model=md_nm, mode=mode, domain=domain, datasets=dataset_names, model_name_or_path=model_name_or_path,
+            batch_size=bsz
+        )
         logger = get_logger(f'{MODEL_NAME} Eval')
         logger.info(f'Evaluating {MODEL_NAME} with {pl.i(d_log)} and saving to {pl.i(out_path)}... ')
 
