@@ -135,7 +135,7 @@ if __name__ == "__main__":
         lg_nm = f'{MODEL_NAME} Eval'
         logger = get_logger(lg_nm)
         lg_fl = os_join(output_path, f'{now(for_path=True)}_{lg_nm}, dom={domain}.log')
-        logger_fl = get_logger(lg_nm, typ='file-write', file_path=lg_fl)
+        logger_fl = get_logger(lg_nm, kind='file-write', file_path=lg_fl)
         domain_str = 'in-domain' if domain == 'in' else 'out-of-domain'
         logger.info(f'Evaluating {pl.i(domain_str)} datasets {pl.i(dataset_names)} on model {pl.i(model_path)}... ')
         logger_fl.info(f'Evaluating {domain_str} datasets {dataset_names} on model {model_path}... ')

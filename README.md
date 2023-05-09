@@ -1,15 +1,12 @@
-# Zero-shot Bi-encoder 
+# Zero-shot Text Classification
+
 1. Benchmarking zero-shot text classification models
 2. Bi-encoder for zero-shot classification, a balance between speed & accuracy.
 
 
-## To Use 
-Python version `3.8.10`.
 
-```bash
-pip3 install -r requirements.txt
-```
-### Universal Text Classification Dataset
+## Universal Text Classification Dataset
+
 UTCD is a compilation of 9 classification datasets spanning 3 categories of Sentiment, Intent/Dialogue and Topic classification. UTCD focuses on the task of zero-shot text classification where the candidate labels are descriptive of the text being classified. UTCD consists of ~ 2.3M/200K train/test examples and can be downloaded [here](https://drive.google.com/file/d/1qISYYoQNGXtmGWrCsKoK-fBKt8MHXqR7/view?usp=sharing)
 
 UTCD Datasets:
@@ -27,10 +24,257 @@ UTCD Datasets:
     - DBpedia 14 introduced in [DBpedia: A Nucleus for a Web of Open Data](https://link.springer.com/chapter/10.1007/978-3-540-76298-0_52)
     - Yahoo Answer Topics introduced in [Character-level Convolutional Networks for Text Classification](https://arxiv.org/pdf/1509.01626.pdf)
 
-### Train Baseline 
-e.g. On GPT2 zero shot classification: 
+
+
+
+
+## User’s Guide 
+
+### Setup environment
+
+OS: UNIX; Python version `3.8.10`; CUDA version `11.6`. 
+
+
+
+Create conda environment: 
+
+```bash
+conda create -n zs-cls python=3.8.10 pip
+```
+
+Move to project root directory, install python packages: 
+
+```bash
+pip3 install -r requirements.txt
+```
+
+Add current directory for python to look for our local package: 
+
 ```bash
 export PYTHONPATH=$PATHONPATH:`pwd`
-python zeroshot_encoder/models/gpt2.py
 ```
+
+
+
+### Note 
+
+Denoting the package directory at system path `<BASE_PATH>/zero-shot-text-classification`, all trained models will be saved to `<BASE_PATH>/models`, all evaluation CSV files will be saved to `<BASE_PATH>/eval`. 
+
+
+
+
+
+### BERT Sequence Classifier 
+
+**Arguments** 
+
+-   `dataset`: Dataset to train/evaluate the model on, pass `all` for all datasets 
+-   `domain`: One of [`in`, `out`], the domain of dataset(s) to train/evaluate on 
+-   `model_path`: File system path or HuggingFace model name for model evaluation, ==TODO test== 
+
+
+
+**Train** 
+
+e.g. Train solely on in-domain dataset `go_emotion`
+
+```bash
+python zeroshot_classifier/models/bert.py train --domain in --dataset go_emotion
+```
+
+e.g. Train solely on out-of-domain dataset `consumer_finance` 
+
+```bash
+python zeroshot_classifier/models/bert.py train --domain out --dataset consumer_finance
+```
+
+e.g. Train on all in-domain datasets 
+
+```bash
+python zeroshot_classifier/models/bert.py train --domain in --dataset all
+```
+
+
+
+**Eval**
+
+e.g. Evaluate a model on out-of-domain dataset `multi_eurlex` 
+
+```bash
+python zeroshot_classifier/models/bert.py test --domain out --dataset multi_eurlex --model_path models/2022-06-15_21-23-57_BERT-Seq-CLS-out-multi_eurlex/trained
+```
+
+
+
+### Binary & Dual Encoding Zero-shot Classification
+
+**Arguments** 
+
+`mode`: Training strategy, one of [`vanilla`, `implicit-on-text-encode-sep`, `explicit`] 
+
+`normalize_aspect`: If true, datasets are normalized by aspect, ==TODO add== 
+
+`learning_rate`: Learning rate for training 
+
+`batch_size`: Batch size for training/evaluation  
+
+`epochs`: #epochs for training 
+
+`model_init`: Fie system path or HuggingFace model name to initialize model weights for explicit training, ==TODO test== 
+
+`output_dir`: Directory name postfix for trained model 
+
+`domain`: One of [`in`, `out`], the domain of datasets to evaluate on 
+
+`model_dir_nm`: Directory name for model evaluation 
+
+
+
+
+
+**Train**
+
+e.g. Vanilla training on Binary BERT 
+
+```bash
+python zeroshot_classifier/models/binary_bert.py train --mode vanilla --batch_size 32 --epochs 8 --learning_rate 2e-5 --output_dir '{a=2e-5}'
+```
+
+e..g Explicit training on Bi-Encoder 
+
+```bash
+python zeroshot_classifier/models/bi-encoder.py train --mode explicit --model_init '2022-11-21_18-58-54_Aspect-Pretrain-Binary-BERT_{md=exp, na=T}_{a=3e-05}/trained'
+```
+
+
+
+
+
+**Eval**
+
+e.g. Evaluate implicitly-trained model on all in-domain datasets 
+
+```bash
+python zeroshot_classifier/models/binary_bert.py test --mode implicit-on-text-encode-sep --domain in --model_dir_nm 2022-10-12_01-21-08_Binary-BERT-implicit-on-text-encode-sep-rand-aspect-norm
+```
+
+
+
+
+
+#### Explicit Pretraining
+
+**Arguments** 
+
+`output_dir`: Directory name postfix for trained model 
+
+`normalize_aspect`: If true, datasets are normalized by aspect 
+
+`learning_rate`: Learning rate for training 
+
+`batch_size`: Batch size for training/evaluation 
+
+`epochs`: #epochs for training 
+
+
+
+
+
+e.g. ==TODO test== 
+
+```python
+python zeroshot_classifier/models/explicit/binary_bert_pretrain.py --learning_rate 2e-5 output_dir '{a=2e-5}'
+```
+
+
+
+### Generative Classification
+
+**Arguments**
+
+`mode`: Training strategy, one of [`vanilla`, `implicit`, `explicit`] 
+
+`normalize_aspect`: If true, datasets are normalized by aspect 
+
+`learning_rate`: Learning rate for training 
+
+`batch_size`: Batch size for training/evaluation  
+
+`gradient_accumulation_steps`: #gradient accumulation steps for training 
+
+`epochs`: #epochs for training 
+
+`ddp`: DDP training flag, intended for proper training logging 
+
+`model_init`: Fie system path or HuggingFace model name to initialize model weights for explicit training, ==TODO test== 
+
+`output_dir`: Directory name postfix for trained model 
+
+`model_dir_nm`: Directory name for model evaluation 
+
+
+
+
+
+==TODO, verify command args==
+
+**Train** 
+
+e.g. Implicit training on GPT with DDP 
+
+```bash
+torchrun --nproc_per_node=4 zeroshot_classifier/models/gpt2.py train --mode implicit
+```
+
+e.g. Explicit training on GPT 
+
+```bash
+python zeroshot_classifier/models/gpt2.py train --mode explicit --model_init '2022-11-27_17-39-06_Aspect-Pretrain-NVIDIA-GPT2_{md=exp, na=T}_{a=2e-05}'
+```
+
+
+
+
+
+**Eval**
+
+e.g. Evaluate model with vanilla training on all out-of-domain datasets 
+
+```bash
+python zeroshot_classifier/models/gpt2.py test --mode implicit --model_dir_nm '2022-11-29_19-37-13_NVIDIA-GPT2_{md=van, na=T}_{a=3e-05}'
+```
+
+
+
+
+
+#### Explicit Pretraining
+
+**Arguments** 
+
+`output_dir`: Directory name postfix for trained model 
+
+`normalize_aspect`: If true, datasets are normalized by aspect 
+
+`learning_rate`: Learning rate for training 
+
+`batch_size`: Batch size for training/evaluation 
+
+`gradient_accumulation_steps`: #gradient accumulation steps for training 
+
+`epochs`: #epochs for training 
+
+
+
+
+
+e.g. ==TODO test== 
+
+```python
+python zeroshot_classifier/models/explicit/gpt2_pretrain.py --learning_rate 4e-5 output_dir '{a=4e-5}'
+```
+
+
+
+
 

@@ -11,6 +11,7 @@ import itertools
 from os.path import join as os_join
 from typing import List, Tuple, Dict, Union, Any
 from warnings import warn
+from argparse import ArgumentParser
 from collections import defaultdict, OrderedDict
 
 import numpy as np
@@ -1042,70 +1043,95 @@ def gpt2_inference(text: str, label_options: List[str]) -> str:
     return tkzer.batch_decode(outputs, skip_special_tokens=False)
 
 
+def parse_args():
+    modes = ['vanilla', 'implicit', 'explicit']
+
+    parser = ArgumentParser()
+    subparser = parser.add_subparsers(dest='command')
+    parser_train = subparser.add_parser('train')
+    parser_test = subparser.add_parser('test')
+
+    parser_train.add_argument('--mode', type=str, choices=modes, default='vanilla')
+    parser_train.add_argument('--normalize_aspect', type=bool, default=True)
+    parser_train.add_argument('--learning_rate', type=float, default=2e-5)
+    parser_train.add_argument('--batch_size', type=int, default=4)
+    parser_train.add_argument('--gradient_accumulation_steps', type=int, default=32)
+    parser_train.add_argument('--epochs', type=int, default=8)
+    parser_train.add_argument('--ddp', type=int, default=None)
+    parser_train.add_argument('--model_init', type=str, default=HF_MODEL_NAME)
+    parser_train.add_argument('--output_dir', type=str, default=None)
+
+    # set test arguments
+    parser_test.add_argument('--domain', type=str, choices=['in', 'out'], required=True)
+    parser_test.add_argument('--mode', type=str, choices=modes, default='vanilla')
+    parser_test.add_argument('--batch_size', type=int, default=32)
+    parser_test.add_argument('--model_dir_nm', type=str, required=True)
+
+    return parser.parse_args()
+
+
 if __name__ == '__main__':
     mic.output_width = 256
 
     seed = sconfig('random-seed')
 
-    NORMALIZE_ASPECT = True
-
-    def train():
+    def train(
+            mode: str = 'vanilla', normalize_aspect: bool = True,
+            learning_rate: float = 2e-5, batch_size: int = 4, gradient_accumulation_steps: int = 32, epochs: int = 8,
+            ddp: int = None,
+            model_init: str = HF_MODEL_NAME, output_dir: str = None
+    ):
         transformers.set_seed(seed)
         dnm = 'UTCD-in'
         # md_nm = 'debug'
         md_nm = 'gpt2-medium'
         mic(dnm, md_nm)
 
-        # form = 'vanilla'
-        # form = 'implicit'
-        form = 'explicit'
-        mic(form)
-        if form == 'explicit':
-            dir_nm = '2022-11-27_17-39-06_Aspect-Pretrain-NVIDIA-GPT2_{md=exp, na=T}_{a=2e-05}'
+        mic(mode)
+        if mode == 'explicit':
+            assert model_init != HF_MODEL_NAME
+        if model_init != HF_MODEL_NAME:
+            dir_nm = model_init or '2022-11-27_17-39-06_Aspect-Pretrain-NVIDIA-GPT2_{md=exp, na=T}_{a=2e-05}'
             md_nm = os_join(get_base_path(), u.proj_dir, u.model_dir, dir_nm, 'trained')
             mic(os.listdir(md_nm))
-            # exit(1)
 
         # n = 32
         # n = 128
         # n = 256
         n = None
 
-        n_ep = 8
-
-        lr = 4e-5
-        ddp = False
-        # ddp = 4
+        lr, bsz, gas, n_ep = learning_rate, batch_size, gradient_accumulation_steps, epochs
+        output_dir = output_dir or f'{{a={lr}}}'
 
         dataset_args = dict(pbar=False)
-        if NORMALIZE_ASPECT:
+        if normalize_aspect:
             dataset_args['normalize_aspect'] = seed
 
         path = map_model_output_path(
-            model_name=MODEL_NAME.replace(' ', '-'), mode=form,
-            sampling=None, normalize_aspect=NORMALIZE_ASPECT, output_dir=f'{{a={lr}}}'
+            model_name=MODEL_NAME.replace(' ', '-'), mode=mode,
+            sampling=None, normalize_aspect=normalize_aspect, output_dir=output_dir
         )
         train_args = dict(  # Distribute among GPUs & fit in memory; Effectively batch size 128 as in paper
             output_dir=path,
             num_train_epochs=n_ep,
             learning_rate=lr,
             warmup_ratio=1e-1,
-            per_device_train_batch_size=4,
-            per_device_eval_batch_size=8,
-            gradient_accumulation_steps=32,
+            per_device_train_batch_size=bsz,
+            per_device_eval_batch_size=bsz,
+            gradient_accumulation_steps=gas,
             dataloader_num_workers=4
         )
-        if NORMALIZE_ASPECT:
+        if normalize_aspect:
             train_args.update(dict(
                 load_best_model_at_end=True,
                 metric_for_best_model='eval_loss',
                 greater_is_better=False
             ))
 
-        mic(n, n_ep, lr, NORMALIZE_ASPECT, ddp)
+        mic(n, n_ep, lr, normalize_aspect, ddp)
         mic(train_args)
         model, tokenizer, trainer = get_all_setup(
-            model_name=md_nm, dataset_name=dnm, form=form, do_eval=True, custom_logging=True, n_sample=n,
+            model_name=md_nm, dataset_name=dnm, form=mode, do_eval=True, custom_logging=True, n_sample=n,
             random_seed=seed,
             train_args=train_args, dataset_args=dataset_args, trainer_args=dict(compute_cls_acc=True),
             is_ddp=ddp
@@ -1119,27 +1145,19 @@ if __name__ == '__main__':
         os.listdir(save_path)
     # train()
 
-    def run_eval():
+    def run_eval(domain: str = 'in', mode: str = 'vanilla', batch_size: int = 32, model_dir_nm: str = None):
         transformers.set_seed(seed)  # cos explicit 3 epoch doesn't generate BOA token...
-        # def profile_evaluation():
-        #     profile_runtime(lambda: evaluate(domain='in', batch_size=48), sleep=2)
-        # # profile_evaluation()
 
-        # dom = 'in'
-        dom = 'out'
-        # form = 'vanilla'
-        # form = 'implicit'
-        form = 'explicit'
         # n_ep = 3
         # n_ep = 5
         n_ep = 8
 
-        if form == 'vanilla':
+        if mode == 'vanilla':
             # dnm = '2022-11-29_12-12-56_NVIDIA-GPT2_{md=van, na=T}_{a=1e-05}'
             # dnm = '2022-11-29_19-15-44_NVIDIA-GPT2_{md=van, na=T}_{a=2e-05}'
             dnm = '2022-11-29_19-37-13_NVIDIA-GPT2_{md=van, na=T}_{a=3e-05}'
             # dnm = '2022-11-29_19-43-32_NVIDIA-GPT2_{md=van, na=T}_{a=4e-05}'
-        elif form == 'implicit':
+        elif mode == 'implicit':
             # dnm = '2022-12-03_10-43-47_NVIDIA-GPT2_{md=imp, na=T}_{a=1e-05}'
             # dnm = '2022-12-03_14-47-52_NVIDIA-GPT2_{md=imp, na=T}_{a=2e-05}'
             # dnm = '2022-12-03_15-03-14_NVIDIA-GPT2_{md=imp, na=T}_{a=3e-05}'
@@ -1149,12 +1167,11 @@ if __name__ == '__main__':
             # dnm = '2022-12-05_16-25-57_NVIDIA-GPT2_{md=exp, na=T}_{a=2e-05}'
             # dnm = '2022-12-05_16-52-24_NVIDIA-GPT2_{md=exp, na=T}_{a=3e-05}'
             dnm = '2022-12-05_17-12-33_NVIDIA-GPT2_{md=exp, na=T}_{a=4e-05}'
-        md_args = dict(normalize_aspect=NORMALIZE_ASPECT, epoch=n_ep, dir_name=dnm)
+        md_args = dict(epoch=n_ep, dir_name=model_dir_nm or dnm)
 
-        mic(NORMALIZE_ASPECT)
-        mic(dom, form, dnm)
-        evaluate(domain=dom, batch_size=48, form=form, load_model_args=md_args, embed_sim=True)
-    run_eval()
+        mic(domain, mode, dnm)
+        evaluate(domain=domain, batch_size=batch_size, form=mode, load_model_args=md_args, embed_sim=True)
+    # run_eval()
 
     def sanity_check_trained_generate():
         text = 'hello world'
@@ -1164,3 +1181,18 @@ if __name__ == '__main__':
     # sanity_check_trained_generate()
 
     # plot_dataset_token_length_stats(domain='in')
+
+    def command_prompt():
+        args = parse_args()
+        cmd = args.command
+        if cmd == 'train':
+            train(
+                mode=args.mode, normalize_aspect=args.normalize_aspect,
+                learning_rate=args.learning_rate, batch_size=args.batch_size,
+                gradient_accumulation_steps=args.gradient_accumulation_steps, epochs=args.epochs,
+                ddp=args.ddp, model_init=args.model_init, output_dir=args.output_dir
+            )
+        else:
+            assert cmd == 'test'  # sanity check
+            run_eval(domain=args.domain, mode=args.mode, batch_size=args.batch_size, model_dir_nm=args.model_dir_nm)
+    command_prompt()

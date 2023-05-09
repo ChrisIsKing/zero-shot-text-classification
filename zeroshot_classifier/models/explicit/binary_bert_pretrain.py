@@ -1,5 +1,6 @@
 import os
 from os.path import join as os_join
+from argparse import ArgumentParser
 
 import torch
 from torch.utils.data import DataLoader
@@ -18,27 +19,35 @@ MODEL_NAME = EXPLICIT_BERT_MODEL_NAME
 TRAIN_STRATEGY = 'explicit'
 
 
+def parse_args():
+    parser = ArgumentParser()
+    parser.add_argument('--output_dir', type=str, default=None)
+    parser.add_argument('--normalize_aspect', type=bool, default=True)
+    parser.add_argument('--learning_rate', type=float, default=2e-5)
+    parser.add_argument('--batch_size', type=int, default=16)
+    parser.add_argument('--epochs', type=int, default=3)
+
+    return parser.parse_args()
+
+
 if __name__ == '__main__':
     import transformers
 
     seed = sconfig('random-seed')
 
-    NORMALIZE_ASPECT = True
-
-    def train(resume: str = None):
+    def train(
+            resume: str = None, normalize_aspect=True, learning_rate: float = 2e-5, batch_size: int = 32,
+            epochs: int = 8,output_dir: str = None
+    ):
         logger = get_logger(f'{MODEL_NAME} Train')
         logger.info('Setting up training... ')
 
         # n = 256
         n = None
 
-        lr = 4e-5
-        our_dir = f'{{a={lr}}}'
-
-        bsz = 32
-
-        n_ep = 8
+        lr, bsz, n_ep = learning_rate, batch_size, epochs
         mic(lr, bsz, n_ep)
+        our_dir = output_dir or f'{{a={lr}}}'
 
         logger.info('Loading tokenizer & model... ')
         tokenizer = BertTokenizerFast.from_pretrained(HF_MODEL_NAME)
@@ -49,7 +58,7 @@ if __name__ == '__main__':
         logger.info('Loading data... ')
         dnm = 'UTCD-in'  # concatenated 9 in-domain datasets in UTCD
         dset_args = dict(dataset_name=dnm, tokenizer=tokenizer, n_sample=n, shuffle_seed=seed)
-        if NORMALIZE_ASPECT:
+        if normalize_aspect:
             dset_args.update(dict(normalize_aspect=seed, splits=['train', 'eval', 'test']))
         dsets = get_explicit_dataset(**dset_args)
         tr, vl, ts = dsets['train'], dsets['eval'], dsets['test']
@@ -117,7 +126,7 @@ if __name__ == '__main__':
             else:
                 path = map_model_output_path(
                     model_name=MODEL_NAME.replace(' ', '-'), mode='explicit',
-                    sampling=None, normalize_aspect=NORMALIZE_ASPECT, output_dir=our_dir
+                    sampling=None, normalize_aspect=normalize_aspect, output_dir=our_dir
                 )
 
                 with_tqdm = True
@@ -129,7 +138,7 @@ if __name__ == '__main__':
                     num_train_epochs=n_ep,
                     dataloader_num_workers=4
                 )
-                if NORMALIZE_ASPECT:
+                if normalize_aspect:
                     args.update(dict(
                         load_best_model_at_end=True,
                         metric_for_best_model='eval_loss',
@@ -214,5 +223,11 @@ if __name__ == '__main__':
         tokenizer = BertTokenizerFast.from_pretrained(HF_MODEL_NAME)
         tokenizer.add_special_tokens(dict(eos_token=utcd_util.EOT_TOKEN))
         tokenizer.save_pretrained(path)
-    fix_save_tokenizer()
+    # fix_save_tokenizer()
+
+    def command_prompt():
+        _args = parse_args()
+        train(**vars(_args))
+    command_prompt()
+
 

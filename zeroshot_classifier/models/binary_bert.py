@@ -30,7 +30,7 @@ def parse_args():
     parser_test = subparser.add_parser('test')
 
     # set train arguments
-    parser_train.add_argument('--max_sequence_length', type=int, default=512)
+    parser_train.add_argument('--max_sequence_length', type=int, default=512)  # the only difference from bi-encoder
     parser_train.add_argument('--output', type=str, default=None)
     parser_train.add_argument('--output_dir', type=str, default=None)
     parser_train.add_argument('--sampling', type=str, choices=['rand', 'vect'], default='rand')

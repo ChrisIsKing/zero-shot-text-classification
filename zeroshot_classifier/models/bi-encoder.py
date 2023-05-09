@@ -2,8 +2,8 @@ import os
 import math
 import random
 from os.path import join as os_join
-from argparse import ArgumentParser
 from typing import List, Dict
+from argparse import ArgumentParser
 
 import numpy as np
 from torch.utils.data import DataLoader
@@ -24,7 +24,7 @@ HF_MODEL_NAME = 'bert-base-uncased'
 
 def parse_args():
     # see `binary_bert`
-    modes = ['vanilla', 'implicit', 'implicit-on-text-encode-aspect', 'implicit-on-text-encode-sep', 'explicit']
+    modes = sconfig('training.strategies')
 
     parser = ArgumentParser()
     subparser = parser.add_subparsers(dest='command')
@@ -42,9 +42,10 @@ def parse_args():
     parser_train.add_argument('--epochs', type=int, default=3)
 
     # set test arguments
-    parser_test.add_argument('--model_dir_nm', type=str, required=True)
     parser_test.add_argument('--domain', type=str, choices=['in', 'out'], required=True)
     parser_test.add_argument('--mode', type=str, choices=modes, default='vanilla')
+    parser_test.add_argument('--batch_size', type=int, default=32)
+    parser_test.add_argument('--model_dir_nm', type=str, required=True)
 
     return parser.parse_args()
 
@@ -145,7 +146,7 @@ if __name__ == "__main__":
         )
     elif cmd == 'test':
         split = 'test'
-        mode, domain, model_dir_nm = args.mode, args.domain, args.model_dir_nm
+        mode, domain, model_dir_nm, bsz = args.mode, args.domain, args.model_dir_nm, args.batch_size
         out_path = os_join(u.eval_path, model_dir_nm, domain2eval_dir_nm(domain))
         os.makedirs(out_path, exist_ok=True)
 
@@ -157,7 +158,6 @@ if __name__ == "__main__":
         model = SentenceTransformer(model_path)
         md_nm = model.__class__.__qualname__
 
-        bsz = 32
         d_log = dict(model=md_nm, mode=mode, domain=domain, datasets=dataset_names, path=model_dir_nm, batch_size=bsz)
         logger = get_logger(f'{MODEL_NAME} Eval')
         logger.info(f'Evaluating {MODEL_NAME} with {pl.i(d_log)} and saving to {pl.i(out_path)}... ')
