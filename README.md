@@ -1,31 +1,38 @@
-# Zero-shot Text Classification
+# Label Agnostic Pre-training for Zero-shot Text Classification
 
-1. Benchmarking zero-shot text classification models
-2. Bi-encoder for zero-shot classification, a balance between speed & accuracy.
-
-
+This repository contains the code and data for the ACL'23 paper **Label Agnostic Pre-training for Zero-shot Text Classification** by *Christopher Clarke, Yuzhao Heng, Yiping Kang, Krisztian Flautner, Lingjia Tang and Jason Mars*. In this paper, we investigate the task of zero-shot text classification with the aim of improving the ability of PLMs to generalize both seen and unseen data across domains without the need for additional training. We introduce two new simple yet effective training strategies, *Implicit training* & *Explicit pre-training* which specifically inject aspect-level understanding into the model at train time. To evaluate this, we release UTCD, a new benchmark dataset for evaluating text classification in zero-shot settings. **Models, data & paper coming soon!**
 
 ## Universal Text Classification Dataset
+UTCD is a compilation of 18 classification datasets spanning 3 categories of Sentiment, Intent/Dialogue and Topic classification. UTCD focuses on the task of zero-shot text classification where the candidate labels are descriptive of the text being classified. TUTCD consists of ~ 6M/800K train/test examples.
 
-UTCD is a compilation of 9 classification datasets spanning 3 categories of Sentiment, Intent/Dialogue and Topic classification. UTCD focuses on the task of zero-shot text classification where the candidate labels are descriptive of the text being classified. UTCD consists of ~ 2.3M/200K train/test examples and can be downloaded [here](https://drive.google.com/file/d/1qISYYoQNGXtmGWrCsKoK-fBKt8MHXqR7/view?usp=sharing)
-
-UTCD Datasets:
+UTCD Datasets & Principles:
 
 - Sentiment
-    - GoEmotions dataset introduced in [GoEmotions: A Dataset of Fine-Grained Emotions](https://arxiv.org/pdf/2005.00547v2.pdf)
-    - TweetEval dataset introduced in [TWEETEVAL: Unified Benchmark and Comparative Evaluation for Tweet Classification](https://arxiv.org/pdf/2010.12421v2.pdf) (Sentiment subset)
-    - Emotion dataset introduced in [CARER: Contextualized Affect Representations for Emotion Recognition](https://aclanthology.org/D18-1404.pdf)
+    - GoEmotions introduced in [GoEmotions: A Dataset of Fine-Grained Emotions](https://arxiv.org/pdf/2005.00547v2.pdf)
+    - TweetEval introduced in [TWEETEVAL: Unified Benchmark and Comparative Evaluation for Tweet Classification](https://arxiv.org/pdf/2010.12421v2.pdf) (Sentiment subset)
+    - Emotion introduced in [CARER: Contextualized Affect Representations for Emotion Recognition](https://aclanthology.org/D18-1404.pdf)
+    - Amazon Polarity introduced in [Character-level Convolutional Networks for Text Classification](https://arxiv.org/pdf/1509.01626.pdf)
+    - Finance Phrasebank introduced in [Good debt or bad debt: Detecting semantic orientations in economic texts](https://arxiv.org/pdf/1307.5336.pdf)
+    - Yelp introduced in [Character-level Convolutional Networks for Text Classification](https://arxiv.org/pdf/1509.01626.pdf)
 - Intent/Dialogue
-    - Schema-Guided Dialogue dataset introduced in [Towards Scalable Multi-Domain Conversational Agents: The Schema-Guided Dialogue Dataset](https://arxiv.org/pdf/1909.05855v2.pdf)
+    - Schema-Guided Dialogue introduced in [Towards Scalable Multi-Domain Conversational Agents: The Schema-Guided Dialogue Dataset](https://arxiv.org/pdf/1909.05855v2.pdf)
     - Clinc-150 introduced in [An Evaluation Dataset for Intent Classification and Out-of-Scope Prediction](https://arxiv.org/pdf/1909.02027v1.pdf)
-    - SLURP SLU dataset introduced in [SLURP: A Spoken Language Understanding Resource Package](https://arxiv.org/pdf/2011.13205.pdf)
+    - SLURP SLU introduced in [SLURP: A Spoken Language Understanding Resource Package](https://arxiv.org/pdf/2011.13205.pdf)
+    - Banking77 introduced in [Efficient Intent Detection with Dual Sentence Encoders](https://arxiv.org/abs/2003.04807](https://arxiv.org/pdf/2003.04807.pdf)
+    - Snips introduced in [Snips Voice Platform: an embedded Spoken Language Understanding system for private-by-design voice interfaces](https://arxiv.org/pdf/1805.10190.pdf)
+    - NLU Evaluation introduced in [Benchmarking Natural Language Understanding Services for building Conversational Agents](https://arxiv.org/pdf/1903.05566.pdf)
 - Topic
     - AG News introduced in [Character-level Convolutional Networks for Text Classification](https://arxiv.org/pdf/1509.01626.pdf)
     - DBpedia 14 introduced in [DBpedia: A Nucleus for a Web of Open Data](https://link.springer.com/chapter/10.1007/978-3-540-76298-0_52)
     - Yahoo Answer Topics introduced in [Character-level Convolutional Networks for Text Classification](https://arxiv.org/pdf/1509.01626.pdf)
+    - MultiEurlex introduced in [MultiEURLEX -- A multi-lingual and multi-label legal document classification dataset for zero-shot cross-lingual transfer](https://aclanthology.org/2021.emnlp-main.559v2.pdf)
+    - BigPatent introduced in [BIGPATENT: A Large-Scale Dataset for Abstractive and Coherent Summarization](https://aclanthology.org/P19-1212.pdf)
+    - Consumer Finance introduced in [Consumer Complaint Database](https://www.consumerfinance.gov/data-research/consumer-complaints/)
 
+In order to make NLP models more broadly useful, zero-shot techniques need to be capable of label, domain \& aspect transfer. As such, in the construction of UTCD we enforce the following principles: 
 
-
+- **Textual labels**: In UTCD, we mandate the use of textual labels. While numerical label values are often used in classification tasks, descriptive textual labels such as those present in the datasets across UTCD enable the development of techniques that can leverage the class name which is instrumental in providing zero-shot support. As such, for each of the compiled datasets, labels are standardized such that the labels are descriptive of the text in natural language. 
+- **Diverse domains and Sequence lengths**: In addition to broad coverage of aspects, UTCD compiles diverse data across several domains such as Banking, Finance, Legal, etc each comprising varied length sequences (long and short). The datasets are listed above.
 
 
 ## User’s Guide 
