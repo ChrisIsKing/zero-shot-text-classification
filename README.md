@@ -4,7 +4,7 @@ This repository contains the code and data for the Findings of ACL'23 paper **La
 
 In this paper, we investigate the task of zero-shot text classification with the aim of improving the ability of PLMs to generalize both seen and unseen data across domains without the need for additional training. We introduce two new simple yet effective training strategies, *Implicit training* & *Explicit pre-training* which specifically inject aspect-level understanding into the model at train time. To evaluate this, we release UTCD, a new benchmark dataset for evaluating text classification in zero-shot settings. **Models, data & paper coming soon!**
 
-## Universal Text Classification Dataset
+## Universal Text Classification Dataset (UTCD)
 UTCD is a compilation of 18 classification datasets spanning 3 categories of Sentiment, Intent/Dialogue and Topic classification. UTCD focuses on the task of zero-shot text classification where the candidate labels are descriptive of the text being classified. TUTCD consists of ~ 6M/800K train/test examples.
 
 UTCD Datasets & Principles:
