@@ -7,12 +7,12 @@ dataset/
 models/
 !zeroshot_classifier/models
 # remove obsolete code
-zeroshot_classifier/architecture/binary_bert.py
-zeroshot_classifier/dual_bi_encoder
-zeroshot_classifier/explicit/binary_bert.py
-zeroshot_classifier/bert_nli.py
-zeroshot_classifier/gpt_neo.py
-test_lang*
+zeroshot_classifier/models/architecture/binary_bert.py
+zeroshot_classifier/models/dual_bi_encoder/
+zeroshot_classifier/models/explicit/binary_bert.py
+zeroshot_classifier/models/bert_nli.py
+zeroshot_classifier/models/gpt_neo.py
+test_langs*
 examples/
 logs/
 preds

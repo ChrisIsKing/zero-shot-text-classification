@@ -294,7 +294,6 @@ def get_accs(
             # By default, the predictions and labels will not agree
             d_lbs_ = dict(label_id_pred=-1, label_id_true=descs.index(desc_true))  # Local label wrt dataset
             desc_pred = tokenizer.decode(preds[i_sample, idxs_answ])
-            # print(desc_true, desc_pred)
             if desc_pred in descs:
                 d_lbs_['label_id_pred'] = descs.index(desc_pred)
             return d_lbs_
@@ -319,7 +318,8 @@ class MyTrainer(Trainer):
         assert 'args' in kwargs
 
         self.custom_logging = custom_logging
-        self.disable_train_metrics = disable_train_metrics  # Calling `get_accs` during training seems to reduce GPU util
+        # Calling `get_accs` during training seems to reduce GPU util
+        self.disable_train_metrics = disable_train_metrics
         self.compute_cls_acc = compute_cls_acc
         self.is_ddp = is_ddp
         self.with_tqdm = with_tqdm
@@ -481,8 +481,7 @@ class MyTrainer(Trainer):
             # During training, the eval set has the same set of labels as the training set,
             # which is the sole purpose of `mode`
             d_acc = get_accs(inputs, logits, self.tokenizer, mode='train', compute_cls_acc=self.compute_cls_acc)
-            # For DDP; TODO: What's the proper way to cast?
-            args = dict(dtype=labels.dtype, device=labels.device)
+            args = dict(dtype=labels.dtype, device=labels.device)  # For DDP
             # TODO: log token-level ACC too?
             return (
                 loss,

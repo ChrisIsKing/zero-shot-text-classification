@@ -1,6 +1,5 @@
 import math
 import os
-import datetime
 import configparser
 from os.path import join as os_join
 from typing import List, Tuple, Dict, Iterable, Optional
@@ -178,14 +177,6 @@ def compute_metrics(eval_pred):
 
 if __name__ == '__main__':
     from stefutil import *
-
-    # mic(sconfig('fine-tune'))
-
-    # mic(fmt_num(124439808))
-
-    # process_utcd_dataset()
-
-    # map_ag_news()
 
     def check_gl():
         mic(on_great_lakes())

@@ -520,7 +520,7 @@ class VisualizeOverlap:
 
         logger.info('Plotting... ')
         k_dnm = 'dataset_name'
-        df = pd.DataFrame(chain_its([dnm] * len(d_vect[dnm]) for dnm in dnms), columns=[k_dnm])
+        df = pd.DataFrame(list(chain_its([dnm] * len(d_vect[dnm]) for dnm in dnms)), columns=[k_dnm])
         df['x'] = mapped[:, 0]
         df['y'] = mapped[:, 1]
         aspect2domain2dset = defaultdict(lambda: defaultdict(list))
@@ -655,7 +655,7 @@ class VisualizeOverlap:
 if __name__ == '__main__':
     from datasets import load_from_disk
 
-    mic.output_width = 512
+    mic.output_width = 256
 
     np.random.seed(sconfig('random-seed'))
 
@@ -683,60 +683,11 @@ if __name__ == '__main__':
         sanity_check('UTCD-out')
     # get_utcd_out()
 
-    def sanity_check_ln_eurlex():
-        path = os_join(get_base_path(), PROJ_DIR, DSET_DIR, 'processed', 'multi_eurlex')
-        mic(path)
-        dset = load_from_disk(path)
-        mic(dset, len(dset))
-    # sanity_check_ln_eurlex()
-    # mic(lst2uniq_ids([5, 6, 7, 6, 5, 1]))
-
     def output_utcd_info():
         df = get_utcd_info()
         mic(df)
-        df.to_csv(os_join(BASE_PATH, PROJ_DIR, DSET_DIR, 'utcd-info.csv'), float_format='%.3f')
+        df.to_csv(os_join(u.base_path, u.proj_dir, u.dset_dir, 'utcd-info.csv'), float_format='%.3f')
     # output_utcd_info()
-
-    def fix_amazon_polarity():
-        """
-        One test sample has 2 labels, remove it
-        """
-        from tqdm import tqdm
-        wicked_lb = {'positive', 'negative'}
-        path = os_join(BASE_PATH, PROJ_DIR, DSET_DIR, 'UTCD', 'out-of-domain', 'amazon_polarity.json')
-        with open(path, 'r') as f:
-            dset = json.load(f)
-        wicked_txts = []
-        for k, v in tqdm(dset['test'].items()):
-            if len(v) > 1:
-                assert set(v) == wicked_lb
-                wicked_txts.append(k)
-        assert len(wicked_txts) == 1
-        wicked_txt = wicked_txts[0]
-        mic(wicked_txt)
-        # assert wicked_txt in dset['test'] and wicked_lb == set(dset['test'][wicked_txt])
-        dset['test'][wicked_txt] = ['positive']
-        with open(path, 'w') as f:
-            json.dump(dset, f)
-    # fix_amazon_polarity()
-
-    def chore_check_multi_label():
-        """
-        Some datasets have only a tiny fraction of multi-label samples in the training split,
-            which might not be intended after processing
-        """
-        dnms = ['sentiment_tweets_2020', 'slurp', 'patent']
-        path_dset = os_join(BASE_PATH, PROJ_DIR, DSET_DIR)
-        for dnm in dnms:
-            d = sconfig(f'UTCD.datasets.{dnm}')
-            path = os_join(path_dset, f'{d["path"]}.json')
-            with open(path) as fl:
-                dsets: Dict = json.load(fl)['train']
-            for text, labels in dsets.items():
-                if len(labels) > 1:
-                    d = dict(dset=dnm, labels=labels, text=text)
-                    print(pl.i(d))
-    # chore_check_multi_label()
 
     vs = VisualizeOverlap()
 
@@ -793,8 +744,3 @@ if __name__ == '__main__':
         for aspect in sconfig('UTCD.aspects'):
             vs.plot_utcd_embeddings(kind=kd, aspect=aspect, save=sv, cache=cnm)
     # plot_encoded_overlap_aspect()
-
-    def check_subsample_deterministic():
-        ds = subsample_dataset(dataset_name='sentiment_tweets_2020', split='test', n_tgt=100, seed=77)
-        mic(ds[:2]['text'])
-    # check_subsample_deterministic()

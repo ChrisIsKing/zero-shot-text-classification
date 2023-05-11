@@ -16,39 +16,10 @@ from zeroshot_classifier.util import *
 from zeroshot_classifier.util.load_data import get_datasets, binary_cls_format
 import zeroshot_classifier.util.utcd as utcd_util
 from zeroshot_classifier.models.architecture import BiEncoder
+from zeroshot_classifier.models._bert_based_models import HF_MODEL_NAME, parse_args
 
 
 MODEL_NAME = 'Bi-Encoder'
-HF_MODEL_NAME = 'bert-base-uncased'
-
-
-def parse_args():
-    # see `binary_bert`
-    modes = sconfig('training.strategies')
-
-    parser = ArgumentParser()
-    subparser = parser.add_subparsers(dest='command')
-    parser_train = subparser.add_parser('train')
-    parser_test = subparser.add_parser('test')
-
-    # set train arguments
-    parser_train.add_argument('--output', type=str, default=None)
-    parser_train.add_argument('--output_dir', type=str, default=None)
-    parser_train.add_argument('--sampling', type=str, choices=['rand', 'vect'], default='rand')
-    parser_train.add_argument('--normalize_aspect', type=bool, default=True)
-    parser_train.add_argument('--init_model_name_or_path', type=str, default=HF_MODEL_NAME)
-    parser_train.add_argument('--mode', type=str, choices=modes, default='vanilla')
-    parser_train.add_argument('--learning_rate', type=float, default=2e-5)
-    parser_train.add_argument('--batch_size', type=int, default=16)
-    parser_train.add_argument('--epochs', type=int, default=3)
-
-    # set test arguments
-    parser_test.add_argument('--domain', type=str, choices=['in', 'out'], required=True)
-    parser_test.add_argument('--mode', type=str, choices=modes, default='vanilla')
-    parser_test.add_argument('--batch_size', type=int, default=32)
-    parser_test.add_argument('--model_name_or_path', type=str, required=True)
-
-    return parser.parse_args()
 
 
 if __name__ == "__main__":
@@ -81,7 +52,7 @@ if __name__ == "__main__":
         logger_fl.info(f'Processing datasets {pl.nc(dataset_names)} for training... ')
 
         train, val, test = [], [], []
-        it = tqdm(dataset_names, desc='Formatting into Binary CLS')
+        it = tqdm(dataset_names, desc=f'Formatting into Binary CLS w/ {pl.i(dict(sampling=sampling, mode=mode))}')
         for dataset_name in it:
             dset = data[dataset_name]
             args = dict(sampling=sampling, mode=mode)
@@ -89,8 +60,7 @@ if __name__ == "__main__":
                 it.set_postfix(dnm=f'{pl.i(dataset_name)}-{pl.i(split)}')
                 ds.extend(binary_cls_format(dset, **args, split=split))
 
-        # seq length for consistency w/ `binary_bert` & `sgd`
-        d_log = dict(model_init=init_model_name_or_path)
+        d_log = dict(init_model_name_or_path=init_model_name_or_path)
         md_nm = init_model_name_or_path
         if mode == 'explicit':
             assert init_model_name_or_path != HF_MODEL_NAME  # sanity check

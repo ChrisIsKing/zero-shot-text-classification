@@ -3,7 +3,6 @@ import pickle
 import random
 from typing import List, Dict
 from os.path import join as os_join
-from argparse import ArgumentParser
 
 import torch
 import torch.nn.functional as F
@@ -14,41 +13,11 @@ from stefutil import *
 from zeroshot_classifier.util import *
 from zeroshot_classifier.util.load_data import get_datasets, binary_cls_format
 import zeroshot_classifier.util.utcd as utcd_util
-from zeroshot_classifier.models.architecture import load_sliced_binary_bert, BinaryBertCrossEncoder
+from zeroshot_classifier.models.architecture import BinaryBertCrossEncoder
+from zeroshot_classifier.models._bert_based_models import HF_MODEL_NAME, parse_args
 
 
 MODEL_NAME = 'Binary BERT'
-HF_MODEL_NAME = 'bert-base-uncased'
-
-
-def parse_args():
-    modes = sconfig('training.strategies')
-
-    parser = ArgumentParser()
-    subparser = parser.add_subparsers(dest='command')
-    parser_train = subparser.add_parser('train')
-    parser_test = subparser.add_parser('test')
-
-    # set train arguments
-    parser_train.add_argument('--max_sequence_length', type=int, default=512)  # the only difference from bi-encoder
-    parser_train.add_argument('--output', type=str, default=None)
-    parser_train.add_argument('--output_dir', type=str, default=None)
-    parser_train.add_argument('--sampling', type=str, choices=['rand', 'vect'], default='rand')
-    parser_train.add_argument('--normalize_aspect', type=bool, default=True)
-    # model to initialize weights from, intended for loading weights from local explicit training
-    parser_train.add_argument('--init_model_name_or_path', type=str, default=HF_MODEL_NAME)
-    parser_train.add_argument('--mode', type=str, choices=modes, default='vanilla')
-    parser_train.add_argument('--learning_rate', type=float, default=2e-5)
-    parser_train.add_argument('--batch_size', type=int, default=16)
-    parser_train.add_argument('--epochs', type=int, default=3)
-
-    # set test arguments
-    parser_test.add_argument('--domain', type=str, choices=['in', 'out'], required=True)
-    parser_test.add_argument('--mode', type=str, choices=modes, default='vanilla')
-    parser_test.add_argument('--batch_size', type=int, default=32)  # #of texts to do inference in a single forward pass
-    parser_test.add_argument('--model_name_or_path', type=str, required=True)
-
-    return parser.parse_args()
 
 
 if __name__ == '__main__':
@@ -68,7 +37,7 @@ if __name__ == '__main__':
         output_path, output_dir, sampling, mode = args.output, args.output_dir, args.sampling, args.mode
         normalize_aspect = args.normalize_aspect
         lr, bsz, n_ep = args.learning_rate, args.batch_size, args.epochs
-        init_model_name_or_path, seq_len = args.model_init_model_name_or_pathinit, args.max_sequence_length
+        init_model_name_or_path = args.init_model_name_or_path
 
         # best_metric = 'accuracy'
         best_metric = 'loss'
@@ -108,14 +77,12 @@ if __name__ == '__main__':
         logger.info(f'Loading model with {pl.i(d_log)}...')
         logger_fl.info(f'Loading model with {pl.nc(d_log)}...')
         model = BinaryBertCrossEncoder(md_nm, num_labels=2, automodel_args=dict(ignore_mismatched_sizes=True))
-        if seq_len != 512:  # Intended for `bert-base-uncased` only; TODO: binary bert seems to support this already?
-            model.tokenizer, model.model = load_sliced_binary_bert(md_nm, seq_len)
 
-        spec_tok_arg = utcd_util.get_add_special_tokens_args(model.tokenizer, train_strategy=mode)
-        if spec_tok_arg:
-            logger.info(f'Adding special tokens {pl.i(spec_tok_arg)} to tokenizer... ')
-            logger_fl.info(f'Adding special tokens {pl.nc(spec_tok_arg)} to tokenizer... ')
-            model.tokenizer.add_special_tokens(special_tokens_dict=spec_tok_arg)
+        add_tok_arg = utcd_util.get_add_special_tokens_args(model.tokenizer, train_strategy=mode)
+        if add_tok_arg:
+            logger.info(f'Adding special tokens {pl.i(add_tok_arg)} to tokenizer... ')
+            logger_fl.info(f'Adding special tokens {pl.nc(add_tok_arg)} to tokenizer... ')
+            model.tokenizer.add_special_tokens(special_tokens_dict=add_tok_arg)
             model.model.resize_token_embeddings(len(model.tokenizer))
 
         transformers.logging.set_verbosity_error()  # disables `longest_first` warning
