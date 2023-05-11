@@ -14,7 +14,9 @@ from tqdm.auto import tqdm
 from stefutil import *
 from zeroshot_classifier.util import *
 import zeroshot_classifier.util.utcd as utcd_util
-from zeroshot_classifier.util.load_data import get_datasets, seq_cls_format, in_domain_data_path, out_of_domain_data_path
+from zeroshot_classifier.util.load_data import (
+    get_datasets, seq_cls_format, in_domain_data_path, out_of_domain_data_path
+)
 
 
 MODEL_NAME = 'BERT Seq CLS'
@@ -30,6 +32,10 @@ def parse_args():
 
     parser_train.add_argument('--dataset', type=str, default='all')
     parser_train.add_argument('--domain', type=str, choices=['in', 'out'], required=True)
+    parser_train.add_argument('--normalize_aspect', type=bool, default=False)
+    parser_train.add_argument('--learning_rate', type=float, default=5e-5)
+    parser_train.add_argument('--batch_size', type=int, default=16)
+    parser_train.add_argument('--epochs', type=int, default=3)
 
     parser_test.add_argument('--dataset', type=str, default='all')
     parser_test.add_argument('--domain', type=str, choices=['in', 'out'], required=True)
@@ -47,20 +53,16 @@ if __name__ == "__main__":
     args = parse_args()
 
     seed = sconfig('random-seed')
-    NORMALIZE_ASPECT = False
-    # IS_CHRIS = True
-    IS_CHRIS = False
-    mic(IS_CHRIS)
-    # NORMALIZE_ASPECT = True
 
     if args.command == 'train':
         logger = get_logger(f'{MODEL_NAME} Train')
-        dataset_name, domain = args.dataset, args.domain
+        dataset_name, domain, normalize_aspect = args.dataset, args.domain, args.normalize_aspect
+        lr, bsz, n_ep = args.learning_rate, args.batch_size, args.epochs
         ca(dataset_domain=domain)
         domain_str = 'in-domain' if domain == 'in' else 'out-of-domain'
 
         dset_args = dict(domain=domain)
-        if NORMALIZE_ASPECT:
+        if normalize_aspect:
             dset_args['normalize_aspect'] = seed
         data = get_datasets(in_domain_data_path if domain == 'in' else out_of_domain_data_path, **dset_args)
         if dataset_name == 'all':
@@ -85,21 +87,20 @@ if __name__ == "__main__":
         train_dset = train_dset.map(tokenize_function, **map_args)
         test_dset = test_dset.map(tokenize_function, **map_args)
 
-        bsz, n_ep = 16, 3
         warmup_steps = math.ceil(len(train_dset) * n_ep * 0.1)  # 10% of train data for warm-up
 
         dir_nm = map_model_output_path(
             model_name=MODEL_NAME.replace(' ', '-'), output_path=f'{domain}-{dataset_name}', mode=None,
-            sampling=None, normalize_aspect=NORMALIZE_ASPECT
+            sampling=None, normalize_aspect=normalize_aspect
         )
         output_path = os_join(utcd_util.get_base_path(), u.proj_dir, u.model_dir, dir_nm)
         proj_output_path = os_join(u.base_path, u.proj_dir, u.model_dir_nm, dir_nm, 'trained')
-        mic(dir_nm, proj_output_path)
         d_log = {'batch size': bsz, 'epochs': n_ep, 'warmup steps': warmup_steps, 'save path': output_path}
         logger.info(f'Launched training with {pl.i(d_log)}... ')
 
         training_args = TrainingArguments(  # TODO: learning rate
             output_dir=output_path,
+            learning_rate=lr,
             num_train_epochs=n_ep,
             per_device_train_batch_size=bsz,
             per_device_eval_batch_size=bsz,
@@ -115,15 +116,11 @@ if __name__ == "__main__":
             model=model, args=training_args,
             train_dataset=train_dset, eval_dataset=test_dset, compute_metrics=compute_metrics
         )
-
         transformers.set_seed(seed)
         trainer.train()
-        mic(trainer.evaluate())
         trainer.save_model(proj_output_path)
         tokenizer.save_pretrained(proj_output_path)
-        os.listdir(proj_output_path)
-
-    if args.command == 'test':
+    elif args.command == 'test':
         dataset_name, domain, model_path = args.dataset, args.domain, args.model_name_or_path
         bsz = 32
         split = 'test'
@@ -141,7 +138,7 @@ if __name__ == "__main__":
         logger_fl.info(f'Evaluating {domain_str} datasets {dataset_names} on model {model_path}... ')
 
         data = get_datasets(in_domain_data_path if domain == 'in' else out_of_domain_data_path)
-        tokenizer = BertTokenizer.from_pretrained(HF_MODEL_NAME if IS_CHRIS else model_path)
+        tokenizer = BertTokenizer.from_pretrained(model_path)
         model = BertForSequenceClassification.from_pretrained(model_path)
         model.eval()
         device = 'cpu'

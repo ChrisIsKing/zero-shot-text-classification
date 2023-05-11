@@ -71,7 +71,7 @@ Denoting the package directory at system path `<BASE_PATH>/zero-shot-text-classi
 
 
 
-Below we include command line arguments and example train/eval commands. 
+Below we include command line arguments and example train/eval commands for models in our paper. 
 
 
 
@@ -83,6 +83,10 @@ Below we include command line arguments and example train/eval commands.
 
 -   `dataset`: Dataset to train/evaluate the model on, pass `all` for all datasets 
 -   `domain`: One of [`in`, `out`], the domain of dataset(s) to train/evaluate on 
+-   `normalize_aspect`: If true, datasets are normalized by aspect, ==TODO add== 
+-   `learning_rate`: Learning rate for training 
+-   `batch_size`: Batch size for training/evaluation  
+-   `epochs`: #epochs for training 
 -   `model_name_or_path`: File system path or HuggingFace model name for model evaluation, ==TODO test== 
 
 
@@ -187,6 +191,8 @@ Below we include command line arguments and example train/eval commands.
 
 
 
+**Train**
+
 -   Train with learning rate 2e-5, ==TODO verify working== 
 
     -   ```bash
@@ -207,7 +213,7 @@ Below we include command line arguments and example train/eval commands.
 -   `batch_size`: Batch size for training/evaluation  
 -   `gradient_accumulation_steps`: #gradient accumulation steps for training 
 -   `epochs`: #epochs for training 
--   `ddp`: DDP training flag, intended for proper training logging 
+-   `ddp`: DDP training flag, intended for proper logging during training
 -   `init_model_name_or_path`: Fie system path or HuggingFace model name to initialize model weights for explicit training, ==TODO verify working== 
 -   `output_dir`: Directory name postfix for trained model 
 -   `model_name_or_path`: Directory name for model evaluation 
@@ -262,6 +268,8 @@ Below we include command line arguments and example train/eval commands.
 
 
 
+
+**Train**
 
 -   Train with learning rate 2e-5, ==TODO verify working== 
 

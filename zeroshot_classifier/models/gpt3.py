@@ -2,9 +2,7 @@ import re
 import os
 import json
 import time
-import random
 import logging
-import requests
 from os.path import join as os_join
 from typing import List, Dict, Any, Union, Optional
 from argparse import ArgumentParser
@@ -14,7 +12,6 @@ import numpy as np
 import pandas as pd
 import datasets
 import openai
-import torch
 from sklearn.metrics import classification_report
 from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
@@ -75,29 +72,6 @@ class ApiCaller:
         )
         payload['prompt'] = prompt
         payload.update(kwargs)
-
-        # def _call():
-        #     return requests.post(self.url, headers=self.headers, json=payload)
-        #
-        # if rand_sleep:  # Intended for concurrent requests, see evaluate `concurrent` flag
-        #     time.sleep(random.uniform(0, 4))
-        #
-        # res = None
-        # i = 0
-        # sleep_time = 4
-        # while not res or res.status_code != 200:
-        #     if res:
-        #         assert res.status_code == 429  # Too many request, retry
-        #     if i % 4 == 0:  # Wait for `Too Many Requests` to pass
-        #         sleep_time *= 2
-        #
-        #     logger.info(f'Too Many Requests, retrying in {pl.i(sleep_time)}s... ')
-        #     time.sleep(sleep_time)
-        #     res = _call()
-        #     i += 1
-        # res = json.loads(res.text)
-        # assert len(res['choices']) == 1  # sanity check only generated one completion
-        # return res['choices'][0]['text']
 
         res = self.completion(**payload)
         res = res.choices
@@ -186,7 +160,7 @@ class PromptMap:
 
     @staticmethod
     def _to_prompt(question: str = None, text: str = None):
-        # return f'Text: {text}\nQuestion: {question}\n Answer:'  # TODO: This template works w/ `davinci` better??
+        # return f'Text: {text}\nQuestion: {question}\n Answer:'  # TODO: This template works w/ `davinci` better?
         return f'{question}\n Text: {truncate_text(text)} \n Answer:'  # This template works w/ `curie` better
 
 
@@ -223,7 +197,6 @@ class _EvalSingle:
 
     def __call__(self, e: Union[Dict[str, Any], List[Dict[str, Any]]], pbar=None) -> Union[_EvalSingleOut, List[_EvalSingleOut]]:
         if self.batched:
-            # mic(e)
             d: List[Dict]
             lst_txt, lst_lbs = [i['text'] for i in e], [i['labels'] for i in e]
             assert isinstance(lst_txt[0], str) and isinstance(lst_lbs[0], list)  # sanity check
@@ -414,6 +387,29 @@ def evaluate(
         logger_fl.info(f'{dnm} accuracy: {acc}')
 
 
+def parse_args():
+    parser = ArgumentParser()
+
+    models = ['text-ada-001', 'text-babbage-001', 'text-curie-001', 'text-davinci-002']
+    parser.add_argument('--model', type=str, choices=models, default='text-ada-001', help="""
+        GPT3 model from Open AI API, see `https://beta.openai.com/docs/models/gpt-3`
+    """)
+    parser.add_argument('--dataset', type=str, default='all', help="""
+        One of dataset name in UTCD or `all` for all datasets in a domain, see argument `domain`
+    """)
+    parser.add_argument('--domain', type=str, choices=['in', 'out'], default='in', help="""
+        One of [`in`, `out`] for in-domain, out-of-domain respectively
+    """)
+    parser.add_argument('--concurrent', type=bool, default=False, help="""
+        Make GPT3 completion requests concurrently
+    """)
+    parser.add_argument('--subsample', type=int, default=5000, help="""
+        Total #sample to subsample from the dataset
+    """)
+    parser.add_argument('--subsample_seed', type=int, default=77)
+    return parser.parse_args()
+
+
 if __name__ == '__main__':
     mic.output_width = 256
 
@@ -421,74 +417,14 @@ if __name__ == '__main__':
         auth = json.load(f)
         org = auth['organization']
         api_key = auth['api-key']
-        # api_key = auth['api-key-chris']
     openai.api_key = api_key
 
-    headers = {
-        'Authorization': f'Bearer {api_key}',
-        'Content-Type': 'application/json',
-        'OpenAI-Organization': org
-    }
-
-    def check_api():
-        res = requests.get(url='https://api.openai.com/v1/models', headers=headers)
-        mic(res)
-        res = json.loads(res.text)
-        mic(res)
-    # check_api()
-
-    def try_completion():
-        # model = 'text-ada-001'  # fastest
-        model = 'text-davinci-002'  # most powerful
-
-        payload = dict(
-            model=model,
-            prompt=["Say this is a test", "Say Happy"],
-            max_tokens=6,
-            temperature=0  # Generate w/ greedy decoding
-        )
-        res = requests.post(url='https://api.openai.com/v1/completions', headers=headers, json=payload)
-        mic(res)
-        res = json.loads(res.text)
-        mic(res)
-    # try_completion()
-
-    def try_open_ai_api():
-        # ppt = "def magic_function():\n\t"
-        ppt = ["def magic_function():\n\t", "print('Hello world!')\n\t"]
-
-        res = openai.Completion.create(
-            model="curie",
-            prompt=ppt,
-            max_tokens=10,
-        )
-        mic(res)
-    # try_open_ai_api()
-
-    def try_open_ai_delay():
-        from tenacity import (
-            retry,
-            stop_after_attempt,
-            wait_random_exponential,
-        )
-
-        @retry(wait=wait_random_exponential(min=1, max=60), stop=stop_after_attempt(6))
-        def completion_with_backoff(**kwargs):
-            return openai.Completion.create(**kwargs)
-
-        res = completion_with_backoff(
-            model="text-davinci-002", prompt=["Once upon a time,", "there was a dog"], max_tokens=10
-        )
-        mic(res)
-    # try_open_ai_delay()
-
     # evaluate(model='text-ada-001', domain='in', dataset_name='emotion')
-    # evaluate(model='text-curie-001', domain='in', dataset_name='emotion', concurrent=True)
-    # evaluate(model='text-davinci-002', domain='in', dataset_name='emotion')
     # evaluate(model='text-curie-001', domain='out', dataset_name='multi_eurlex', concurrent=True)
-
+    # evaluate(model='text-curie-001', domain='in', dataset_name='emotion', concurrent=True)
     # evaluate(model='text-curie-001', domain='in', dataset_name='finance_sentiment', concurrent=True)
     # evaluate(model='text-curie-001', domain='in', dataset_name='banking77', concurrent=True, subsample=True)
+    # evaluate(model='text-davinci-002', domain='in', dataset_name='emotion')
     # evaluate(model='text-davinci-002', domain='out', dataset_name='finance_sentiment')
     # evaluate(model='text-davinci-002', domain='out', dataset_name='consumer_finance')
     # evaluate(model='text-davinci-002', domain='out', dataset_name='amazon_polarity', concurrent=True)
@@ -504,35 +440,7 @@ if __name__ == '__main__':
         u.eval_path, '2022-12-04_17-34-01_Zeroshot-GPT3-Eval_{md=text-curie-001, dm=out, dnm=multi_eurlex}',
         '22-12-04_out-of-domain', f'{dnm_}_meta.json'
     )]
-    evaluate(
-        domain='out', dataset_name=dnm_, **run_args,
-        concurrent=True,
-        # batched=True,
-        delay=12,
-        resume=rsm
-    )
-
-    def parse_args():
-        parser = ArgumentParser()
-
-        models = ['text-ada-001', 'text-babbage-001', 'text-curie-001', 'text-davinci-002']
-        parser.add_argument('--model', type=str, choices=models, default='text-ada-001', help="""
-            GPT3 model from Open AI API, see `https://beta.openai.com/docs/models/gpt-3`
-        """)
-        parser.add_argument('--dataset', type=str, default='all', help="""
-            One of dataset name in UTCD or `all` for all datasets in a domain, see argument `domain`
-        """)
-        parser.add_argument('--domain', type=str, choices=['in', 'out'], default='in', help="""
-            One of [`in`, `out`] for in-domain, out-of-domain respectively
-        """)
-        parser.add_argument('--concurrent', type=bool, default=False, help="""
-            Make GPT3 completion requests concurrently
-        """)
-        parser.add_argument('--subsample', type=int, default=5000, help="""
-            Total #sample to subsample from the dataset
-        """)
-        parser.add_argument('--subsample_seed', type=int, default=77)
-        return parser.parse_args()
+    # evaluate(domain='out', dataset_name=dnm_, **run_args, concurrent=True, delay=12, resume=rsm)
 
     def command_prompt():
         args = parse_args()
@@ -540,4 +448,4 @@ if __name__ == '__main__':
             model=args.model, dataset_name=args.dataset, domain=args.domain, concurrent=args.concurrent,
             subsample=args.subsample, subsample_seed=args.subsample_seed
         )
-    # command_prompt()
+    command_prompt()

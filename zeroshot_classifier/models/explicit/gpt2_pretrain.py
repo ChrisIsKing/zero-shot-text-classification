@@ -1,4 +1,3 @@
-import os
 from os.path import join as os_join
 from argparse import ArgumentParser
 
@@ -41,16 +40,9 @@ if __name__ == '__main__':
         logger = get_logger(f'{MODEL_NAME} Train')
         logger.info('Setting up training... ')
 
-        mic(normalize_aspect)
-
-        # n = 128
-        n = None
-
         lr, bsz, gas, n_ep = learning_rate, batch_size, gradient_accumulation_steps, epochs
-        mic(n, lr, n_ep, bsz, gas)
 
         logger.info('Loading tokenizer & model... ')
-
         tokenizer = GPT2TokenizerFast.from_pretrained(HF_MODEL_NAME)
         tokenizer.add_special_tokens(special_tokens_dict=dict(
             pad_token=ZsGPT2Tokenizer.pad_token_, additional_special_tokens=[utcd_util.EOT_TOKEN]
@@ -64,17 +56,17 @@ if __name__ == '__main__':
 
         logger.info('Loading data... ')
         dnm = 'UTCD-in'  # concatenated 9 in-domain datasets in UTCD
-        dset_args = dict(dataset_name=dnm, tokenizer=tokenizer, n_sample=n, shuffle_seed=seed)
+        dset_args = dict(dataset_name=dnm, tokenizer=tokenizer, shuffle_seed=seed)
         if normalize_aspect:
             dset_args.update(dict(normalize_aspect=seed, splits=['train', 'eval', 'test']))
         dsets = get_explicit_dataset(**dset_args)
         tr, vl, ts = dsets['train'], dsets['eval'], dsets['test']
         logger.info(f'Loaded #example {pl.i({k: len(v) for k, v in dsets.items()})}')
-
         transformers.set_seed(seed)
+
         path = map_model_output_path(
             model_name=MODEL_NAME.replace(' ', '-'), mode='explicit',
-            sampling=None, normalize_aspect=normalize_aspect, output_dir=output_dir or f'{{a={lr}}}'
+            sampling=None, normalize_aspect=normalize_aspect, output_dir=output_dir
         )
         train_args = dict(
             output_dir=path,
@@ -107,30 +99,6 @@ if __name__ == '__main__':
         tokenizer.save_pretrained(save_path)
         logger.info(f'Tokenizer & Model saved to {pl.i(save_path)}')
     # train()
-    # dir_nm_ = '2022-06-19_13-13-54_Explicit-Pretrain-Aspect-NVIDIA-GPT2-gpt2-medium-explicit-aspect-norm'
-    # ckpt_path = os_join(utcd_util.get_base_path(), u.proj_dir, u.model_dir, dir_nm_, 'checkpoint-31984')
-    # mic(ckpt_path)
-    # train(resume=ckpt_path)
-
-    dir_nm_ = '2022-06-12_16-40-16_Explicit Pretrain Aspect NVIDIA-GPT2-gpt2-medium-explicit-aspect-norm'
-    save_path_ = os_join(u.proj_path, u.model_dir, dir_nm_, 'trained')
-
-    def fix_save_tokenizer():
-        tokenizer = GPT2TokenizerFast.from_pretrained(HF_MODEL_NAME)
-        tokenizer.add_special_tokens(special_tokens_dict=dict(
-            pad_token=ZsGPT2Tokenizer.pad_token_, additional_special_tokens=[utcd_util.EOT_TOKEN]
-        ))
-        mic(tokenizer.get_added_vocab())
-        mic(save_path_)
-        # exit(1)
-        tokenizer.save_pretrained(save_path_)
-        mic(os.listdir(save_path_))
-    # fix_save_tokenizer()
-
-    def check_save_tokenizer():
-        tokenizer = GPT2TokenizerFast.from_pretrained(save_path_)
-        mic(tokenizer.get_added_vocab())
-    # check_save_tokenizer()
 
     def command_prompt():
         args = parse_args()

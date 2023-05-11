@@ -168,8 +168,6 @@ if __name__ == '__main__':
     # evaluate(domain='out', dataset_name='yelp')
     # evaluate(domain='out', dataset_name='amazon_polarity')
 
-    # evaluate(domain='out', dataset_name='consumer_finance', split_index=0, n_splits=1000)
-
     def chore_merge_splits():
         dir_nms = [
             '2022-10-19_04-07-56_Zeroshot-BART',

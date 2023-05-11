@@ -35,6 +35,7 @@ def parse_args():
     parser_train.add_argument('--output', type=str, default=None)
     parser_train.add_argument('--output_dir', type=str, default=None)
     parser_train.add_argument('--sampling', type=str, choices=['rand', 'vect'], default='rand')
+    parser_train.add_argument('--normalize_aspect', type=bool, default=True)
     parser_train.add_argument('--init_model_name_or_path', type=str, default=HF_MODEL_NAME)
     parser_train.add_argument('--mode', type=str, choices=modes, default='vanilla')
     parser_train.add_argument('--learning_rate', type=float, default=2e-5)
@@ -53,8 +54,6 @@ def parse_args():
 if __name__ == "__main__":
     seed = sconfig('random-seed')
 
-    NORMALIZE_ASPECT = True
-
     args = parse_args()
     cmd = args.command
     log_nm = f'{MODEL_NAME} {args.command.capitalize()}'
@@ -62,30 +61,26 @@ if __name__ == "__main__":
 
     if cmd == 'train':
         output_path, output_dir, sampling, mode = args.output, args.output_dir, args.sampling, args.mode
+        normalize_aspect = args.normalize_aspect
         lr, bsz, n_ep = args.learning_rate, args.batch_size, args.epochs
         init_model_name_or_path = args.init_model_name_or_path
-
-        n = None
-        # n = 64
 
         # best_metric = 'accuracy'
         best_metric = 'loss'
 
         output_path = map_model_output_path(
             model_name=MODEL_NAME.replace(' ', '-'), output_path=output_path, output_dir=output_dir,
-            mode=mode, sampling=sampling, normalize_aspect=NORMALIZE_ASPECT
+            mode=mode, sampling=sampling, normalize_aspect=normalize_aspect
         )
         logger_fl = get_logger(log_nm, kind='file-write', file_path=os_join(output_path, 'training.log'))
 
-        dset_args = dict(normalize_aspect=seed) if NORMALIZE_ASPECT else dict()
-        data = get_datasets(domain='in', n_sample=n, **dset_args)
+        dset_args = dict(normalize_aspect=seed) if normalize_aspect else dict()
+        data = get_datasets(domain='in', **dset_args)
         dataset_names = [dnm for dnm, d_dset in sconfig('UTCD.datasets').items() if d_dset['domain'] == 'in']
         logger.info(f'Processing datasets {pl.i(dataset_names)} for training... ')
         logger_fl.info(f'Processing datasets {pl.nc(dataset_names)} for training... ')
 
-        train = []
-        val = []
-        test = []
+        train, val, test = [], [], []
         it = tqdm(dataset_names, desc='Formatting into Binary CLS')
         for dataset_name in it:
             dset = data[dataset_name]
@@ -125,7 +120,6 @@ if __name__ == "__main__":
 
         random.seed(seed)
         random.shuffle(train)
-        # train, val = train[:128], train[:128]  # TODO: debugging
         train_dataloader = DataLoader(train, shuffle=True, batch_size=bsz)
         val_dataloader = DataLoader(val, shuffle=False, batch_size=bsz)
         train_loss = losses.CosineSimilarityLoss(model)

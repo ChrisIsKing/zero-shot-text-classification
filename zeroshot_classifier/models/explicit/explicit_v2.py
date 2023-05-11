@@ -2,7 +2,7 @@
 Pretraining for 2-stage explicit training
 
 Given text, predict aspect with linear classification head
-    Binary BERT & Bi-Encoder all pretrained via BERT; TODO: consider +MLM?
+    Binary BERT & Bi-Encoder all pretrained via BERT
     GPT2-NVIDIA pretrained with GPT2
 
 Pretrained weights loaded for finetuning

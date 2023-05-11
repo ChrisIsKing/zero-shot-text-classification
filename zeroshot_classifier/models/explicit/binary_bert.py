@@ -19,7 +19,6 @@ from transformers import (
     BertConfig, BertModel, BertPreTrainedModel, BertTokenizer,
     get_scheduler
 )
-# from transformers.utils import logging
 from sklearn.metrics import classification_report
 from tqdm import tqdm, trange
 from torch.utils.tensorboard import SummaryWriter
@@ -31,8 +30,6 @@ from stefutil import *
 from zeroshot_classifier.util import *
 
 
-# logging.set_verbosity_info()
-# logger = logging.get_logger(__name__)
 logger = logging.getLogger(__name__)
 set_seed(42)
 
