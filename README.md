@@ -20,7 +20,7 @@ UTCD Datasets & Principles:
     - Schema-Guided Dialogue introduced in [Towards Scalable Multi-Domain Conversational Agents: The Schema-Guided Dialogue Dataset](https://arxiv.org/pdf/1909.05855v2.pdf)
     - Clinc-150 introduced in [An Evaluation Dataset for Intent Classification and Out-of-Scope Prediction](https://arxiv.org/pdf/1909.02027v1.pdf)
     - SLURP SLU introduced in [SLURP: A Spoken Language Understanding Resource Package](https://arxiv.org/pdf/2011.13205.pdf)
-    - Banking77 introduced in [Efficient Intent Detection with Dual Sentence Encoders](https://arxiv.org/abs/2003.04807](https://arxiv.org/pdf/2003.04807.pdf)
+    - Banking77 introduced in [Efficient Intent Detection with Dual Sentence Encoders](https://arxiv.org/pdf/2003.04807.pdf)
     - Snips introduced in [Snips Voice Platform: an embedded Spoken Language Understanding system for private-by-design voice interfaces](https://arxiv.org/pdf/1805.10190.pdf)
     - NLU Evaluation introduced in [Benchmarking Natural Language Understanding Services for building Conversational Agents](https://arxiv.org/pdf/1903.05566.pdf)
 - Topic
