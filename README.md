@@ -36,8 +36,13 @@ In order to make NLP models more broadly useful, zero-shot techniques need to be
 - **Textual labels**: In UTCD, we mandate the use of textual labels. While numerical label values are often used in classification tasks, descriptive textual labels such as those present in the datasets across UTCD enable the development of techniques that can leverage the class name which is instrumental in providing zero-shot support. As such, for each of the compiled datasets, labels are standardized such that the labels are descriptive of the text in natural language. 
 - **Diverse domains and Sequence lengths**: In addition to broad coverage of aspects, UTCD compiles diverse data across several domains such as Banking, Finance, Legal, etc each comprising varied length sequences (long and short). The datasets are listed above.
 
+## User’s Guide (HuggingFace)
 
-## User’s Guide 
+The [UTCD dataset](https://huggingface.co/datasets/claritylab/UTCD) and [trained models](https://huggingface.co/models?other=zeroshot_classifier) are available on HuggingFace. Please refer to the instructions there.
+
+
+
+## User’s Guide (Local)
 
 ### Setup environment
 
