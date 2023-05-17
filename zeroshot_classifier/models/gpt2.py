@@ -45,6 +45,9 @@ MODEL_NAME = 'NVIDIA-GPT2'
 HF_MODEL_NAME = 'gpt2-medium'
 
 
+__all__ = ['ZsGPT2Tokenizer', 'ZsGPT2LMHeadModel']
+
+
 logger = get_logger(MODEL_NAME)
 
 
@@ -97,7 +100,7 @@ class ZsGPT2Tokenizer(GPT2TokenizerFast):
                 )
             return super().__getitem__(key)
 
-    def __init__(self, form: str = 'vanilla', **kwargs):
+    def __init__(self, form: str = 'vanilla', verbose: bool = False, **kwargs):
         """
         :param form: One of [`vanilla`, `implicit`, `explicit`]
             See `binary_bert::modes`
@@ -114,7 +117,7 @@ class ZsGPT2Tokenizer(GPT2TokenizerFast):
             # TODO: when re-loaded, PAD token doesn't seem to be added...
         else:
             spec_toks.append(utcd_util.EOT_TOKEN)  # SGD end of turn
-        ca.check_mismatch('GPT2 Training Strategy', form, ['vanilla', 'implicit', 'explicit'])
+        ca(gpt2_training_strategy=form)
         self.form = form
         self.did2aspect, aspect_sep_token = None, None
         if form == 'implicit':
@@ -139,9 +142,11 @@ class ZsGPT2Tokenizer(GPT2TokenizerFast):
 
         self.warned_desc = set()  # Warning for each dataset happens once    @property
 
+        self.verbose = verbose
         self.logger = get_logger(self.__class__.__qualname__)
-        d_log = dict(form=form, added_vocab=list(self.get_added_vocab().keys()), vocab_size=self.vocab_size)
-        self.logger.info(f'{pl.i(self.__class__.__qualname__)} initialized with {pl.i(d_log)}')
+        if verbose:
+            d_log = dict(form=form, added_vocab=list(self.get_added_vocab().keys()), vocab_size=self.vocab_size)
+            self.logger.info(f'{pl.i(self.__class__.__qualname__)} initialized with {pl.i(d_log)}')
 
     @property
     def max_len_single_sentence(self) -> int:
@@ -186,7 +191,8 @@ class ZsGPT2Tokenizer(GPT2TokenizerFast):
         idxs_tpl = np.random.randint(len(self.templates), size=ln)
 
         def call_single(
-                i, dataset_id: int = None, text: str = None, labels: List[int] = None, label_options: List[str] = None
+                i, dataset_id: int = None, text: str = None, labels: List[int] = None, label_options: List[str] = None,
+                aspect: str = None
         ):
             dset_nm: str = None if mode == 'inference-sample' else sconfig('UTCD.dataset_id2name')[dataset_id]
             if mode == 'inference-sample':
@@ -201,7 +207,7 @@ class ZsGPT2Tokenizer(GPT2TokenizerFast):
                 n_cls = len(descs)
                 # `label` is shared across all datasets, map to local label within dataset
                 if self.cache_utcd is None:
-                    path = os_join(utcd_util.get_base_path(), PROJ_DIR, DSET_DIR, 'processed', dataset_name)
+                    path = os_join(utcd_util.get_base_path(), u.proj_dir, u.dset_dir, 'processed', dataset_name)
                     # cos `Sequential`; each split, the label is the same
                     self.cache_utcd = datasets.load_from_disk(path)[split].features['labels'].feature
                 # The ordering indicates int<=>str label mapping, i.e., index is int label,
@@ -238,7 +244,12 @@ class ZsGPT2Tokenizer(GPT2TokenizerFast):
             ids_ques = self._call_paren(question, **kwargs)
             ids_text = self._call_paren(text, **kwargs)
             if self.form == 'implicit':
-                ids_asp = self._call_paren(self.did2aspect[dataset_id], **kwargs)
+                if dataset_id is None:
+                    assert aspect is not None
+                else:
+                    assert aspect is None
+                    aspect = self.did2aspect[dataset_id]
+                ids_asp = self._call_paren(aspect, **kwargs)
                 ids_text = ids_asp + [self.enc_spec(self.aspect_sep_token)] + ids_text
             id_sep = self.enc_spec(self.ques_sep_token)
             ids_answ = [self._call_paren(a, **kwargs) for a in answers]
@@ -246,6 +257,7 @@ class ZsGPT2Tokenizer(GPT2TokenizerFast):
             ln_q, ln_t, ln_a = len(ids_ques), len(ids_text), len(ids_answ)
 
             if mode == 'inference':
+                assert dset_nm is not None  # sanity check not `inference-sample`
                 # If text sample is so long that we need to truncate, leave room for one label only
                 ln_cont = (1+ln_q+1) + (1+ln_t+1) + 1  # for `pref_answ`
                 max_label_id_length = self.cache[dset_nm, split]['max_label_id_length']
@@ -282,7 +294,7 @@ class ZsGPT2Tokenizer(GPT2TokenizerFast):
             tids = [self.enc_spec(self.question_type_token)] * n_ques + \
                    [self.enc_spec(self.text_type_token)] * n_text + \
                    [self.enc_spec(self.answer_type_token)] * n_answ
-            if mode == 'inference':
+            if mode in ['inference', 'inference-sample']:
                 ids, tids = ids[:-(n_answ-1)], tids[:-(n_answ-1)]
                 assert len(ids) == (n_ques+n_text+1)  # sanity check
             msks = [1] * len(ids)  # Encode ids are attended for CLM
@@ -307,12 +319,13 @@ class ZsGPT2Tokenizer(GPT2TokenizerFast):
             out = {k: (pad(ints, k) if mode == 'train' else ints) for k, ints in ((
                 ('input_ids', ids), ('attention_mask', msks), ('token_type_ids', tids), ('position_ids', pids)
             ))}
-            out['dataset_id'] = dataset_id  # For computing zero-shot classification accuracy
+            if dataset_id is not None:
+                out['dataset_id'] = dataset_id  # For computing zero-shot classification accuracy
             if mode == 'stats':  # the number of tokens for just the text part
                 out['ids_text'] = ids_text
             return out
         # See `zeroshot_classifier.util.util.py::process_utcd_dataset`
-        keys_ = ['dataset_id', 'text', 'labels', 'label_options']
+        keys_ = ['dataset_id', 'text', 'labels', 'label_options', 'aspect']
         if mode == 'inference-sample':
             assert not is_batched, f'Batched {pl.i("inference-sample")} not supported'
         else:
@@ -324,7 +337,7 @@ class ZsGPT2Tokenizer(GPT2TokenizerFast):
             ))]
             return BatchEncoding({k: [d[k] for d in ds] for k in ds[0]})  # Stack all the ids
         else:
-            return BatchEncoding(call_single(0, *[samples[k] for k in keys_]))
+            return BatchEncoding(call_single(0, *[samples.get(k, None) for k in keys_]))
 
 
 class ZsGPT2Model(GPT2Model):
@@ -381,7 +394,7 @@ class ZsGPT2LMHeadModel(GPT2LMHeadModel):
         return super().forward(**kwargs)
 
     @classmethod
-    def from_pretrained(cls, *args, is_zs_gpt2: bool = False, **kwargs):
+    def from_pretrained(cls, *args, is_zs_gpt2: bool = True, **kwargs):
         """
         :param is_zs_gpt2: If True, loads a local `ZsGPT2LMHeadModel`; otherwise, expects a GPT2 model
         """
@@ -428,17 +441,27 @@ class ZsGPT2LMHeadModel(GPT2LMHeadModel):
             if past:
                 position_ids = position_ids[:, -1].unsqueeze(-1)
 
-        return {
+        # ========================== Begin of modified ==========================
+        # return {
+        #     "input_ids": input_ids,
+        #     "past_key_values": past,
+        #     "use_cache": kwargs.get("use_cache"),
+        #     "position_ids": position_ids,
+        #     "attention_mask": attention_mask,
+        #     "token_type_ids": token_type_ids,
+        # }
+        ret = {
             "input_ids": input_ids,
             "past_key_values": past,
             "use_cache": kwargs.get("use_cache"),
             "position_ids": position_ids,
             "attention_mask": attention_mask,
             "token_type_ids": token_type_ids,
-            # ========================== Begin of added ==========================
-            'dataset_id': kwargs['dataset_id']  # Should definitely exist
-            # ========================== End of added ==========================
         }
+        if 'dataset_id' in kwargs:  # only case it doesn't exist: `inference-sample` mode
+            ret['dataset_id'] = kwargs['dataset_id']
+        return ret
+        # ========================== End of modified ==========================
 
     def _update_model_kwargs_for_generation(
         self, outputs: ModelOutput, model_kwargs: Dict[str, Any], is_encoder_decoder: bool = False
@@ -770,7 +793,7 @@ def plot_dataset_token_length_stats(domain: str = 'in'):
 def load_trained(
         form: str = 'vanilla', epoch: int = 3, normalize_aspect: bool = False, model_name_or_path: str = None
 ) -> Tuple[ZsGPT2LMHeadModel, ZsGPT2Tokenizer, str]:
-    ca.check_mismatch('GPT2 Training Strategy', form, ['vanilla', 'implicit', 'explicit'])
+    ca(gpt2_training_strategy=form)
 
     d_log = dict(form=form, epoch=epoch, normalize_aspect=normalize_aspect)
     logger.info(f'Loading model with {pl.i(d_log)}... ')

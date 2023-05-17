@@ -18,6 +18,9 @@ from tqdm.autonotebook import tqdm, trange
 from stefutil import *
 
 
+__all__ = ['BinaryBertCrossEncoder', 'BiEncoder']
+
+
 class BinaryBertCrossEncoder(CrossEncoder):
     logger = get_logger('Bin BERT Train')
 

@@ -1879,6 +1879,15 @@
                 "implicit-on-text-encode-sep",
                 "explicit"
             ]
+        },
+        {
+            "display_name": "GPT2Training strategy",
+            "attr_name": "gpt2_training_strategy",
+            "accepted_values": [
+                "vanilla",
+                "implicit",
+                "explicit"
+            ]
         }
     ]
 }

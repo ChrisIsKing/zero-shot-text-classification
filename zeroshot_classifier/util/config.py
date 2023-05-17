@@ -108,7 +108,7 @@ config_dict = {
                 path='UTCD/in-domain/emotion', aspect='sentiment', eval_labels_same=True, domain='in',
                 name='Emotion', name_compact='Emotion'
             ),
-            # `eval_labels_same` := has some unique test labels
+            # not `eval_labels_same` := has some unique test labels
             sgd=dict(
                 path='UTCD/in-domain/sgd', aspect='intent', eval_labels_same=False, domain='in',
                 name='Schema-Guided Dialogue', name_compact='SGD'
@@ -133,8 +133,7 @@ config_dict = {
                 path='UTCD/in-domain/yahoo', aspect='topic', eval_labels_same=True, domain='in',
                 name='Yahoo Answer Topics', name_compact='Yahoo'
             ),
-            # Out-of-domain datasets: test split intended to evaluation
-            # TODO: until new multi-label format supported
+            # Out-of-domain datasets: only test split used & intended for evaluation
             amazon_polarity=dict(
                 path='UTCD/out-of-domain/amazon_polarity', aspect='sentiment', eval_labels_same=True, domain='out',
                 name='Amazon Review Polarity', name_compact='Amazon Polarity'
@@ -224,6 +223,10 @@ config_dict = {
                 'implicit-on-text-encode-sep',
                 'explicit'
             ]
+        ),
+        dict(
+            display_name='GPT2 Training Strategy', attr_name='gpt2_training_strategy',
+            accepted_values=['vanilla', 'implicit', 'explicit']
         )
     ]
 }
