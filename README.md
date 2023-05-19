@@ -124,11 +124,13 @@ Below we include command line arguments and example train/eval commands for mode
 
 **Eval**
 
--   Evaluate a model on out-of-domain dataset `multi_eurlex` 
+-   Evaluate a local model on out-of-domain dataset `multi_eurlex` 
 
     -   ```bash
-        python zeroshot_classifier/models/bert.py test --domain out --dataset multi_eurlex --model_path models/2022-06-15_21-23-57_BERT-Seq-CLS-out-multi_eurlex/trained
+        python zeroshot_classifier/models/bert.py test --domain out --dataset multi_eurlex --model_name_or_path models/2022-06-15_21-23-57_BERT-Seq-CLS-out-multi_eurlex/trained
         ```
+    
+    
 
 
 

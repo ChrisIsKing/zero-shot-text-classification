@@ -1,5 +1,6 @@
-import math
 import os
+import math
+import json
 import configparser
 from os.path import join as os_join
 from typing import List, Tuple, Dict, Iterable, Optional
@@ -22,7 +23,17 @@ __all__ = [
 ]
 
 
-sconfig = StefConfig(config_file=os_join(BASE_PATH, PROJ_DIR, PKG_NM, 'util', 'config.json')).__call__
+logger = get_logger('Util')
+
+
+config_path = os_join(BASE_PATH, PROJ_DIR, PKG_NM, 'util', 'config.json')
+if not os.path.exists(config_path):
+    from zeroshot_classifier.util.config import config_dict
+    logger.info(f'Writing config file at {pl.i(config_path)}')
+    with open(config_path, 'w') as f:
+        json.dump(config_dict, f, indent=4)
+
+sconfig = StefConfig(config_file=config_path).__call__
 u = StefUtil(
     base_path=BASE_PATH, project_dir=PROJ_DIR, package_name=PKG_NM, dataset_dir=DSET_DIR, model_dir=MODEL_DIR
 )

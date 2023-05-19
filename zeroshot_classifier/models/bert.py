@@ -64,7 +64,7 @@ if __name__ == "__main__":
         dset_args = dict(domain=domain)
         if normalize_aspect:
             dset_args['normalize_aspect'] = seed
-        data = get_datasets(in_domain_data_path if domain == 'in' else out_of_domain_data_path, **dset_args)
+        data = get_datasets(**dset_args)
         if dataset_name == 'all':
             train_dset, test_dset, labels = seq_cls_format(data, all=True)
         else:
@@ -94,7 +94,7 @@ if __name__ == "__main__":
             sampling=None, normalize_aspect=normalize_aspect
         )
         output_path = os_join(utcd_util.get_base_path(), u.proj_dir, u.model_dir, dir_nm)
-        proj_output_path = os_join(u.base_path, u.proj_dir, u.model_dir_nm, dir_nm, 'trained')
+        proj_output_path = os_join(u.base_path, u.proj_dir, u.model_dir, dir_nm, 'trained')
         d_log = {'batch size': bsz, 'epochs': n_ep, 'warmup steps': warmup_steps, 'save path': output_path}
         logger.info(f'Launched training with {pl.i(d_log)}... ')
 

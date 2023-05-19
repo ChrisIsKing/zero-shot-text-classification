@@ -1,4 +1,3 @@
-from .data_path import BASE_PATH, PROJ_DIR, PKG_NM, MODEL_DIR, DSET_DIR
 from .util import *
 from . import training
 from .gpt2_train import MyTrainer as GPT2Trainer
