@@ -4,18 +4,21 @@ import json
 import configparser
 from os.path import join as os_join
 from typing import List, Tuple, Dict, Iterable, Optional
+from zipfile import ZipFile
 
 import numpy as np
 import pandas as pd
 import sklearn
 from datasets import load_metric
 import matplotlib.pyplot as plt
+import gdown
 
 from stefutil import *
 from zeroshot_classifier.util.data_path import BASE_PATH, PROJ_DIR, DSET_DIR, PKG_NM, MODEL_DIR
 
 
 __all__ = [
+    'in_domain_url', 'out_of_domain_url', 'in_domain_dir_nm', 'out_of_domain_dir_nm', 'download_data',
     'sconfig', 'u', 'save_fig', 'plot_points',
     'on_great_lakes', 'get_base_path',
     'map_model_dir_nm', 'map_model_output_path', 'domain2eval_dir_nm', 'TrainStrategy2PairMap',
@@ -26,10 +29,49 @@ __all__ = [
 logger = get_logger('Util')
 
 
+in_domain_url = 'https://drive.google.com/uc?id=1V7IzdZ9HQbFUQz9NzBDjmqYBdPd9Yfe3'
+out_of_domain_url = 'https://drive.google.com/uc?id=1nd32_UrFbgoCgH4bDtFFD_YFZhzcts3x'
+in_domain_dir_nm = 'in-domain'
+out_of_domain_dir_nm = 'out-of-domain'
+
+
+def download_data(domain: str = 'in'):  # Needed for writing config
+    assert domain in ['in', 'out']
+    if domain == 'in':
+        fnm, url = f'{in_domain_dir_nm}.zip', in_domain_url
+    else:  # `out`
+        fnm, url = f'{out_of_domain_dir_nm}.zip', out_of_domain_url
+    base_path = os.path.join(BASE_PATH, PROJ_DIR, DSET_DIR)
+    os.makedirs(base_path, exist_ok=True)
+    fl_path = os_join(base_path, fnm)
+
+    domain_str = 'in-domain' if domain == 'in' else 'out-of-domain'
+    logger.info(f'Downloading {pl.i(domain_str)} data from GDrive to {pl.i(fl_path)}...')
+    gdown.download(url, fl_path, quiet=False)
+
+    with ZipFile(fl_path, 'r') as zfl:
+        zfl.extractall(base_path)
+        zfl.close()
+
+
+def _download_all_data():
+    dset_path = os_join(BASE_PATH, PROJ_DIR, DSET_DIR)
+    path_in = os_join(dset_path, in_domain_dir_nm)
+    if not os.path.exists(path_in):
+        download_data(domain='in')
+    path_out = os_join(dset_path, out_of_domain_dir_nm)
+    if not os.path.exists(path_out):
+        download_data(domain='out')
+
+
+_download_all_data()  # Needed for writing config
+
+
 config_path = os_join(BASE_PATH, PROJ_DIR, PKG_NM, 'util', 'config.json')
 if not os.path.exists(config_path):
-    from zeroshot_classifier.util.config import config_dict
-    logger.info(f'Writing config file at {pl.i(config_path)}')
+    from zeroshot_classifier.util.config import ConfigDict
+    logger.info(f'Writing config file to {pl.i(config_path)}... ')
+    config_dict = ConfigDict(fast=True).d
     with open(config_path, 'w') as f:
         json.dump(config_dict, f, indent=4)
 

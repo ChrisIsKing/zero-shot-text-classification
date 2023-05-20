@@ -7,7 +7,6 @@ import random
 import itertools
 from os import listdir
 from os.path import isfile, join as os_join, basename
-from zipfile import ZipFile
 from collections import Counter, defaultdict
 from typing import List, Tuple, Set, Dict, Union
 
@@ -16,7 +15,6 @@ from numpy import argmax, argmin
 import spacy
 from sentence_transformers.readers import InputExample
 from sentence_transformers import util
-import gdown
 from tqdm import tqdm
 
 from stefutil import *
@@ -24,7 +22,6 @@ from zeroshot_classifier.util import *
 
 
 __all__ = [
-    'in_domain_url', 'out_of_domain_url', 'in_domain_data_path', 'out_of_domain_data_path',
     'Dataset', 'SplitDataset',
     'get_datasets', 'to_aspect_normalized_datasets',
     'nli_template', 'get_nli_data', 'binary_cls_format', 'nli_cls_format', 'encoder_cls_format', 'seq_cls_format',
@@ -35,11 +32,6 @@ __all__ = [
 logger = get_logger('Load Data')
 
 
-in_domain_url = 'https://drive.google.com/uc?id=1V7IzdZ9HQbFUQz9NzBDjmqYBdPd9Yfe3'
-out_of_domain_url = 'https://drive.google.com/uc?id=1nd32_UrFbgoCgH4bDtFFD_YFZhzcts3x'
-dataset_path = './dataset'
-in_domain_data_path = './dataset/in-domain'
-out_of_domain_data_path = './dataset/out-of-domain'
 ASPECT_NORM_DIRNM = 'aspect-normalized'
 
 
@@ -90,12 +82,10 @@ def get_datasets(
         Intended for training directly on out-of-domain data, see `zeroshot_classifier/models/bert.py`
     :param dataset_names: If given, only load the specified datasets
     """
-    domain_paths = in_domain_data_path if domain == 'in' else out_of_domain_data_path
-    domain_paths = [d for d in domain_paths.split(os.sep) if d != '.']
-    path = os_join(u.proj_path, *domain_paths)
+    domain_dir_nm = in_domain_dir_nm if domain == 'in' else out_of_domain_dir_nm
+    path = os_join(u.proj_path, u.dset_dir, domain_dir_nm)
     if not os.path.exists(path):
-        logger.info(f'Downloading {pl.i(domain)} domain data from GDrive to {pl.i(path)}...')
-        download_data(path)
+        download_data(domain=domain)
     datasets = None
     _keys = {'train', 'test', 'aspect', 'labels'}
     if normalize_aspect:
@@ -251,7 +241,9 @@ def dataset2train_eval_split(dataset: Dataset, eval_ratio: float = 0.1, seed: in
 
 def save_aspect_normalized_datasets(domain: str = 'in'):
     seed = sconfig('random-seed')
-    path = in_domain_data_path if domain == 'in' else out_of_domain_data_path
+
+    domain_dir_nm = in_domain_dir_nm if domain == 'in' else out_of_domain_dir_nm
+    path = os_join(u.proj_path, u.dset_dir, domain_dir_nm)
     dsets = get_datasets(domain=domain)
     dsets = to_aspect_normalized_datasets(dsets, seed=seed, domain=domain)
 
@@ -269,27 +261,6 @@ def save_aspect_normalized_datasets(domain: str = 'in'):
             json.dump(dsets__, f)
         ret[dnm] = dsets__
     return ret
-
-
-def download_data(path):
-    if 'in-domain' in path:
-        file = './dataset/in-domain.zip'
-        url = in_domain_url
-    else:
-        assert 'out-of-domain' in path
-        file = './dataset/out-domain.zip'
-        url = out_of_domain_url
-    fl_paths = [d for d in file.split(os.sep) if d != '.']
-    fl_path = os.path.join(u.proj_path, *fl_paths)
-    os.makedirs(os.path.dirname(fl_path), exist_ok=True)
-    gdown.download(url, fl_path, quiet=False)
-
-    with ZipFile(file, "r") as zfl:
-        dset_paths = [d for d in dataset_path.split(os.sep) if d != '.']
-        path = os_join(u.proj_path, *dset_paths)
-        os.makedirs(path, exist_ok=True)
-        zfl.extractall(path)
-        zfl.close()
 
 
 def get_nli_data():
@@ -631,7 +602,7 @@ if __name__ == '__main__':
     random.seed(sconfig('random-seed'))
 
     def check_sampling():
-        data = get_datasets(in_domain_data_path)
+        data = get_datasets(domain='in')
         data = to_aspect_normalized_datasets(data)
         for dnm, d_dset in data.items():
             mic(dnm, len(d_dset['train']))
