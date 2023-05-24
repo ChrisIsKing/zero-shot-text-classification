@@ -9,6 +9,11 @@ UTCD is a compilation of 18 classification datasets spanning 3 categories of Sen
 
 UTCD Datasets & Principles:
 
+In order to make NLP models more broadly useful, zero-shot techniques need to be capable of label, domain \& aspect transfer. As such, in the construction of UTCD we enforce the following principles: 
+
+- **Textual labels**: In UTCD, we mandate the use of textual labels. While numerical label values are often used in classification tasks, descriptive textual labels such as those present in the datasets across UTCD enable the development of techniques that can leverage the class name which is instrumental in providing zero-shot support. As such, for each of the compiled datasets, labels are standardized such that the labels are descriptive of the text in natural language. 
+- **Diverse domains and Sequence lengths**: In addition to broad coverage of aspects, UTCD compiles diverse data across several domains such as Banking, Finance, Legal, etc each comprising varied length sequences (long and short). The datasets are listed above.
+
 - Sentiment
     - GoEmotions introduced in [GoEmotions: A Dataset of Fine-Grained Emotions](https://arxiv.org/pdf/2005.00547v2.pdf)
     - TweetEval introduced in [TWEETEVAL: Unified Benchmark and Comparative Evaluation for Tweet Classification](https://arxiv.org/pdf/2010.12421v2.pdf) (Sentiment subset)
@@ -30,11 +35,6 @@ UTCD Datasets & Principles:
     - MultiEurlex introduced in [MultiEURLEX -- A multi-lingual and multi-label legal document classification dataset for zero-shot cross-lingual transfer](https://aclanthology.org/2021.emnlp-main.559v2.pdf)
     - BigPatent introduced in [BIGPATENT: A Large-Scale Dataset for Abstractive and Coherent Summarization](https://aclanthology.org/P19-1212.pdf)
     - Consumer Finance introduced in [Consumer Complaint Database](https://www.consumerfinance.gov/data-research/consumer-complaints/)
-
-In order to make NLP models more broadly useful, zero-shot techniques need to be capable of label, domain \& aspect transfer. As such, in the construction of UTCD we enforce the following principles: 
-
-- **Textual labels**: In UTCD, we mandate the use of textual labels. While numerical label values are often used in classification tasks, descriptive textual labels such as those present in the datasets across UTCD enable the development of techniques that can leverage the class name which is instrumental in providing zero-shot support. As such, for each of the compiled datasets, labels are standardized such that the labels are descriptive of the text in natural language. 
-- **Diverse domains and Sequence lengths**: In addition to broad coverage of aspects, UTCD compiles diverse data across several domains such as Banking, Finance, Legal, etc each comprising varied length sequences (long and short). The datasets are listed above.
 
 ## User’s Guide (HuggingFace)
 
