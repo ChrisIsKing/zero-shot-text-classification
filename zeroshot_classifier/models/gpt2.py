@@ -902,7 +902,8 @@ def evaluate(
                 k: torch.tensor(v, device='cuda') for k, v in dset[idxs].items()
                 if k != 'labels'  # Convert `dataset_id` too so that fits into HuggingFace APIs
             }
-            outputs = model.generate(**inputs)  # Greedy decoding
+            with torch.no_grad():
+                outputs = model.generate(**inputs)  # Greedy decoding
             outputs_str = tokenizer.batch_decode(outputs, skip_special_tokens=False)
             n_computed += len(idxs)
 

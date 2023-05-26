@@ -1,6 +1,6 @@
 from setuptools import setup, find_packages
 
-VERSION = '0.2.2'
+VERSION = '0.2.3'
 DESCRIPTION = """
 code and data for the Findings of ACL'23 paper Label Agnostic Pre-training for Zero-shot Text Classification 
 by Christopher Clarke, Yuzhao Heng, Yiping Kang, Krisztian Flautner, Lingjia Tang and Jason Mars
@@ -15,7 +15,7 @@ setup(
     description=DESCRIPTION,
     long_description=DESCRIPTION,
     url='https://github.com/ChrisIsKing/zero-shot-text-classification',
-    download_url='https://github.com/ChrisIsKing/zero-shot-text-classification/archive/refs/tags/v0.2.2.tar.gz',
+    download_url='https://github.com/ChrisIsKing/zero-shot-text-classification/archive/refs/tags/v0.2.3.tar.gz',
     packages=find_packages(),
     include_package_data=True,
     install_requires=[

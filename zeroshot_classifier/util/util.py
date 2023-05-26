@@ -1,14 +1,11 @@
 import os
-import math
 import json
 import configparser
 from os.path import join as os_join
-from typing import List, Tuple, Dict, Iterable, Optional
+from typing import List, Dict, Optional
 from zipfile import ZipFile
 
 import numpy as np
-import pandas as pd
-import sklearn
 from datasets import load_metric
 import matplotlib.pyplot as plt
 import gdown
@@ -22,7 +19,7 @@ __all__ = [
     'sconfig', 'u', 'save_fig', 'plot_points',
     'on_great_lakes', 'get_base_path',
     'map_model_dir_nm', 'map_model_output_path', 'domain2eval_dir_nm', 'TrainStrategy2PairMap',
-    'eval_res2df', 'compute_metrics'
+    'compute_metrics'
 ]
 
 
@@ -207,17 +204,6 @@ class TrainStrategy2PairMap:
                 return f'{aspect} {TrainStrategy2PairMap.sep_token} {text}'
         else:
             return text
-
-
-def eval_res2df(labels: Iterable, preds: Iterable, report_args: Dict = None, pretty: bool = True) -> Tuple[pd.DataFrame, float]:
-    report = sklearn.metrics.classification_report(labels, preds, **(report_args or dict()))
-    if 'accuracy' in report:
-        acc = report['accuracy']
-    else:
-        vals = [v for k, v in report['micro avg'].items() if k != 'support']
-        assert all(math.isclose(v, vals[0], abs_tol=1e-8) for v in vals)
-        acc = vals[0]
-    return pd.DataFrame(report).transpose(), round(acc, 3) if pretty else acc
 
 
 def compute_metrics(eval_pred):

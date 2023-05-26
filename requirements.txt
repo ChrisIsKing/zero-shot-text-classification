@@ -91,7 +91,7 @@ spacy-legacy==3.0.10
 spacy-loggers==1.0.3
 srsly==2.4.5
 starlette==0.22.0
-stefutils==0.22.2
+stefutils==0.23.0
 sty==1.0.4
 tenacity==8.1.0
 tensorboard==2.10.1
