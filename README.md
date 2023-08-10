@@ -1,6 +1,6 @@
 # Label Agnostic Pre-training for Zero-shot Text Classification
 
-This repository contains the code and data for the Findings of ACL'23 paper **Label Agnostic Pre-training for Zero-shot Text Classification** by ***Christopher Clarke, Yuzhao Heng, Yiping Kang, Krisztian Flautner, Lingjia Tang and Jason Mars***. 
+This repository contains the code and data for the Findings of ACL'23 paper [**Label Agnostic Pre-training for Zero-shot Text Classification**](https://aclanthology.org/2023.findings-acl.64/) by ***Christopher Clarke, Yuzhao Heng, Yiping Kang, Krisztian Flautner, Lingjia Tang and Jason Mars***. 
 
 In this paper, we investigate the task of zero-shot text classification with the aim of improving the ability of PLMs to generalize both seen and unseen data across domains without the need for additional training. We introduce two new simple yet effective training strategies, *Implicit training* & *Explicit pre-training* which specifically inject aspect-level understanding into the model at train time. To evaluate this, we release UTCD, a new benchmark dataset for evaluating text classification in zero-shot settings. **Models, data & paper coming soon!**
 
@@ -283,6 +283,27 @@ Below we include command line arguments and example train/eval commands for mode
     -   ```bash
         python zeroshot_classifier/models/explicit/gpt2_pretrain.py --learning_rate 4e-5 output_dir '{a=4e-5}'
         ```
+
+
+
+## Cite 
+
+```tex
+@inproceedings{clarke-etal-2023-label,
+    title = "Label Agnostic Pre-training for Zero-shot Text Classification",
+    author = "Clarke, Christopher  and
+      Heng, Yuzhao  and
+      Kang, Yiping  and
+      Flautner, Krisztian  and
+      Tang, Lingjia  and
+      Mars, Jason",
+    booktitle = "Findings of the Association for Computational Linguistics: ACL 2023",
+    year = "2023",
+    publisher = "Association for Computational Linguistics"
+}
+```
+
+
 
 
 
